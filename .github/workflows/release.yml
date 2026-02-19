@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-wasm:
+    name: Build WASM Artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+      
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+      
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-target-wasm-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-target-wasm-
+      
+      - name: Install soroban-cli
+        run: cargo install --locked soroban-cli --features opt
+      
+      - name: Build event contract
+        working-directory: contracts/event
+        run: |
+          soroban contract build
+          mkdir -p ../../artifacts
+          cp target/wasm32-unknown-unknown/release/*.wasm ../../artifacts/event.wasm
+      
+      - name: Build factory contract
+        working-directory: contracts/factory
+        run: |
+          soroban contract build
+          cp target/wasm32-unknown-unknown/release/*.wasm ../../artifacts/factory.wasm
+      
+      - name: Build payments contract
+        working-directory: contracts/payments
+        run: |
+          soroban contract build
+          cp target/wasm32-unknown-unknown/release/*.wasm ../../artifacts/payments.wasm
+      
+      - name: Build ticket contract
+        working-directory: contracts/ticket
+        run: |
+          soroban contract build
+          cp target/wasm32-unknown-unknown/release/*.wasm ../../artifacts/ticket.wasm
+      
+      - name: Optimize WASM files
+        run: |
+          for wasm in artifacts/*.wasm; do
+            soroban contract optimize --wasm "$wasm"
+          done
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*.wasm
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
