@@ -10,4 +10,7 @@ pub enum EventError {
     Unauthorized = 4,
     InvalidInput = 5,
     EventNotActive = 6,
+    InvalidEventDate = 7,
+    InvalidTicketCount = 8,
+    InvalidPrice = 9,
 }

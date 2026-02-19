@@ -1,12 +1,30 @@
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 
 use crate::types::EventStatus;
 
 /// Publish a Soroban event when a new event is created.
-pub fn emit_event_created(env: &Env, event_id: &Symbol, organizer: &Address) {
+/// Includes all relevant event data for frontend integration.
+pub fn emit_event_created(
+    env: &Env,
+    event_id: &Symbol,
+    organizer: &Address,
+    name: &String,
+    venue: &String,
+    event_date: u64,
+    total_tickets: u32,
+    ticket_price: i128,
+) {
     env.events().publish(
         (symbol_short!("created"),),
-        (event_id.clone(), organizer.clone()),
+        (
+            event_id.clone(),
+            organizer.clone(),
+            name.clone(),
+            venue.clone(),
+            event_date,
+            total_tickets,
+            ticket_price,
+        ),
     );
 }
 
