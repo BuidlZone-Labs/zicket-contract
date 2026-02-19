@@ -19,5 +19,3 @@ impl Contract {
         vec![&env, String::from_str(&env, "Hello"), to]
     }
 }
-
-mod test;
