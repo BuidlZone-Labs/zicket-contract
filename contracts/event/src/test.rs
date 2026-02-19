@@ -1,15 +1,28 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol};
+use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env, String, Symbol};
 
-/// Helper to create a test event through the client.
+/// Base timestamp used in tests (some time in the future).
+const BASE_TIMESTAMP: u64 = 1_700_000_000;
+
+/// Helper: set up env with a known ledger timestamp.
+fn setup_env() -> Env {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| {
+        li.timestamp = BASE_TIMESTAMP;
+    });
+    env
+}
+
+/// Helper to create a valid test event through the client.
 fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = Symbol::new(env, "EVT001");
     let name = String::from_str(env, "Blockchain Conference");
     let description = String::from_str(env, "Annual developer conference");
     let venue = String::from_str(env, "Convention Center");
-    let event_date: u64 = 1735689600;
+    let event_date: u64 = BASE_TIMESTAMP + 86_400 + 3600; // 25 hours in the future
     let total_tickets: u32 = 500;
     let ticket_price: i128 = 150_000_000;
 
@@ -27,10 +40,13 @@ fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> 
     event_id
 }
 
+// ============================================================
+// Successful creation
+// ============================================================
+
 #[test]
 fn test_create_event() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -40,16 +56,23 @@ fn test_create_event() {
     let event = client.get_event(&event_id);
     assert_eq!(event.event_id, event_id);
     assert_eq!(event.organizer, organizer);
+    assert_eq!(event.name, String::from_str(&env, "Blockchain Conference"));
+    assert_eq!(event.venue, String::from_str(&env, "Convention Center"));
+    assert_eq!(event.event_date, BASE_TIMESTAMP + 86_400 + 3600);
     assert_eq!(event.total_tickets, 500);
     assert_eq!(event.tickets_sold, 0);
     assert_eq!(event.ticket_price, 150_000_000);
     assert_eq!(event.status, EventStatus::Upcoming);
+    assert_eq!(event.created_at, BASE_TIMESTAMP);
 }
+
+// ============================================================
+// Validation tests for create_event
+// ============================================================
 
 #[test]
 fn test_create_event_duplicate_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -63,7 +86,7 @@ fn test_create_event_duplicate_fails() {
         &String::from_str(&env, "Duplicate"),
         &String::from_str(&env, "Desc"),
         &String::from_str(&env, "Venue"),
-        &1735689600,
+        &(BASE_TIMESTAMP + 86_400 + 3600),
         &500,
         &150_000_000,
     );
@@ -72,8 +95,7 @@ fn test_create_event_duplicate_fails() {
 
 #[test]
 fn test_create_event_invalid_tickets_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -84,12 +106,136 @@ fn test_create_event_invalid_tickets_fails() {
         &String::from_str(&env, "Bad Event"),
         &String::from_str(&env, "Desc"),
         &String::from_str(&env, "Venue"),
-        &1735689600,
+        &(BASE_TIMESTAMP + 86_400 + 3600),
         &0, // zero tickets
         &100,
     );
     assert!(result.is_err());
 }
+
+#[test]
+fn test_create_event_too_many_tickets_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT003"),
+        &String::from_str(&env, "Big Event"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Arena"),
+        &(BASE_TIMESTAMP + 86_400 + 3600),
+        &100_000, // exactly 100,000 — should fail (must be < 100,000)
+        &100,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_event_negative_price_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT004"),
+        &String::from_str(&env, "Negative Price"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &(BASE_TIMESTAMP + 86_400 + 3600),
+        &100,
+        &-1, // negative price
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_event_empty_name_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT005"),
+        &String::from_str(&env, ""), // empty name
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &(BASE_TIMESTAMP + 86_400 + 3600),
+        &100,
+        &100,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_event_empty_venue_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT006"),
+        &String::from_str(&env, "Valid Name"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, ""), // empty venue
+        &(BASE_TIMESTAMP + 86_400 + 3600),
+        &100,
+        &100,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_event_past_date_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT007"),
+        &String::from_str(&env, "Past Event"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &(BASE_TIMESTAMP - 3600), // 1 hour in the past
+        &100,
+        &100,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_create_event_date_less_than_24h_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_create_event(
+        &organizer,
+        &Symbol::new(&env, "EVT008"),
+        &String::from_str(&env, "Too Soon"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &(BASE_TIMESTAMP + 3600), // only 1 hour ahead, need 24h
+        &100,
+        &100,
+    );
+    assert!(result.is_err());
+}
+
+// ============================================================
+// Event status and lifecycle tests
+// ============================================================
 
 #[test]
 fn test_get_event_not_found() {
@@ -103,8 +249,7 @@ fn test_get_event_not_found() {
 
 #[test]
 fn test_update_event_status_upcoming_to_active() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -119,8 +264,7 @@ fn test_update_event_status_upcoming_to_active() {
 
 #[test]
 fn test_update_event_status_active_to_completed() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -136,8 +280,7 @@ fn test_update_event_status_active_to_completed() {
 
 #[test]
 fn test_invalid_status_transition_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -151,8 +294,7 @@ fn test_invalid_status_transition_fails() {
 
 #[test]
 fn test_cancel_event() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -166,8 +308,7 @@ fn test_cancel_event() {
 
 #[test]
 fn test_cancel_completed_event_fails() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
@@ -185,8 +326,7 @@ fn test_cancel_completed_event_fails() {
 
 #[test]
 fn test_unauthorized_cancel() {
-    let env = Env::default();
-    env.mock_all_auths();
+    let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);

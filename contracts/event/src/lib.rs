@@ -32,12 +32,28 @@ impl EventContract {
         // Require organizer authorization
         organizer.require_auth();
 
-        // Validate inputs
-        if total_tickets == 0 {
+        // Validate name and venue are not empty
+        if name.len() == 0 {
             return Err(EventError::InvalidInput);
         }
-        if ticket_price < 0 {
+        if venue.len() == 0 {
             return Err(EventError::InvalidInput);
+        }
+
+        // Validate event date is at least 24 hours in the future
+        let min_date = env.ledger().timestamp() + 86_400; // 24 hours in seconds
+        if event_date <= min_date {
+            return Err(EventError::InvalidEventDate);
+        }
+
+        // Validate ticket count: must be > 0 and < 100,000
+        if total_tickets == 0 || total_tickets >= 100_000 {
+            return Err(EventError::InvalidTicketCount);
+        }
+
+        // Validate ticket price: must be >= 0
+        if ticket_price < 0 {
+            return Err(EventError::InvalidPrice);
         }
 
         // Check that event doesn't already exist
@@ -48,9 +64,9 @@ impl EventContract {
         let event = Event {
             event_id: event_id.clone(),
             organizer: organizer.clone(),
-            name,
+            name: name.clone(),
             description,
-            venue,
+            venue: venue.clone(),
             event_date,
             total_tickets,
             tickets_sold: 0,
@@ -60,7 +76,16 @@ impl EventContract {
         };
 
         save_event(&env, &event_id, &event);
-        emit_event_created(&env, &event_id, &organizer);
+        emit_event_created(
+            &env,
+            &event_id,
+            &organizer,
+            &name,
+            &venue,
+            event_date,
+            total_tickets,
+            ticket_price,
+        );
 
         Ok(event)
     }
