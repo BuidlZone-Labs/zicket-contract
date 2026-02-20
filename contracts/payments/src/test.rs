@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{symbol_short, token, Address, Env};
@@ -14,9 +12,13 @@ fn test_initialize() {
     let token = Address::generate(&env);
 
     client.initialize(&admin, &token);
-    
-    let stored_admin = env.as_contract(&contract_id, || storage::get_admin(&env)).unwrap();
-    let stored_token = env.as_contract(&contract_id, || storage::get_accepted_token(&env)).unwrap();
+
+    let stored_admin = env
+        .as_contract(&contract_id, || storage::get_admin(&env))
+        .unwrap();
+    let stored_token = env
+        .as_contract(&contract_id, || storage::get_accepted_token(&env))
+        .unwrap();
 
     assert_eq!(stored_admin, admin);
     assert_eq!(stored_token, token);
@@ -35,9 +37,13 @@ fn test_double_initialization() {
 
     let result = client.try_initialize(&admin, &token);
     assert!(result.is_ok());
-    
-    let stored_admin = env.as_contract(&contract_id, || storage::get_admin(&env)).unwrap();
-    let stored_token = env.as_contract(&contract_id, || storage::get_accepted_token(&env)).unwrap();
+
+    let stored_admin = env
+        .as_contract(&contract_id, || storage::get_admin(&env))
+        .unwrap();
+    let stored_token = env
+        .as_contract(&contract_id, || storage::get_accepted_token(&env))
+        .unwrap();
     assert_eq!(stored_admin, admin);
     assert_eq!(stored_token, token);
 }
@@ -71,7 +77,15 @@ fn test_get_event_revenue_initial() {
     assert_eq!(revenue, 0);
 }
 
-fn setup_contract_with_token(env: &Env) -> (Address, Address, PaymentsContractClient, Address, token::StellarAssetClient) {
+fn setup_contract_with_token(
+    env: &Env,
+) -> (
+    Address,
+    Address,
+    PaymentsContractClient<'_>,
+    Address,
+    token::StellarAssetClient<'_>,
+) {
     let contract_id = env.register(PaymentsContract, ());
     let client = PaymentsContractClient::new(env, &contract_id);
 
@@ -231,10 +245,9 @@ fn test_pay_for_ticket_query_record() {
 
     let payment_id = client.pay_for_ticket(&payer, &event_id, &amount);
 
-    let payment = env.as_contract(&contract_id, || {
-        storage::get_payment(&env, payment_id)
-    })
-    .unwrap();
+    let payment = env
+        .as_contract(&contract_id, || storage::get_payment(&env, payment_id))
+        .unwrap();
 
     assert_eq!(payment.payment_id, payment_id);
     assert_eq!(payment.event_id, event_id);

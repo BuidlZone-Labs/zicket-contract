@@ -39,7 +39,9 @@ pub fn get_accepted_token(env: &Env) -> Result<soroban_sdk::Address, PaymentErro
 
 /// Set the accepted token address in storage.
 pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
-    env.storage().persistent().set(&DataKey::AcceptedToken, token);
+    env.storage()
+        .persistent()
+        .set(&DataKey::AcceptedToken, token);
     env.storage().persistent().extend_ttl(
         &DataKey::AcceptedToken,
         60 * 60 * 24 * 30,
@@ -49,9 +51,7 @@ pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
 
 ///check ifcontract isinitialized.
 pub fn is_initialized(env: &Env) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::Admin)
+    env.storage().persistent().has(&DataKey::Admin)
         && env.storage().persistent().has(&DataKey::AcceptedToken)
 }
 
@@ -63,7 +63,9 @@ pub fn get_next_payment_id(env: &Env) -> u64 {
         .get(&DataKey::NextPaymentId)
         .unwrap_or(0);
     let next_id = current_id + 1;
-    env.storage().persistent().set(&DataKey::NextPaymentId, &next_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::NextPaymentId, &next_id);
     env.storage().persistent().extend_ttl(
         &DataKey::NextPaymentId,
         60 * 60 * 24 * 30,
@@ -76,11 +78,9 @@ pub fn get_next_payment_id(env: &Env) -> u64 {
 pub fn save_payment(env: &Env, payment: &PaymentRecord) {
     let key = DataKey::Payment(payment.payment_id);
     env.storage().persistent().set(&key, payment);
-    env.storage().persistent().extend_ttl(
-        &key,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
 /// Get a payment record by ID
@@ -98,14 +98,12 @@ pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
         .storage()
         .persistent()
         .get(&key)
-        .unwrap_or_else(|| Vec::new(&env));
+        .unwrap_or_else(|| Vec::new(env));
     payments.push_back(payment_id);
     env.storage().persistent().set(&key, &payments);
-    env.storage().persistent().extend_ttl(
-        &key,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
 /// Get all payment IDs for an event.
@@ -130,11 +128,9 @@ pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let new_revenue = current_revenue + amount;
     let key = DataKey::EventRevenue(event_id.clone());
     env.storage().persistent().set(&key, &new_revenue);
-    env.storage().persistent().extend_ttl(
-        &key,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
 /// Update a payment record in storage.
