@@ -10,7 +10,10 @@ pub use errors::*;
 pub use storage::*;
 pub use types::*;
 
-use events::{emit_event_cancelled, emit_event_created, emit_event_updated, emit_status_changed};
+use events::{
+    emit_event_cancelled, emit_event_created, emit_event_updated, emit_registration,
+    emit_status_changed,
+};
 
 #[contract]
 pub struct EventContract;
@@ -199,6 +202,53 @@ impl EventContract {
         emit_event_cancelled(&env, &event_id);
 
         Ok(())
+    }
+
+    pub fn register_for_event(
+        env: Env,
+        attendee: Address,
+        event_id: Symbol,
+    ) -> Result<(), EventError> {
+        attendee.require_auth();
+
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.status != EventStatus::Active {
+            return Err(EventError::EventNotActive);
+        }
+
+        if event.tickets_sold >= event.total_tickets {
+            return Err(EventError::EventSoldOut);
+        }
+
+        if storage::is_registered(&env, &event_id, &attendee) {
+            return Err(EventError::AlreadyRegistered);
+        }
+
+        storage::save_registration(&env, &event_id, &attendee);
+
+        event.tickets_sold += 1;
+        update_event(&env, &event_id, &event)?;
+        emit_registration(&env, &event_id, &attendee, event.tickets_sold);
+
+        Ok(())
+    }
+
+    pub fn is_registered(
+        env: Env,
+        event_id: Symbol,
+        attendee: Address,
+    ) -> Result<bool, EventError> {
+        storage::get_event(&env, &event_id)?;
+        Ok(storage::is_registered(&env, &event_id, &attendee))
+    }
+
+    pub fn get_attendees(
+        env: Env,
+        event_id: Symbol,
+    ) -> Result<soroban_sdk::Vec<Address>, EventError> {
+        storage::get_event(&env, &event_id)?;
+        Ok(storage::get_attendees(&env, &event_id))
     }
 }
 
