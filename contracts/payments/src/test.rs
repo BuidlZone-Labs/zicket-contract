@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use super::*;
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{symbol_short, Address, Env};
@@ -14,9 +12,13 @@ fn test_initialize() {
     let token = Address::generate(&env);
 
     client.initialize(&admin, &token);
-    
-    let stored_admin = env.as_contract(&contract_id, || storage::get_admin(&env)).unwrap();
-    let stored_token = env.as_contract(&contract_id, || storage::get_accepted_token(&env)).unwrap();
+
+    let stored_admin = env
+        .as_contract(&contract_id, || storage::get_admin(&env))
+        .unwrap();
+    let stored_token = env
+        .as_contract(&contract_id, || storage::get_accepted_token(&env))
+        .unwrap();
 
     assert_eq!(stored_admin, admin);
     assert_eq!(stored_token, token);
@@ -35,9 +37,13 @@ fn test_double_initialization() {
 
     let result = client.try_initialize(&admin, &token);
     assert!(result.is_ok());
-    
-    let stored_admin = env.as_contract(&contract_id, || storage::get_admin(&env)).unwrap();
-    let stored_token = env.as_contract(&contract_id, || storage::get_accepted_token(&env)).unwrap();
+
+    let stored_admin = env
+        .as_contract(&contract_id, || storage::get_admin(&env))
+        .unwrap();
+    let stored_token = env
+        .as_contract(&contract_id, || storage::get_accepted_token(&env))
+        .unwrap();
     assert_eq!(stored_admin, admin);
     assert_eq!(stored_token, token);
 }
