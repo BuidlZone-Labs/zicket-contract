@@ -10,7 +10,7 @@ pub use errors::*;
 pub use storage::*;
 pub use types::*;
 
-use events::{emit_event_cancelled, emit_event_created, emit_status_changed};
+use events::{emit_event_cancelled, emit_event_created, emit_event_updated, emit_status_changed};
 
 #[contract]
 pub struct EventContract;
@@ -99,6 +99,75 @@ impl EventContract {
     pub fn get_event_status(env: Env, event_id: Symbol) -> Result<EventStatus, EventError> {
         let event = storage::get_event(&env, &event_id)?;
         Ok(event.status)
+    }
+
+    /// Update event details. Only the organizer can do this, and only for Upcoming events.
+    pub fn update_event_details(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        name: Option<String>,
+        description: Option<String>,
+        venue: Option<String>,
+        event_date: Option<u64>,
+        ticket_price: Option<i128>,
+    ) -> Result<Event, EventError> {
+        organizer.require_auth();
+
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        // Verify caller is the event organizer
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+
+        // Verify event status is Upcoming
+        if event.status != EventStatus::Upcoming {
+            return Err(EventError::EventNotUpdatable);
+        }
+
+        // Update fields if provided
+        if let Some(n) = name {
+            if n.len() == 0 {
+                return Err(EventError::InvalidInput);
+            }
+            event.name = n;
+        }
+        if let Some(d) = description {
+            event.description = d;
+        }
+        if let Some(v) = venue {
+            if v.len() == 0 {
+                return Err(EventError::InvalidInput);
+            }
+            event.venue = v;
+        }
+        if let Some(date) = event_date {
+            let min_date = env.ledger().timestamp() + 86_400; // 24 hours in seconds
+            if date <= min_date {
+                return Err(EventError::InvalidEventDate);
+            }
+            event.event_date = date;
+        }
+        if let Some(price) = ticket_price {
+            if price < 0 {
+                return Err(EventError::InvalidPrice);
+            }
+            event.ticket_price = price;
+        }
+
+        save_event(&env, &event_id, &event);
+        emit_event_updated(
+            &env,
+            &event_id,
+            &event.name,
+            &event.description,
+            &event.venue,
+            event.event_date,
+            event.ticket_price,
+        );
+
+        Ok(event)
     }
 
     /// Update the status of an event. Only the organizer can do this.

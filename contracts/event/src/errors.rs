@@ -13,4 +13,5 @@ pub enum EventError {
     InvalidEventDate = 7,
     InvalidTicketCount = 8,
     InvalidPrice = 9,
+    EventNotUpdatable = 10,
 }

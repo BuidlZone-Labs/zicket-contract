@@ -28,6 +28,29 @@ pub fn emit_event_created(
     );
 }
 
+/// Publish a Soroban event when event details are updated.
+pub fn emit_event_updated(
+    env: &Env,
+    event_id: &Symbol,
+    name: &String,
+    description: &String,
+    venue: &String,
+    event_date: u64,
+    ticket_price: i128,
+) {
+    env.events().publish(
+        (symbol_short!("updated"),),
+        (
+            event_id.clone(),
+            name.clone(),
+            description.clone(),
+            venue.clone(),
+            event_date,
+            ticket_price,
+        ),
+    );
+}
+
 /// Publish a Soroban event when an event status changes.
 pub fn emit_status_changed(
     env: &Env,

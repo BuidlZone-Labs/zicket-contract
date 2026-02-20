@@ -339,3 +339,193 @@ fn test_unauthorized_cancel() {
     let result = client.try_cancel_event(&attacker, &event_id);
     assert!(result.is_err());
 }
+// ============================================================
+// Update event details tests
+// ============================================================
+
+#[test]
+fn test_update_event_details() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    // Update name and price
+    client.update_event_details(
+        &organizer,
+        &event_id,
+        &Some(String::from_str(&env, "Updated Conference")),
+        &None,              // description unchanged
+        &None,              // venue unchanged
+        &None,              // date unchanged
+        &Some(200_000_000), // new price
+    );
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.name, String::from_str(&env, "Updated Conference"));
+    assert_eq!(event.ticket_price, 200_000_000);
+    // Verify other fields remain unchanged
+    assert_eq!(event.venue, String::from_str(&env, "Convention Center"));
+    assert_eq!(event.total_tickets, 500);
+}
+
+#[test]
+fn test_update_event_details_noop() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+    let original_event = client.get_event(&event_id);
+
+    // Update with all None
+    client.update_event_details(&organizer, &event_id, &None, &None, &None, &None, &None);
+
+    let updated_event = client.get_event(&event_id);
+    assert_eq!(original_event, updated_event);
+}
+
+#[test]
+fn test_update_event_not_found() {
+    let env = setup_env(); // Mistake in previous tests calling setup_env but this is missing a fn?
+                           // Ah, setup_env defined in test.rs lines 10-17.
+                           // Checking if layout_env exists. No.
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let result = client.try_update_event_details(
+        &organizer,
+        &Symbol::new(&env, "MISSING"),
+        &Some(String::from_str(&env, "New Name")),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_event_unauthorized() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attacker = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    // Attacker tries to update
+    let result = client.try_update_event_details(
+        &attacker,
+        &event_id,
+        &Some(String::from_str(&env, "Hacked Event")),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_active_event_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    // Activate event
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    // Try update details -> should fail
+    let result = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &Some(String::from_str(&env, "Too Late")),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    // Expect EventNotUpdatable error
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_cancelled_event_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    // Cancel event
+    client.cancel_event(&organizer, &event_id);
+
+    // Try update details -> should fail
+    let result = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &Some(String::from_str(&env, "Too Late")),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_update_invalid_data() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    // Empty name
+    let result = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &Some(String::from_str(&env, "")),
+        &None,
+        &None,
+        &None,
+        &None,
+    );
+    assert!(result.is_err());
+
+    // Past date
+    let result_date = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &None,
+        &None,
+        &None,
+        &Some(BASE_TIMESTAMP), // now/past
+        &None,
+    );
+    assert!(result_date.is_err());
+
+    // Negative price
+    let result_price = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &None,
+        &None,
+        &None,
+        &None,
+        &Some(-100),
+    );
+    assert!(result_price.is_err());
+}
