@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, String, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 
 mod errors;
 mod events;
@@ -18,74 +18,55 @@ pub struct EventContract;
 #[contractimpl]
 impl EventContract {
     /// Create a new event. The organizer must authorize the transaction.
-    pub fn create_event(
-        env: Env,
-        organizer: Address,
-        event_id: Symbol,
-        name: String,
-        description: String,
-        venue: String,
-        event_date: u64,
-        total_tickets: u32,
-        ticket_price: i128,
-    ) -> Result<Event, EventError> {
+    pub fn create_event(env: Env, params: CreateEventParams) -> Result<Event, EventError> {
         // Require organizer authorization
-        organizer.require_auth();
+        params.organizer.require_auth();
 
         // Validate name and venue are not empty
-        if name.len() == 0 {
+        if params.name.is_empty() {
             return Err(EventError::InvalidInput);
         }
-        if venue.len() == 0 {
+        if params.venue.is_empty() {
             return Err(EventError::InvalidInput);
         }
 
         // Validate event date is at least 24 hours in the future
         let min_date = env.ledger().timestamp() + 86_400; // 24 hours in seconds
-        if event_date <= min_date {
+        if params.event_date <= min_date {
             return Err(EventError::InvalidEventDate);
         }
 
         // Validate ticket count: must be > 0 and < 100,000
-        if total_tickets == 0 || total_tickets >= 100_000 {
+        if params.total_tickets == 0 || params.total_tickets >= 100_000 {
             return Err(EventError::InvalidTicketCount);
         }
 
         // Validate ticket price: must be >= 0
-        if ticket_price < 0 {
+        if params.ticket_price < 0 {
             return Err(EventError::InvalidPrice);
         }
 
         // Check that event doesn't already exist
-        if event_exists(&env, &event_id) {
+        if event_exists(&env, &params.event_id) {
             return Err(EventError::EventAlreadyExists);
         }
 
         let event = Event {
-            event_id: event_id.clone(),
-            organizer: organizer.clone(),
-            name: name.clone(),
-            description,
-            venue: venue.clone(),
-            event_date,
-            total_tickets,
+            event_id: params.event_id.clone(),
+            organizer: params.organizer.clone(),
+            name: params.name.clone(),
+            description: params.description.clone(),
+            venue: params.venue.clone(),
+            event_date: params.event_date,
+            total_tickets: params.total_tickets,
             tickets_sold: 0,
-            ticket_price,
+            ticket_price: params.ticket_price,
             status: EventStatus::Upcoming,
             created_at: env.ledger().timestamp(),
         };
 
-        save_event(&env, &event_id, &event);
-        emit_event_created(
-            &env,
-            &event_id,
-            &organizer,
-            &name,
-            &venue,
-            event_date,
-            total_tickets,
-            ticket_price,
-        );
+        save_event(&env, &params.event_id, &event);
+        emit_event_created(&env, &params);
 
         Ok(event)
     }
@@ -102,22 +83,13 @@ impl EventContract {
     }
 
     /// Update event details. Only the organizer can do this, and only for Upcoming events.
-    pub fn update_event_details(
-        env: Env,
-        organizer: Address,
-        event_id: Symbol,
-        name: Option<String>,
-        description: Option<String>,
-        venue: Option<String>,
-        event_date: Option<u64>,
-        ticket_price: Option<i128>,
-    ) -> Result<Event, EventError> {
-        organizer.require_auth();
+    pub fn update_event_details(env: Env, params: UpdateEventParams) -> Result<Event, EventError> {
+        params.organizer.require_auth();
 
-        let mut event = storage::get_event(&env, &event_id)?;
+        let mut event = storage::get_event(&env, &params.event_id)?;
 
         // Verify caller is the event organizer
-        if event.organizer != organizer {
+        if event.organizer != params.organizer {
             return Err(EventError::Unauthorized);
         }
 
@@ -127,45 +99,37 @@ impl EventContract {
         }
 
         // Update fields if provided
-        if let Some(n) = name {
-            if n.len() == 0 {
+        if let Some(n) = params.name {
+            if n.is_empty() {
                 return Err(EventError::InvalidInput);
             }
             event.name = n;
         }
-        if let Some(d) = description {
+        if let Some(d) = params.description {
             event.description = d;
         }
-        if let Some(v) = venue {
-            if v.len() == 0 {
+        if let Some(v) = params.venue {
+            if v.is_empty() {
                 return Err(EventError::InvalidInput);
             }
             event.venue = v;
         }
-        if let Some(date) = event_date {
+        if let Some(date) = params.event_date {
             let min_date = env.ledger().timestamp() + 86_400; // 24 hours in seconds
             if date <= min_date {
                 return Err(EventError::InvalidEventDate);
             }
             event.event_date = date;
         }
-        if let Some(price) = ticket_price {
+        if let Some(price) = params.ticket_price {
             if price < 0 {
                 return Err(EventError::InvalidPrice);
             }
             event.ticket_price = price;
         }
 
-        save_event(&env, &event_id, &event);
-        emit_event_updated(
-            &env,
-            &event_id,
-            &event.name,
-            &event.description,
-            &event.venue,
-            event.event_date,
-            event.ticket_price,
-        );
+        save_event(&env, &params.event_id, &event);
+        emit_event_updated(&env, &event);
 
         Ok(event)
     }
@@ -238,4 +202,5 @@ impl EventContract {
     }
 }
 
+#[cfg(test)]
 mod test;
