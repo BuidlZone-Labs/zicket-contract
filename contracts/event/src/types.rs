@@ -24,3 +24,28 @@ pub struct Event {
     pub status: EventStatus,
     pub created_at: u64,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CreateEventParams {
+    pub organizer: Address,
+    pub event_id: Symbol,
+    pub name: String,
+    pub description: String,
+    pub venue: String,
+    pub event_date: u64,
+    pub total_tickets: u32,
+    pub ticket_price: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpdateEventParams {
+    pub organizer: Address,
+    pub event_id: Symbol,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub venue: Option<String>,
+    pub event_date: Option<u64>,
+    pub ticket_price: Option<i128>,
+}
