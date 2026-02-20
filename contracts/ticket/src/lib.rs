@@ -52,7 +52,7 @@ impl TicketContract {
             .get(&DataKey::OwnerTickets(from.clone()))
             .unwrap_or(vec![&env]);
 
-        if let Some(index) = from_tickets.first_index_of(&ticket_id) {
+        if let Some(index) = from_tickets.first_index_of(ticket_id) {
             from_tickets.remove(index);
             env.storage()
                 .persistent()
