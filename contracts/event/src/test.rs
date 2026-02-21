@@ -548,6 +548,124 @@ fn test_update_invalid_data() {
     assert!(result_price.is_err());
 }
 
+// ============================================================
+// Registration tests
+// ============================================================
+
+#[test]
+fn test_register_for_event_happy_path() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    client.register_for_event(&attendee, &event_id);
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.tickets_sold, 1);
+
+    let registered = client.is_registered(&event_id, &attendee);
+    assert!(registered);
+}
+
+#[test]
+fn test_register_for_event_not_active_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+
+    let result = client.try_register_for_event(&attendee, &event_id);
+    assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
+}
+
+#[test]
+fn test_register_for_event_sold_out_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee1 = Address::generate(&env);
+    let attendee2 = Address::generate(&env);
+
+    let event_id = Symbol::new(&env, "event_02");
+    let params = CreateEventParams {
+        organizer: organizer.clone(),
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "One Ticket"),
+        description: String::from_str(&env, "Desc"),
+        venue: String::from_str(&env, "Venue"),
+        event_date: env.ledger().timestamp() + 86_401,
+        total_tickets: 1,
+        ticket_price: 100,
+    };
+    client.create_event(&params);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    client.register_for_event(&attendee1, &event_id);
+    let result = client.try_register_for_event(&attendee2, &event_id);
+    assert_eq!(result.err(), Some(Ok(EventError::EventSoldOut)));
+}
+
+#[test]
+fn test_register_for_event_duplicate_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    client.register_for_event(&attendee, &event_id);
+    let result = client.try_register_for_event(&attendee, &event_id);
+    assert_eq!(result.err(), Some(Ok(EventError::AlreadyRegistered)));
+}
+
+#[test]
+fn test_register_for_event_cancelled_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+    client.cancel_event(&organizer, &event_id);
+
+    let result = client.try_register_for_event(&attendee, &event_id);
+    assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
+}
+
+#[test]
+fn test_get_attendees() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee1 = Address::generate(&env);
+    let attendee2 = Address::generate(&env);
+
+    let event_id = setup_event(&env, &client, &organizer);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    client.register_for_event(&attendee1, &event_id);
+    client.register_for_event(&attendee2, &event_id);
+
+    let attendees = client.get_attendees(&event_id);
+    assert_eq!(attendees.len(), 2);
+    assert_eq!(attendees.get(0).unwrap(), attendee1);
+    assert_eq!(attendees.get(1).unwrap(), attendee2);
+}
+
 fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = Symbol::new(env, "event_01");
     let name = String::from_str(env, "Tech Conference 2024");

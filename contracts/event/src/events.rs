@@ -1,4 +1,4 @@
-use soroban_sdk::{symbol_short, Env, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, Symbol};
 
 use crate::types::{CreateEventParams, Event, EventStatus};
 
@@ -51,4 +51,11 @@ pub fn emit_status_changed(
 pub fn emit_event_cancelled(env: &Env, event_id: &Symbol) {
     env.events()
         .publish((symbol_short!("cancel"),), (event_id.clone(),));
+}
+
+pub fn emit_registration(env: &Env, event_id: &Symbol, attendee: &Address, tickets_sold: u32) {
+    env.events().publish(
+        (symbol_short!("register"),),
+        (event_id.clone(), attendee.clone(), tickets_sold),
+    );
 }
