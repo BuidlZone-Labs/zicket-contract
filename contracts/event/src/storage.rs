@@ -53,11 +53,9 @@ pub fn is_registered(env: &Env, event_id: &Symbol, attendee: &Address) -> bool {
 pub fn save_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
     let key = DataKey::Registration(event_id.clone(), attendee.clone());
     env.storage().persistent().set(&key, &true);
-    env.storage().persistent().extend_ttl(
-        &key,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 
     let attendees_key = DataKey::EventAttendees(event_id.clone());
     let mut attendees: Vec<Address> = env
@@ -67,11 +65,9 @@ pub fn save_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
         .unwrap_or(Vec::new(env));
     attendees.push_back(attendee.clone());
     env.storage().persistent().set(&attendees_key, &attendees);
-    env.storage().persistent().extend_ttl(
-        &attendees_key,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&attendees_key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
 pub fn get_attendees(env: &Env, event_id: &Symbol) -> Vec<Address> {

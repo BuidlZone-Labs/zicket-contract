@@ -569,7 +569,7 @@ fn test_register_for_event_happy_path() {
     assert_eq!(event.tickets_sold, 1);
 
     let registered = client.is_registered(&event_id, &attendee);
-    assert_eq!(registered, true);
+    assert!(registered);
 }
 
 #[test]
