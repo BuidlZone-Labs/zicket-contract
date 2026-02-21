@@ -61,7 +61,9 @@ pub fn save_deployed_event(env: &Env, event: &DeployedEvent) -> Result<(), Facto
 
     let mut all_events = get_all_event_ids(env);
     all_events.push_back(event.event_id.clone());
-    env.storage().persistent().set(&DataKey::AllEvents, &all_events);
+    env.storage()
+        .persistent()
+        .set(&DataKey::AllEvents, &all_events);
     env.storage()
         .persistent()
         .extend_ttl(&DataKey::AllEvents, TTL_THRESHOLD, TTL_BUMP);
@@ -69,7 +71,9 @@ pub fn save_deployed_event(env: &Env, event: &DeployedEvent) -> Result<(), Facto
     let organizer_key = DataKey::OrganizerEvents(event.organizer.clone());
     let mut organizer_events = get_organizer_events(env, &event.organizer);
     organizer_events.push_back(event.event_id.clone());
-    env.storage().persistent().set(&organizer_key, &organizer_events);
+    env.storage()
+        .persistent()
+        .set(&organizer_key, &organizer_events);
     env.storage()
         .persistent()
         .extend_ttl(&organizer_key, TTL_THRESHOLD, TTL_BUMP);
