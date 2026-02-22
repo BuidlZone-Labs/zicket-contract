@@ -16,4 +16,6 @@ pub enum EventError {
     EventNotUpdatable = 10,
     EventSoldOut = 11,
     AlreadyRegistered = 12,
+    TierNotFound = 13,
+    TierSoldOut = 14,
 }

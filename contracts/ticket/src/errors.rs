@@ -17,4 +17,5 @@ pub enum TicketError {
     TicketNotTransferable = 11,
     TransferToSelf = 12,
     TicketAlreadyUsed = 13,
+    EventNotActive = 14,
 }

@@ -13,8 +13,7 @@ pub fn emit_event_created(env: &Env, params: &CreateEventParams) {
             params.name.clone(),
             params.venue.clone(),
             params.event_date,
-            params.total_tickets,
-            params.ticket_price,
+            params.initial_tiers.len(),
         ),
     );
 }
@@ -29,7 +28,6 @@ pub fn emit_event_updated(env: &Env, event: &Event) {
             event.description.clone(),
             event.venue.clone(),
             event.event_date,
-            event.ticket_price,
         ),
     );
 }
@@ -53,9 +51,15 @@ pub fn emit_event_cancelled(env: &Env, event_id: &Symbol) {
         .publish((symbol_short!("cancel"),), (event_id.clone(),));
 }
 
-pub fn emit_registration(env: &Env, event_id: &Symbol, attendee: &Address, tickets_sold: u32) {
+pub fn emit_registration(
+    env: &Env,
+    event_id: &Symbol,
+    attendee: &Address,
+    tier_id: u32,
+    tickets_sold: u32,
+) {
     env.events().publish(
         (symbol_short!("register"),),
-        (event_id.clone(), attendee.clone(), tickets_sold),
+        (event_id.clone(), attendee.clone(), tier_id, tickets_sold),
     );
 }

@@ -90,12 +90,27 @@ Upcoming ──→ Active ──→ Completed
     └───────────┴──→ Cancelled
 ```
 
+## Ticket Contract — Current Features
+
+The `ticket` contract handles the ticket lifecycle and ownership:
+
+- **Transfer Ticket** — allow owners to transfer their Valid tickets to other addresses
+- **Check-in / Use Ticket** — organizers can validate tickets at the door, transitioning them from `Valid` to `Used`
+- **Ticket Status Management** — protects against double-entry and unauthorized use of cancelled tickets
+- **Owner Tracking** — query all tickets owned by a specific address
+
+### Ticket Statuses
+
+- **Valid** — ticket is active and can be used for entry or transferred
+- **Used** — ticket has been validated at the door and cannot be reused or transferred
+- **Cancelled** — ticket has been invalidated (e.g., due to event cancellation) and cannot be used or transferred
+
 ## Roadmap
 
 See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descriptions covering upcoming work:
 
 - Register for events
-- Ticket minting & transfers
+- Ticket minting
 - Payment escrow & refunds
 - Factory contract deployment
 - Event detail updates

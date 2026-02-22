@@ -1,5 +1,5 @@
 use crate::errors::EventError;
-use crate::types::{CreateEventParams, EventStatus, UpdateEventParams};
+use crate::types::{CreateEventParams, EventStatus, TicketTierParams, UpdateEventParams};
 use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, Env, String, Symbol};
@@ -50,8 +50,14 @@ fn test_create_event_duplicate_fails() {
     let venue = String::from_str(&env, "Convention Center");
     // Ensure date is > 24h in future
     let event_date = env.ledger().timestamp() + 86_401;
-    let total_tickets = 500;
-    let ticket_price = 100_000_000;
+    let initial_tiers = soroban_sdk::vec![
+        &env,
+        TicketTierParams {
+            name: String::from_str(&env, "General"),
+            price: 100_000_000,
+            capacity: 500,
+        },
+    ];
 
     let params = CreateEventParams {
         organizer: organizer.clone(),
@@ -60,8 +66,7 @@ fn test_create_event_duplicate_fails() {
         description: description.clone(),
         venue: venue.clone(),
         event_date,
-        total_tickets,
-        ticket_price,
+        initial_tiers: initial_tiers.clone(),
     };
 
     // First creation succeeds
@@ -75,8 +80,7 @@ fn test_create_event_duplicate_fails() {
         description: description.clone(),
         venue: venue.clone(),
         event_date,
-        total_tickets,
-        ticket_price,
+        initial_tiers,
     };
     let result = client.try_create_event(&params_dup);
     assert_eq!(result.err(), Some(Ok(EventError::EventAlreadyExists)));
@@ -96,8 +100,14 @@ fn test_create_event_invalid_tickets_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 90_000,
-        total_tickets: 0, // Invalid
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 0, // Invalid
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -118,8 +128,14 @@ fn test_create_event_too_many_tickets_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 90_000,
-        total_tickets: 100_000, // Invalid limit
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 100_000, // Invalid limit
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -140,8 +156,14 @@ fn test_create_event_past_date_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() - 100, // Past
-        total_tickets: 100,
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 100,
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -162,8 +184,14 @@ fn test_create_event_date_less_than_24h_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 3600, // Only 1h
-        total_tickets: 100,
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 100,
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -184,8 +212,14 @@ fn test_create_event_negative_price_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 90_000,
-        total_tickets: 100,
-        ticket_price: -10, // Invalid
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: -10, // Invalid
+                capacity: 100,
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -206,8 +240,14 @@ fn test_create_event_empty_name_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 90_000,
-        total_tickets: 100,
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 100,
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -228,8 +268,14 @@ fn test_create_event_empty_venue_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, ""), // Empty
         event_date: env.ledger().timestamp() + 90_000,
-        total_tickets: 100,
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 100,
+            },
+        ],
     };
 
     let result = client.try_create_event(&params);
@@ -359,17 +405,19 @@ fn test_update_event_details() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: Some(200_000_000),
     };
 
     client.update_event_details(&params);
 
     let event = client.get_event(&event_id);
     assert_eq!(event.name, String::from_str(&env, "Updated Conference"));
-    assert_eq!(event.ticket_price, 200_000_000);
     // Verify other fields remain unchanged
     assert_eq!(event.venue, String::from_str(&env, "Convention Center"));
-    assert_eq!(event.total_tickets, 500);
+    let mut capacity = 0;
+    for tier in event.tiers.iter() {
+        capacity += tier.capacity;
+    }
+    assert_eq!(capacity, 500);
 }
 
 #[test]
@@ -390,7 +438,6 @@ fn test_update_event_details_noop() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
     client.update_event_details(&params);
 
@@ -412,7 +459,6 @@ fn test_update_event_not_found() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
 
     let result = client.try_update_event_details(&params);
@@ -437,7 +483,6 @@ fn test_update_event_unauthorized() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
 
     let result = client.try_update_event_details(&params);
@@ -464,7 +509,6 @@ fn test_update_active_event_fails() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
 
     let result = client.try_update_event_details(&params);
@@ -492,7 +536,6 @@ fn test_update_cancelled_event_fails() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
 
     let result = client.try_update_event_details(&params);
@@ -516,7 +559,6 @@ fn test_update_invalid_data() {
         description: None,
         venue: None,
         event_date: None,
-        ticket_price: None,
     };
     let result = client.try_update_event_details(&params_name);
     assert!(result.is_err());
@@ -529,23 +571,9 @@ fn test_update_invalid_data() {
         description: None,
         venue: None,
         event_date: Some(BASE_TIMESTAMP), // now/past
-        ticket_price: None,
     };
     let result_date = client.try_update_event_details(&params_date);
     assert!(result_date.is_err());
-
-    // Negative price
-    let params_price = UpdateEventParams {
-        organizer: organizer.clone(),
-        event_id: event_id.clone(),
-        name: None,
-        description: None,
-        venue: None,
-        event_date: None,
-        ticket_price: Some(-100),
-    };
-    let result_price = client.try_update_event_details(&params_price);
-    assert!(result_price.is_err());
 }
 
 // ============================================================
@@ -563,10 +591,10 @@ fn test_register_for_event_happy_path() {
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee, &event_id);
+    client.register_for_event(&attendee, &event_id, &0);
 
     let event = client.get_event(&event_id);
-    assert_eq!(event.tickets_sold, 1);
+    assert_eq!(event.tiers.get(0).unwrap().sold, 1);
 
     let registered = client.is_registered(&event_id, &attendee);
     assert!(registered);
@@ -582,7 +610,7 @@ fn test_register_for_event_not_active_fails() {
 
     let event_id = setup_event(&env, &client, &organizer);
 
-    let result = client.try_register_for_event(&attendee, &event_id);
+    let result = client.try_register_for_event(&attendee, &event_id, &0);
     assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
 }
 
@@ -603,15 +631,21 @@ fn test_register_for_event_sold_out_fails() {
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 86_401,
-        total_tickets: 1,
-        ticket_price: 100,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100,
+                capacity: 1,
+            },
+        ],
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee1, &event_id);
-    let result = client.try_register_for_event(&attendee2, &event_id);
-    assert_eq!(result.err(), Some(Ok(EventError::EventSoldOut)));
+    client.register_for_event(&attendee1, &event_id, &0);
+    let result = client.try_register_for_event(&attendee2, &event_id, &0);
+    assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
 }
 
 #[test]
@@ -625,8 +659,8 @@ fn test_register_for_event_duplicate_fails() {
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee, &event_id);
-    let result = client.try_register_for_event(&attendee, &event_id);
+    client.register_for_event(&attendee, &event_id, &0);
+    let result = client.try_register_for_event(&attendee, &event_id, &0);
     assert_eq!(result.err(), Some(Ok(EventError::AlreadyRegistered)));
 }
 
@@ -641,7 +675,7 @@ fn test_register_for_event_cancelled_fails() {
     let event_id = setup_event(&env, &client, &organizer);
     client.cancel_event(&organizer, &event_id);
 
-    let result = client.try_register_for_event(&attendee, &event_id);
+    let result = client.try_register_for_event(&attendee, &event_id, &0);
     assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
 }
 
@@ -657,8 +691,8 @@ fn test_get_attendees() {
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee1, &event_id);
-    client.register_for_event(&attendee2, &event_id);
+    client.register_for_event(&attendee1, &event_id, &0);
+    client.register_for_event(&attendee2, &event_id, &0);
 
     let attendees = client.get_attendees(&event_id);
     assert_eq!(attendees.len(), 2);
@@ -673,8 +707,14 @@ fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> 
     let venue = String::from_str(env, "Convention Center");
     // Ensure date is > 24h in future
     let event_date = env.ledger().timestamp() + 86_401;
-    let total_tickets = 500;
-    let ticket_price = 100_000_000;
+    let initial_tiers = soroban_sdk::vec![
+        env,
+        TicketTierParams {
+            name: String::from_str(env, "General"),
+            price: 100_000_000,
+            capacity: 500,
+        },
+    ];
 
     let params = CreateEventParams {
         organizer: organizer.clone(),
@@ -683,8 +723,7 @@ fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> 
         description,
         venue,
         event_date,
-        total_tickets,
-        ticket_price,
+        initial_tiers,
     };
 
     client.create_event(&params);

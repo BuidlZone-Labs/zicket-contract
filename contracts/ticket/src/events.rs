@@ -6,11 +6,6 @@ pub fn emit_ticket_transferred(env: &Env, ticket_id: u64, from: Address, to: Add
 }
 
 pub fn emit_ticket_used(env: &Env, ticket_id: u64) {
-    let topics = (symbol_short!("used"),);
-    env.events().publish(topics, ticket_id);
-}
-
-pub fn emit_ticket_cancelled(env: &Env, ticket_id: u64) {
-    let topics = (symbol_short!("cancelled"),);
+    let topics = (Symbol::new(env, "ticket_used"), ticket_id);
     env.events().publish(topics, ticket_id);
 }
