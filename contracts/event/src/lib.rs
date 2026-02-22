@@ -45,9 +45,7 @@ impl EventContract {
         }
 
         let mut tiers = soroban_sdk::Vec::new(&env);
-        let mut current_tier_id = 0;
-
-        for tier_param in params.initial_tiers.iter() {
+        for (current_tier_id, tier_param) in params.initial_tiers.iter().enumerate() {
             if tier_param.name.is_empty() {
                 return Err(EventError::InvalidInput);
             }
@@ -59,13 +57,12 @@ impl EventContract {
             }
 
             tiers.push_back(TicketTier {
-                tier_id: current_tier_id,
+                tier_id: current_tier_id as u32,
                 name: tier_param.name,
                 price: tier_param.price,
                 capacity: tier_param.capacity,
                 sold: 0,
             });
-            current_tier_id += 1;
         }
 
         // Check that event doesn't already exist
