@@ -1,7 +1,7 @@
-#![cfg(test)]
 use super::*;
+use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol, Vec};
 
 // Helper function to create a ticket directly in storage for testing
 fn setup_test_ticket(
@@ -61,9 +61,6 @@ fn test_happy_path_transfer() {
     // Verify Alice doesn't have it
     let alice_tickets = client.get_tickets_by_owner(&alice);
     assert_eq!(alice_tickets, vec![&env]);
-
-    // Event generation is fully correct in the implementation, but currently Soroban testutils
-    // does not output captured events via mock clients in this test path.
 }
 
 #[test]

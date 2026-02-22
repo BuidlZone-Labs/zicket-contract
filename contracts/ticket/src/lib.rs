@@ -4,10 +4,13 @@ mod events;
 mod storage;
 mod types;
 
+#[cfg(test)]
+mod test;
+
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, vec, Address, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
@@ -86,23 +89,22 @@ impl TicketContract {
     /// Mark a ticket as used. Only the event organizer (or authorized address) can call this.
     pub fn use_ticket(env: Env, ticket_id: u64, organizer: Address) -> Result<(), TicketError> {
         organizer.require_auth();
-        
+
         let mut ticket = storage::get_ticket(&env, ticket_id)?;
-        
+
         if ticket.status == TicketStatus::Used {
             return Err(TicketError::TicketAlreadyUsed);
         }
-        
+
         if ticket.status == TicketStatus::Cancelled {
-            // Depending on requirements, we might want a specific error for cancelled tickets.
-            return Err(TicketError::Unauthorized); 
+            return Err(TicketError::Unauthorized);
         }
 
         ticket.status = TicketStatus::Used;
         storage::update_ticket(&env, &ticket);
-        
+
         events::emit_ticket_used(&env, ticket_id);
-        
+
         Ok(())
     }
 
@@ -121,29 +123,25 @@ impl TicketContract {
         storage::get_tickets_by_event(&env, event_id)
     }
 
-    /// Cancel a ticket. Can be called by the owner or the organizer.
+    /// Cancel a ticket. Can be called by the owner or an authorized caller.
     pub fn cancel_ticket(env: Env, ticket_id: u64, caller: Address) -> Result<(), TicketError> {
         caller.require_auth();
-        
+
         let mut ticket = storage::get_ticket(&env, ticket_id)?;
-        
-        // Authorization check: either owner or we assume organizer (caller)
-        // In a more robust version, we'd store the organizer/event info to verify definitively.
+
         if caller != ticket.owner {
-            // For now, we allow any authorized caller to cancel if they aren't the owner, 
-            // assuming the requirement implies organizer authorization is handled via require_auth.
-            // Ideally, we'd verify the caller is the organizer of the specific event.
+            return Err(TicketError::Unauthorized);
         }
 
         if ticket.status != TicketStatus::Valid {
-            return Err(TicketError::TicketAlreadyUsed); // Or a more generic StatusError
+            return Err(TicketError::TicketAlreadyUsed);
         }
 
         ticket.status = TicketStatus::Cancelled;
         storage::update_ticket(&env, &ticket);
-        
+
         events::emit_ticket_cancelled(&env, ticket_id);
-        
+
         Ok(())
     }
 }
