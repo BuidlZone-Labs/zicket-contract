@@ -116,6 +116,15 @@ See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descrip
 - Event detail updates
 - And more
 
+## Contribution
+
+- git clone `your fork`
+- follow `#getting started`
+- create a branch for your task e.g `feat/new-feature`, `fix/your-bugs`, `chore/update-dependencies`, `test/test-module` .etc
+- ensure brief commit msg e.g `feat: add new event func`
+- before pushing changes, run `cargo build`, `cargo test`, `cargo fmt`, `cargo clippy`.
+- push your changes & create your PR, ensure to link your issue using the `github closing keyword`.
+
 ## License
 
 This project is under active development.
