@@ -8,6 +8,7 @@ use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
+    organizer: &Address,
     owner: &Address,
     ticket_id: u64,
     status: TicketStatus,
@@ -15,6 +16,7 @@ fn setup_test_ticket(
     let ticket = Ticket {
         ticket_id,
         event_id: Symbol::new(env, "event_1"),
+        organizer: organizer.clone(),
         owner: owner.clone(),
         issued_at: 123456,
         status,
@@ -48,9 +50,10 @@ fn test_happy_path_transfer() {
 
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
     // Setup ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
 
     // Alice transfers to Bob
     client.transfer_ticket(&alice, &bob, &1);
@@ -78,9 +81,10 @@ fn test_transfer_used_ticket() {
 
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
     // Setup USED ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Used);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Used);
 
     // Alice transfers to Bob - should fail with TicketNotTransferable (11)
     client.transfer_ticket(&alice, &bob, &1);
@@ -97,9 +101,10 @@ fn test_transfer_cancelled_ticket() {
 
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
     // Setup CANCELLED ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Cancelled);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Cancelled);
 
     client.transfer_ticket(&alice, &bob, &1);
 }
@@ -114,8 +119,9 @@ fn test_transfer_to_self() {
     let client = TicketContractClient::new(&env, &contract_id);
 
     let alice = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
 
     client.transfer_ticket(&alice, &alice, &1); // TransferToSelf (12)
 }
@@ -132,8 +138,9 @@ fn test_unauthorized_transfer() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let charlie = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
 
     // Bob tries to transfer Alice's ticket to Charlie
     client.transfer_ticket(&bob, &charlie, &1); // Unauthorized (4)
@@ -150,8 +157,9 @@ fn test_chain_transfer() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let charlie = Address::generate(&env);
+    let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
 
     client.transfer_ticket(&alice, &bob, &1);
     client.transfer_ticket(&bob, &charlie, &1);
@@ -160,3 +168,86 @@ fn test_chain_transfer() {
     assert_eq!(client.get_tickets_by_owner(&bob), vec![&env]);
     assert_eq!(client.get_tickets_by_owner(&charlie), vec![&env, 1]);
 }
+
+#[test]
+fn test_use_ticket_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Valid);
+
+    // Organizer uses the ticket
+    client.use_ticket(&organizer, &ticket_id);
+
+    // Verify ticket status is Used
+    let ticket: Ticket = env.as_contract(&contract_id, || {
+        env.storage().persistent().get(&DataKey::Ticket(ticket_id)).unwrap()
+    });
+    assert_eq!(ticket.status, TicketStatus::Used);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #13)")]
+fn test_use_ticket_double_checkin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Used);
+
+    // Attempt to use already used ticket
+    client.use_ticket(&organizer, &ticket_id);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #4)")]
+fn test_use_ticket_unauthorized() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let random_person = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Valid);
+
+    // Random person attempts to use the ticket
+    client.use_ticket(&random_person, &ticket_id);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #14)")]
+fn test_use_ticket_cancelled() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Cancelled);
+
+    // Attempt to use cancelled ticket
+    client.use_ticket(&organizer, &ticket_id);
+}
+
