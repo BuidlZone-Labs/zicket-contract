@@ -1,21 +1,44 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, vec, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
+
+mod deployment;
+mod errors;
+mod events;
+mod storage;
+mod types;
+
+pub use errors::*;
+pub use storage::*;
+pub use types::*;
 
 #[contract]
-pub struct Contract;
+pub struct FactoryContract;
 
-// This is a sample contract. Replace this placeholder with your own contract logic.
-// A corresponding test example is available in `test.rs`.
-//
-// For comprehensive examples, visit <https://github.com/stellar/soroban-examples>.
-// The repository includes use cases for the Stellar ecosystem, such as data storage on
-// the blockchain, token swaps, liquidity pools, and more.
-//
-// Refer to the official documentation:
-// <https://developers.stellar.org/docs/build/smart-contracts/overview>.
 #[contractimpl]
-impl Contract {
-    pub fn hello(env: Env, to: String) -> Vec<String> {
-        vec![&env, String::from_str(&env, "Hello"), to]
+impl FactoryContract {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        event_wasm_hash: BytesN<32>,
+    ) -> Result<(), FactoryError> {
+        if storage::is_initialized(&env) {
+            return Ok(());
+        }
+
+        admin.require_auth();
+
+        storage::set_admin(&env, &admin);
+        storage::set_event_wasm_hash(&env, &event_wasm_hash);
+
+        events::emit_factory_initialized(&env, &admin);
+
+        Ok(())
+    }
+
+    pub fn get_deployed_event(env: Env, event_id: Symbol) -> Result<DeployedEvent, FactoryError> {
+        storage::get_deployed_event(&env, &event_id)
     }
 }
+
+#[cfg(test)]
+mod test;

@@ -1,15 +1,15 @@
 use soroban_sdk::{contracttype, Address, Symbol};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TicketStatus {
     Valid,
     Used,
     Cancelled,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ticket {
     pub ticket_id: u64,
     pub event_id: Symbol,
