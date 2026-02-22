@@ -39,14 +39,33 @@ impl EventContract {
             return Err(EventError::InvalidEventDate);
         }
 
-        // Validate ticket count: must be > 0 and < 100,000
-        if params.total_tickets == 0 || params.total_tickets >= 100_000 {
-            return Err(EventError::InvalidTicketCount);
+        // Validate there is at least one tier
+        if params.initial_tiers.is_empty() {
+            return Err(EventError::InvalidInput);
         }
 
-        // Validate ticket price: must be >= 0
-        if params.ticket_price < 0 {
-            return Err(EventError::InvalidPrice);
+        let mut tiers = soroban_sdk::Vec::new(&env);
+        let mut current_tier_id = 0;
+
+        for tier_param in params.initial_tiers.iter() {
+            if tier_param.name.is_empty() {
+                return Err(EventError::InvalidInput);
+            }
+            if tier_param.capacity == 0 || tier_param.capacity >= 100_000 {
+                return Err(EventError::InvalidTicketCount);
+            }
+            if tier_param.price < 0 {
+                return Err(EventError::InvalidPrice);
+            }
+
+            tiers.push_back(TicketTier {
+                tier_id: current_tier_id,
+                name: tier_param.name,
+                price: tier_param.price,
+                capacity: tier_param.capacity,
+                sold: 0,
+            });
+            current_tier_id += 1;
         }
 
         // Check that event doesn't already exist
@@ -61,9 +80,7 @@ impl EventContract {
             description: params.description.clone(),
             venue: params.venue.clone(),
             event_date: params.event_date,
-            total_tickets: params.total_tickets,
-            tickets_sold: 0,
-            ticket_price: params.ticket_price,
+            tiers,
             status: EventStatus::Upcoming,
             created_at: env.ledger().timestamp(),
         };
@@ -124,17 +141,116 @@ impl EventContract {
             }
             event.event_date = date;
         }
-        if let Some(price) = params.ticket_price {
-            if price < 0 {
-                return Err(EventError::InvalidPrice);
-            }
-            event.ticket_price = price;
-        }
 
         save_event(&env, &params.event_id, &event);
         emit_event_updated(&env, &event);
 
         Ok(event)
+    }
+
+    /// Add a new ticket tier to an Upcoming event. Only the organizer can do this.
+    pub fn add_ticket_tier(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        name: soroban_sdk::String,
+        price: i128,
+        capacity: u32,
+    ) -> Result<TicketTier, EventError> {
+        organizer.require_auth();
+
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+
+        if event.status != EventStatus::Upcoming {
+            return Err(EventError::EventNotUpdatable);
+        }
+
+        if name.is_empty() {
+            return Err(EventError::InvalidInput);
+        }
+        if capacity == 0 || capacity >= 100_000 {
+            return Err(EventError::InvalidTicketCount);
+        }
+        if price < 0 {
+            return Err(EventError::InvalidPrice);
+        }
+
+        let new_tier_id = event.tiers.len();
+        let new_tier = TicketTier {
+            tier_id: new_tier_id,
+            name,
+            price,
+            capacity,
+            sold: 0,
+        };
+
+        event.tiers.push_back(new_tier.clone());
+
+        save_event(&env, &event_id, &event);
+
+        Ok(new_tier)
+    }
+
+    /// Update an existing ticket tier of an Upcoming event.
+    pub fn update_tier(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        tier_id: u32,
+        name: Option<soroban_sdk::String>,
+        price: Option<i128>,
+        capacity: Option<u32>,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+
+        if event.status != EventStatus::Upcoming {
+            return Err(EventError::EventNotUpdatable);
+        }
+
+        let mut found = false;
+        for i in 0..event.tiers.len() {
+            let mut tier = event.tiers.get(i).unwrap();
+            if tier.tier_id == tier_id {
+                if let Some(n) = name.clone() {
+                    if n.is_empty() {
+                        return Err(EventError::InvalidInput);
+                    }
+                    tier.name = n;
+                }
+                if let Some(p) = price {
+                    if p < 0 {
+                        return Err(EventError::InvalidPrice);
+                    }
+                    tier.price = p;
+                }
+                if let Some(c) = capacity {
+                    if c == 0 || c >= 100_000 {
+                        return Err(EventError::InvalidTicketCount);
+                    }
+                    tier.capacity = c;
+                }
+                event.tiers.set(i, tier);
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            return Err(EventError::TierNotFound);
+        }
+
+        save_event(&env, &event_id, &event);
+        Ok(())
     }
 
     /// Update the status of an event. Only the organizer can do this.
@@ -208,6 +324,7 @@ impl EventContract {
         env: Env,
         attendee: Address,
         event_id: Symbol,
+        tier_id: u32,
     ) -> Result<(), EventError> {
         attendee.require_auth();
 
@@ -217,8 +334,24 @@ impl EventContract {
             return Err(EventError::EventNotActive);
         }
 
-        if event.tickets_sold >= event.total_tickets {
-            return Err(EventError::EventSoldOut);
+        let mut tier_index = None;
+        for i in 0..event.tiers.len() {
+            let tier = event.tiers.get(i).unwrap();
+            if tier.tier_id == tier_id {
+                tier_index = Some(i);
+                break;
+            }
+        }
+
+        if tier_index.is_none() {
+            return Err(EventError::TierNotFound);
+        }
+
+        let index = tier_index.unwrap();
+        let mut tier = event.tiers.get(index).unwrap();
+
+        if tier.sold >= tier.capacity {
+            return Err(EventError::TierSoldOut);
         }
 
         if storage::is_registered(&env, &event_id, &attendee) {
@@ -227,9 +360,10 @@ impl EventContract {
 
         storage::save_registration(&env, &event_id, &attendee);
 
-        event.tickets_sold += 1;
+        tier.sold += 1;
+        event.tiers.set(index, tier.clone());
         update_event(&env, &event_id, &event)?;
-        emit_registration(&env, &event_id, &attendee, event.tickets_sold);
+        emit_registration(&env, &event_id, &attendee, tier_id, tier.sold);
 
         Ok(())
     }

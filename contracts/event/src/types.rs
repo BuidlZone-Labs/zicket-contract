@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, String, Symbol};
+use soroban_sdk::{contracttype, Address, String, Symbol, Vec};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -11,6 +11,24 @@ pub enum EventStatus {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketTier {
+    pub tier_id: u32,
+    pub name: String,
+    pub price: i128,
+    pub capacity: u32,
+    pub sold: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketTierParams {
+    pub name: String,
+    pub price: i128,
+    pub capacity: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Event {
     pub event_id: Symbol,
     pub organizer: Address,
@@ -18,9 +36,7 @@ pub struct Event {
     pub description: String,
     pub venue: String,
     pub event_date: u64,
-    pub total_tickets: u32,
-    pub tickets_sold: u32,
-    pub ticket_price: i128,
+    pub tiers: Vec<TicketTier>,
     pub status: EventStatus,
     pub created_at: u64,
 }
@@ -34,8 +50,7 @@ pub struct CreateEventParams {
     pub description: String,
     pub venue: String,
     pub event_date: u64,
-    pub total_tickets: u32,
-    pub ticket_price: i128,
+    pub initial_tiers: Vec<TicketTierParams>,
 }
 
 #[contracttype]
@@ -47,5 +62,4 @@ pub struct UpdateEventParams {
     pub description: Option<String>,
     pub venue: Option<String>,
     pub event_date: Option<u64>,
-    pub ticket_price: Option<i128>,
 }
