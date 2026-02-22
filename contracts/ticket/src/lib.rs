@@ -82,6 +82,43 @@ impl TicketContract {
             .get(&DataKey::OwnerTickets(owner))
             .unwrap_or(vec![&env])
     }
+
+    pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), TicketError> {
+        // 1. Require organizer authorization
+        organizer.require_auth();
+
+        // 2. Retrieve the ticket from storage
+        let mut ticket: Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .ok_or(TicketError::TicketNotFound)?;
+
+        // 3. Verify the caller is the event's organizer
+        if ticket.organizer != organizer {
+            return Err(TicketError::Unauthorized);
+        }
+
+        // 4. Verify ticket status is Valid
+        match ticket.status {
+            TicketStatus::Valid => {}
+            TicketStatus::Used => return Err(TicketError::TicketAlreadyUsed),
+            TicketStatus::Cancelled => return Err(TicketError::EventNotActive),
+        }
+
+        // 5. Update ticket status to Used
+        ticket.status = TicketStatus::Used;
+
+        // 6. Save the updated ticket back to storage
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(ticket_id), &ticket);
+
+        // 7. Emit emit_ticket_used
+        events::emit_ticket_used(&env, ticket_id);
+
+        Ok(())
+    }
 }
 
 mod test;
