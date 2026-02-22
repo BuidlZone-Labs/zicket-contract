@@ -1,5 +1,4 @@
 #![cfg(test)]
-
 use super::*;
 use crate::types::{Ticket, TicketStatus};
 use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
