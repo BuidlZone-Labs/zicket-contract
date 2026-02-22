@@ -53,7 +53,14 @@ fn test_happy_path_transfer() {
     let organizer = Address::generate(&env);
 
     // Setup ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
 
     // Alice transfers to Bob
     client.transfer_ticket(&alice, &bob, &1);
@@ -84,7 +91,14 @@ fn test_transfer_used_ticket() {
     let organizer = Address::generate(&env);
 
     // Setup USED ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Used);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Used,
+    );
 
     // Alice transfers to Bob - should fail with TicketNotTransferable (11)
     client.transfer_ticket(&alice, &bob, &1);
@@ -104,7 +118,14 @@ fn test_transfer_cancelled_ticket() {
     let organizer = Address::generate(&env);
 
     // Setup CANCELLED ticket 1 for Alice
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Cancelled);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Cancelled,
+    );
 
     client.transfer_ticket(&alice, &bob, &1);
 }
@@ -121,7 +142,14 @@ fn test_transfer_to_self() {
     let alice = Address::generate(&env);
     let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
 
     client.transfer_ticket(&alice, &alice, &1); // TransferToSelf (12)
 }
@@ -140,7 +168,14 @@ fn test_unauthorized_transfer() {
     let charlie = Address::generate(&env);
     let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
 
     // Bob tries to transfer Alice's ticket to Charlie
     client.transfer_ticket(&bob, &charlie, &1); // Unauthorized (4)
@@ -159,7 +194,14 @@ fn test_chain_transfer() {
     let charlie = Address::generate(&env);
     let organizer = Address::generate(&env);
 
-    setup_test_ticket(&env, &contract_id, &organizer, &alice, 1, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
 
     client.transfer_ticket(&alice, &bob, &1);
     client.transfer_ticket(&bob, &charlie, &1);
@@ -181,14 +223,24 @@ fn test_use_ticket_happy_path() {
     let owner = Address::generate(&env);
     let ticket_id = 1;
 
-    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
 
     // Organizer uses the ticket
     client.use_ticket(&organizer, &ticket_id);
 
     // Verify ticket status is Used
     let ticket: Ticket = env.as_contract(&contract_id, || {
-        env.storage().persistent().get(&DataKey::Ticket(ticket_id)).unwrap()
+        env.storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .unwrap()
     });
     assert_eq!(ticket.status, TicketStatus::Used);
 }
@@ -206,7 +258,14 @@ fn test_use_ticket_double_checkin() {
     let owner = Address::generate(&env);
     let ticket_id = 1;
 
-    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Used);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Used,
+    );
 
     // Attempt to use already used ticket
     client.use_ticket(&organizer, &ticket_id);
@@ -226,7 +285,14 @@ fn test_use_ticket_unauthorized() {
     let owner = Address::generate(&env);
     let ticket_id = 1;
 
-    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Valid);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
 
     // Random person attempts to use the ticket
     client.use_ticket(&random_person, &ticket_id);
@@ -245,9 +311,15 @@ fn test_use_ticket_cancelled() {
     let owner = Address::generate(&env);
     let ticket_id = 1;
 
-    setup_test_ticket(&env, &contract_id, &organizer, &owner, ticket_id, TicketStatus::Cancelled);
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Cancelled,
+    );
 
     // Attempt to use cancelled ticket
     client.use_ticket(&organizer, &ticket_id);
 }
-
