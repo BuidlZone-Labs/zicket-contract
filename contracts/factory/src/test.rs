@@ -1,17 +1,18 @@
 use super::*;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, BytesN, Env, Symbol, Bytes};
+use soroban_sdk::{Address, Bytes, BytesN, Env, Symbol};
 
-const EVENT_WASM: &[u8] = include_bytes!(
-    "../../../target/wasm32v1-none/release/mock_event_contract.wasm"
-);
+const EVENT_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/release/mock_event_contract.wasm");
 
 fn setup_factory(env: &Env) -> (FactoryContractClient<'_>, Address) {
     let contract_id = env.register(FactoryContract, ());
     let client = FactoryContractClient::new(env, &contract_id);
 
     let admin = Address::generate(env);
-    let wasm_hash = env.deployer().upload_contract_wasm(Bytes::from_slice(env, EVENT_WASM));
+    let wasm_hash = env
+        .deployer()
+        .upload_contract_wasm(Bytes::from_slice(env, EVENT_WASM));
     client.initialize(&admin, &wasm_hash);
 
     (client, admin)
@@ -189,17 +190,8 @@ fn test_duplicate_event_id_rejected() {
 
     client.deploy_event(&organizer, &event_id, &salt(&env, 1), &ticket, &payments);
 
-    let result = client.try_deploy_event(
-        &organizer,
-        &event_id,
-        &salt(&env, 2),
-        &ticket,
-        &payments,
-    );
-    assert_eq!(
-        result.err(),
-        Some(Ok(FactoryError::EventAlreadyDeployed))
-    );
+    let result = client.try_deploy_event(&organizer, &event_id, &salt(&env, 2), &ticket, &payments);
+    assert_eq!(result.err(), Some(Ok(FactoryError::EventAlreadyDeployed)));
 }
 
 #[test]

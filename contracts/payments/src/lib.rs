@@ -158,4 +158,3 @@ impl PaymentsContract {
 
 #[cfg(test)]
 mod test;
-

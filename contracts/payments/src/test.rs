@@ -441,10 +441,7 @@ fn test_partial_refund_then_withdraw() {
     // Refund payment 1
     client.refund(&admin, &pid1);
     assert_eq!(token_client.balance(&payer1), amount1);
-    assert_eq!(
-        client.get_event_revenue(&event_id),
-        amount2 + amount3
-    );
+    assert_eq!(client.get_event_revenue(&event_id), amount2 + amount3);
 
     // Withdraw remaining
     let withdrawn = client.withdraw_revenue(&organizer, &event_id);

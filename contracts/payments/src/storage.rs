@@ -163,4 +163,3 @@ pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentE
     save_payment(env, payment);
     Ok(())
 }
-

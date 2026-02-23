@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol, Vec, IntoVal, vec};
+use soroban_sdk::{contract, contractimpl, vec, Address, BytesN, Env, IntoVal, Symbol, Vec};
 
 mod deployment;
 mod errors;
@@ -62,7 +62,11 @@ impl FactoryContract {
             ticket_contract.into_val(&env),
             payments_contract.into_val(&env),
         ];
-        env.invoke_contract::<()>(&contract_address, &Symbol::new(&env, "initialize"), init_args);
+        env.invoke_contract::<()>(
+            &contract_address,
+            &Symbol::new(&env, "initialize"),
+            init_args,
+        );
 
         let deployed_event = DeployedEvent {
             event_id: event_id.clone(),
