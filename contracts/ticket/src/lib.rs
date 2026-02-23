@@ -117,30 +117,7 @@ impl TicketContract {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
 
-        // 7. Emit emit_ticket_used
-        events::emit_ticket_used(&env, ticket_id);
-
-        Ok(())
-    }
-}
-
-    /// Mark a ticket as used. Only the event organizer (or authorized address) can call this.
-    pub fn use_ticket(env: Env, ticket_id: u64, organizer: Address) -> Result<(), TicketError> {
-        organizer.require_auth();
-
-        let mut ticket = storage::get_ticket(&env, ticket_id)?;
-
-        if ticket.status == TicketStatus::Used {
-            return Err(TicketError::TicketAlreadyUsed);
-        }
-
-        if ticket.status == TicketStatus::Cancelled {
-            return Err(TicketError::Unauthorized);
-        }
-
-        ticket.status = TicketStatus::Used;
-        storage::update_ticket(&env, &ticket);
-
+        // 7. Emit ticket used event
         events::emit_ticket_used(&env, ticket_id);
 
         Ok(())
