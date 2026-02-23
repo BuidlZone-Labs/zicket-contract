@@ -18,4 +18,5 @@ pub enum EventError {
     AlreadyRegistered = 12,
     TierNotFound = 13,
     TierSoldOut = 14,
+    ContractLinksNotConfigured = 15,
 }

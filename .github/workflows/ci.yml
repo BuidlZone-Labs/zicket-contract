@@ -97,7 +97,7 @@ jobs:
             ${{ runner.os }}-target-build-
       
       - name: Build release
-        run: cargo build --release --all-targets
+        run: cargo build --release --workspace
 
   test:
     name: Test

@@ -2,7 +2,7 @@ use crate::errors::EventError;
 use crate::types::{CreateEventParams, EventStatus, TicketTierParams, UpdateEventParams};
 use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, Env, String, Symbol};
+use soroban_sdk::{token, Address, Env, String, Symbol};
 
 // ============================================================
 // Setup
@@ -588,6 +588,10 @@ fn test_register_for_event_happy_path() {
     let organizer = Address::generate(&env);
     let attendee = Address::generate(&env);
 
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee, 100_000_000);
+
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
@@ -608,6 +612,10 @@ fn test_register_for_event_not_active_fails() {
     let organizer = Address::generate(&env);
     let attendee = Address::generate(&env);
 
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee, 100_000_000);
+
     let event_id = setup_event(&env, &client, &organizer);
 
     let result = client.try_register_for_event(&attendee, &event_id, &0);
@@ -622,6 +630,11 @@ fn test_register_for_event_sold_out_fails() {
     let organizer = Address::generate(&env);
     let attendee1 = Address::generate(&env);
     let attendee2 = Address::generate(&env);
+
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee1, 100);
+    fund_attendee(&env, &token_admin, &token, &attendee2, 100);
 
     let event_id = Symbol::new(&env, "event_02");
     let params = CreateEventParams {
@@ -656,6 +669,10 @@ fn test_register_for_event_duplicate_fails() {
     let organizer = Address::generate(&env);
     let attendee = Address::generate(&env);
 
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee, 200_000_000);
+
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
@@ -672,6 +689,10 @@ fn test_register_for_event_cancelled_fails() {
     let organizer = Address::generate(&env);
     let attendee = Address::generate(&env);
 
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee, 100_000_000);
+
     let event_id = setup_event(&env, &client, &organizer);
     client.cancel_event(&organizer, &event_id);
 
@@ -687,6 +708,11 @@ fn test_get_attendees() {
     let organizer = Address::generate(&env);
     let attendee1 = Address::generate(&env);
     let attendee2 = Address::generate(&env);
+
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee1, 100_000_000);
+    fund_attendee(&env, &token_admin, &token, &attendee2, 100_000_000);
 
     let event_id = setup_event(&env, &client, &organizer);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -728,4 +754,39 @@ fn setup_event(env: &Env, client: &EventContractClient, organizer: &Address) -> 
 
     client.create_event(&params);
     event_id
+}
+
+fn setup_registration_contracts(
+    env: &Env,
+    event_client: &EventContractClient,
+    admin: &Address,
+) -> (Address, Address, Address) {
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+
+    let token_admin = Address::generate(env);
+    let token = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+    payments_client.initialize(admin, &token);
+
+    event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
+
+    (payments_contract_id, token, token_admin)
+}
+
+fn fund_attendee(
+    env: &Env,
+    token_admin: &Address,
+    token: &Address,
+    attendee: &Address,
+    amount: i128,
+) {
+    let asset_admin = token::StellarAssetClient::new(env, token);
+    let token_client = token::Client::new(env, token);
+    asset_admin.mint(token_admin, &amount);
+    token_client.transfer(token_admin, attendee, &amount);
 }

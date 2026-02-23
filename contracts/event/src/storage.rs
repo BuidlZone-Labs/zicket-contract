@@ -7,6 +7,8 @@ pub enum DataKey {
     Event(Symbol),
     Registration(Symbol, Address),
     EventAttendees(Symbol),
+    TicketContract,
+    PaymentsContract,
 }
 
 /// Check if an event exists in storage.
@@ -75,4 +77,35 @@ pub fn get_attendees(env: &Env, event_id: &Symbol) -> Vec<Address> {
         .persistent()
         .get(&DataKey::EventAttendees(event_id.clone()))
         .unwrap_or(Vec::new(env))
+}
+
+pub fn set_ticket_contract(env: &Env, ticket_contract: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TicketContract, ticket_contract);
+}
+
+pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PaymentsContract, payments_contract);
+}
+
+pub fn get_ticket_contract(env: &Env) -> Result<Address, EventError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketContract)
+        .ok_or(EventError::ContractLinksNotConfigured)
+}
+
+pub fn get_payments_contract(env: &Env) -> Result<Address, EventError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PaymentsContract)
+        .ok_or(EventError::ContractLinksNotConfigured)
+}
+
+pub fn has_linked_contracts(env: &Env) -> bool {
+    env.storage().persistent().has(&DataKey::TicketContract)
+        && env.storage().persistent().has(&DataKey::PaymentsContract)
 }
