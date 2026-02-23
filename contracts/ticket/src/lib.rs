@@ -4,6 +4,9 @@ mod events;
 mod storage;
 mod types;
 
+#[cfg(test)]
+mod test;
+
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
@@ -14,53 +17,6 @@ pub struct TicketContract;
 
 #[contractimpl]
 impl TicketContract {
-    pub fn mint_ticket(
-        env: Env,
-        event_id: Symbol,
-        organizer: Address,
-        owner: Address,
-    ) -> Result<u64, TicketError> {
-        let ticket_id = read_next_ticket_id(&env);
-
-        let ticket = Ticket {
-            ticket_id,
-            event_id: event_id.clone(),
-            organizer,
-            owner: owner.clone(),
-            issued_at: env.ledger().timestamp(),
-            status: TicketStatus::Valid,
-        };
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::Ticket(ticket_id), &ticket);
-
-        let mut owner_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(owner.clone()))
-            .unwrap_or(vec![&env]);
-        owner_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OwnerTickets(owner), &owner_tickets);
-
-        let mut event_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EventTickets(event_id.clone()))
-            .unwrap_or(vec![&env]);
-        event_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::EventTickets(event_id), &event_tickets);
-
-        write_next_ticket_id(&env, ticket_id + 1);
-        events::emit_ticket_minted(&env, ticket_id);
-
-        Ok(ticket_id)
-    }
-
     pub fn transfer_ticket(
         env: Env,
         from: Address,
@@ -161,22 +117,46 @@ impl TicketContract {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
 
-        // 7. Emit emit_ticket_used
+        // 7. Emit ticket used event
         events::emit_ticket_used(&env, ticket_id);
 
         Ok(())
     }
-}
 
-fn read_next_ticket_id(env: &Env) -> u64 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::NextTicketId)
-        .unwrap_or(1)
-}
+    /// Query a ticket by its ID.
+    pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, TicketError> {
+        storage::get_ticket(&env, ticket_id)
+    }
 
-fn write_next_ticket_id(env: &Env, next_id: u64) {
-    env.storage().persistent().set(&DataKey::NextTicketId, &next_id);
-}
+    /// List all ticket IDs for a specific owner.
+    pub fn get_owner_tickets(env: Env, owner: Address) -> Vec<u64> {
+        storage::get_tickets_by_owner(&env, owner)
+    }
 
-mod test;
+    /// List all ticket IDs for a specific event.
+    pub fn get_event_tickets(env: Env, event_id: Symbol) -> Vec<u64> {
+        storage::get_tickets_by_event(&env, event_id)
+    }
+
+    /// Cancel a ticket. Can be called by the owner or an authorized caller.
+    pub fn cancel_ticket(env: Env, ticket_id: u64, caller: Address) -> Result<(), TicketError> {
+        caller.require_auth();
+
+        let mut ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if caller != ticket.owner {
+            return Err(TicketError::Unauthorized);
+        }
+
+        if ticket.status != TicketStatus::Valid {
+            return Err(TicketError::TicketAlreadyUsed);
+        }
+
+        ticket.status = TicketStatus::Cancelled;
+        storage::update_ticket(&env, &ticket);
+
+        events::emit_ticket_cancelled(&env, ticket_id);
+
+        Ok(())
+    }
+}
