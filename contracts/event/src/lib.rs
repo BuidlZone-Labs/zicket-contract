@@ -1,5 +1,7 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
+use payments_contract::PaymentsContractClient;
+use ticket_contract::TicketContractClient;
 
 mod errors;
 mod events;
@@ -20,6 +22,21 @@ pub struct EventContract;
 
 #[contractimpl]
 impl EventContract {
+    /// Link ticket and payments contracts used for registration flow.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        ticket_contract: Address,
+        payments_contract: Address,
+    ) -> Result<(), EventError> {
+        admin.require_auth();
+
+        storage::set_ticket_contract(&env, &ticket_contract);
+        storage::set_payments_contract(&env, &payments_contract);
+
+        Ok(())
+    }
+
     /// Create a new event. The organizer must authorize the transaction.
     pub fn create_event(env: Env, params: CreateEventParams) -> Result<Event, EventError> {
         // Require organizer authorization
@@ -355,6 +372,19 @@ impl EventContract {
             return Err(EventError::AlreadyRegistered);
         }
 
+        let payments_contract = storage::get_payments_contract(&env)?;
+        let ticket_contract = storage::get_ticket_contract(&env)?;
+
+        if tier.price > 0 {
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            // This call must succeed before minting and local registration persist.
+            payments_client.pay_for_ticket(&attendee, &event_id, &tier.price);
+        }
+
+        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+        // Minting after payment keeps the entire flow atomic in one transaction.
+        ticket_client.mint_ticket(&event.event_id, &event.organizer, &attendee);
+
         storage::save_registration(&env, &event_id, &attendee);
 
         tier.sold += 1;
@@ -385,3 +415,6 @@ impl EventContract {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod integration_tests;

@@ -9,3 +9,8 @@ pub fn emit_ticket_used(env: &Env, ticket_id: u64) {
     let topics = (Symbol::new(env, "ticket_used"), ticket_id);
     env.events().publish(topics, ticket_id);
 }
+
+pub fn emit_ticket_minted(env: &Env, ticket_id: u64) {
+    let topics = (Symbol::new(env, "ticket_minted"), ticket_id);
+    env.events().publish(topics, ticket_id);
+}

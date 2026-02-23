@@ -7,13 +7,60 @@ mod types;
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, vec, Address, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
 
 #[contractimpl]
 impl TicketContract {
+    pub fn mint_ticket(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+        owner: Address,
+    ) -> Result<u64, TicketError> {
+        let ticket_id = read_next_ticket_id(&env);
+
+        let ticket = Ticket {
+            ticket_id,
+            event_id: event_id.clone(),
+            organizer,
+            owner: owner.clone(),
+            issued_at: env.ledger().timestamp(),
+            status: TicketStatus::Valid,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(ticket_id), &ticket);
+
+        let mut owner_tickets: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OwnerTickets(owner.clone()))
+            .unwrap_or(vec![&env]);
+        owner_tickets.push_back(ticket_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::OwnerTickets(owner), &owner_tickets);
+
+        let mut event_tickets: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventTickets(event_id.clone()))
+            .unwrap_or(vec![&env]);
+        event_tickets.push_back(ticket_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EventTickets(event_id), &event_tickets);
+
+        write_next_ticket_id(&env, ticket_id + 1);
+        events::emit_ticket_minted(&env, ticket_id);
+
+        Ok(ticket_id)
+    }
+
     pub fn transfer_ticket(
         env: Env,
         from: Address,
@@ -119,6 +166,17 @@ impl TicketContract {
 
         Ok(())
     }
+}
+
+fn read_next_ticket_id(env: &Env) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::NextTicketId)
+        .unwrap_or(1)
+}
+
+fn write_next_ticket_id(env: &Env, next_id: u64) {
+    env.storage().persistent().set(&DataKey::NextTicketId, &next_id);
 }
 
 mod test;
