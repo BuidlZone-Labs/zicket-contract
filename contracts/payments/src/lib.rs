@@ -79,7 +79,83 @@ impl PaymentsContract {
 
         Ok(payment_id)
     }
+
+    pub fn refund(env: Env, admin: Address, payment_id: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
+
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let mut payment = storage::get_payment(&env, payment_id)?;
+
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        let token_client = token::Client::new(&env, &payment.token);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &payment.payer,
+            &payment.amount,
+        );
+
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+        storage::subtract_event_revenue(&env, &payment.event_id, payment.amount);
+
+        events::emit_payment_refunded(
+            &env,
+            payment_id,
+            payment.event_id.clone(),
+            payment.payer.clone(),
+            payment.amount,
+        );
+
+        Ok(())
+    }
+
+    pub fn withdraw_revenue(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+    ) -> Result<i128, PaymentError> {
+        organizer.require_auth();
+
+        let revenue = storage::get_event_revenue(&env, &event_id);
+        if revenue <= 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        let payment_ids = storage::get_event_payments(&env, &event_id);
+        let mut total: i128 = 0;
+
+        for i in 0..payment_ids.len() {
+            let pid = payment_ids.get(i).unwrap();
+            let mut payment = storage::get_payment(&env, pid).unwrap();
+
+            if payment.status == PaymentStatus::Held {
+                total += payment.amount;
+                payment.status = PaymentStatus::Released;
+                storage::update_payment(&env, &payment).unwrap();
+            }
+        }
+
+        if total > 0 {
+            let token_address = storage::get_accepted_token(&env)?;
+            let token_client = token::Client::new(&env, &token_address);
+            token_client.transfer(&env.current_contract_address(), &organizer, &total);
+        }
+
+        storage::set_event_revenue(&env, &event_id, 0);
+
+        events::emit_revenue_withdrawn(&env, event_id, organizer, total);
+
+        Ok(total)
+    }
 }
 
 #[cfg(test)]
 mod test;
+

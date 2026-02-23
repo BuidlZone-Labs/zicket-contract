@@ -12,3 +12,28 @@ pub fn emit_payment_received(
         (payment_id, event_id, payer, amount),
     );
 }
+
+pub fn emit_payment_refunded(
+    env: &Env,
+    payment_id: u64,
+    event_id: Symbol,
+    payer: Address,
+    amount: i128,
+) {
+    env.events().publish(
+        (symbol_short!("refund"),),
+        (payment_id, event_id, payer, amount),
+    );
+}
+
+pub fn emit_revenue_withdrawn(
+    env: &Env,
+    event_id: Symbol,
+    organizer: Address,
+    amount: i128,
+) {
+    env.events().publish(
+        (symbol_short!("withdraw"),),
+        (event_id, organizer, amount),
+    );
+}

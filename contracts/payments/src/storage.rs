@@ -133,6 +133,24 @@ pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
+pub fn subtract_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
+    let current_revenue = get_event_revenue(env, event_id);
+    let new_revenue = current_revenue - amount;
+    let key = DataKey::EventRevenue(event_id.clone());
+    env.storage().persistent().set(&key, &new_revenue);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+pub fn set_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
+    let key = DataKey::EventRevenue(event_id.clone());
+    env.storage().persistent().set(&key, &amount);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
 /// Update a payment record in storage.
 pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     if !env
@@ -145,3 +163,4 @@ pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentE
     save_payment(env, payment);
     Ok(())
 }
+
