@@ -4,10 +4,13 @@ mod events;
 mod storage;
 mod types;
 
+#[cfg(test)]
+mod test;
+
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, vec, Address, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
@@ -114,11 +117,46 @@ impl TicketContract {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
 
-        // 7. Emit emit_ticket_used
+        // 7. Emit ticket used event
         events::emit_ticket_used(&env, ticket_id);
 
         Ok(())
     }
-}
 
-mod test;
+    /// Query a ticket by its ID.
+    pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, TicketError> {
+        storage::get_ticket(&env, ticket_id)
+    }
+
+    /// List all ticket IDs for a specific owner.
+    pub fn get_owner_tickets(env: Env, owner: Address) -> Vec<u64> {
+        storage::get_tickets_by_owner(&env, owner)
+    }
+
+    /// List all ticket IDs for a specific event.
+    pub fn get_event_tickets(env: Env, event_id: Symbol) -> Vec<u64> {
+        storage::get_tickets_by_event(&env, event_id)
+    }
+
+    /// Cancel a ticket. Can be called by the owner or an authorized caller.
+    pub fn cancel_ticket(env: Env, ticket_id: u64, caller: Address) -> Result<(), TicketError> {
+        caller.require_auth();
+
+        let mut ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if caller != ticket.owner {
+            return Err(TicketError::Unauthorized);
+        }
+
+        if ticket.status != TicketStatus::Valid {
+            return Err(TicketError::TicketAlreadyUsed);
+        }
+
+        ticket.status = TicketStatus::Cancelled;
+        storage::update_ticket(&env, &ticket);
+
+        events::emit_ticket_cancelled(&env, ticket_id);
+
+        Ok(())
+    }
+}
