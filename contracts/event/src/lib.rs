@@ -1,6 +1,6 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 use payments_contract::PaymentsContractClient;
+use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 use ticket_contract::TicketContractClient;
 
 mod errors;

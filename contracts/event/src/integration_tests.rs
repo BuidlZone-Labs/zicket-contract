@@ -1,5 +1,3 @@
-#![cfg(test)]
-
 use crate::types::{CreateEventParams, EventStatus, TicketTierParams};
 use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
@@ -14,7 +12,12 @@ fn setup_env() -> Env {
     env
 }
 
-fn create_active_event(env: &Env, client: &EventContractClient, organizer: &Address, event_id: Symbol) {
+fn create_active_event(
+    env: &Env,
+    client: &EventContractClient,
+    organizer: &Address,
+    event_id: Symbol,
+) {
     let params = CreateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -50,10 +53,13 @@ fn test_registration_cross_contract_happy_path() {
     let ticket_client = ticket_contract::TicketContractClient::new(&env, &ticket_contract_id);
 
     let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
-    let payments_client = payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
 
     let token_admin = Address::generate(&env);
-    let token_address = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
     let token_admin_client = token::StellarAssetClient::new(&env, &token_address);
     let token_client = token::Client::new(&env, &token_address);
 
@@ -96,10 +102,13 @@ fn test_registration_reverts_if_minting_fails() {
     let event_client = EventContractClient::new(&env, &event_contract_id);
 
     let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
-    let payments_client = payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
 
     let token_admin = Address::generate(&env);
-    let token_address = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
     let token_admin_client = token::StellarAssetClient::new(&env, &token_address);
     let token_client = token::Client::new(&env, &token_address);
 

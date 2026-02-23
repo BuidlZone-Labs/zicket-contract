@@ -765,9 +765,12 @@ fn setup_registration_contracts(
     let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
 
     let token_admin = Address::generate(env);
-    let token = env.register_stellar_asset_contract_v2(token_admin.clone()).address();
+    let token = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
 
-    let payments_client = payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
     payments_client.initialize(admin, &token);
 
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
@@ -775,7 +778,13 @@ fn setup_registration_contracts(
     (payments_contract_id, token, token_admin)
 }
 
-fn fund_attendee(env: &Env, token_admin: &Address, token: &Address, attendee: &Address, amount: i128) {
+fn fund_attendee(
+    env: &Env,
+    token_admin: &Address,
+    token: &Address,
+    attendee: &Address,
+    amount: i128,
+) {
     let asset_admin = token::StellarAssetClient::new(env, token);
     let token_client = token::Client::new(env, token);
     asset_admin.mint(token_admin, &amount);
