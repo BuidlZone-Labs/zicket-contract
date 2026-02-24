@@ -1,0 +1,111 @@
+   Compiling event-contract v0.0.0 (/home/zeus/projects/zicket-contract-man/contracts/event)
+error: No such file or directory (os error 2)
+ --> contracts/event/src/lib.rs:4:5
+  |
+4 | /     soroban_sdk::contractimport!(
+5 | |         file = "../../../target/wasm32v1-none/release/payments_contract.wasm"
+6 | |     );
+  | |_____^
+  |
+  = note: this error originates in the macro `soroban_sdk::contractimport` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error: No such file or directory (os error 2)
+  --> contracts/event/src/lib.rs:11:5
+   |
+11 | /     soroban_sdk::contractimport!(
+12 | |         file = "../../../target/wasm32v1-none/release/ticket_contract.wasm"
+13 | |     );
+   | |_____^
+   |
+   = note: this error originates in the macro `soroban_sdk::contractimport` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0432]: unresolved import `payments_contract::Client`
+ --> contracts/event/src/lib.rs:8:9
+  |
+8 | pub use payments_contract::Client as PaymentsContractClient;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `Client` in `payments_contract`
+  |
+help: consider importing this struct instead
+  |
+8 - pub use payments_contract::Client as PaymentsContractClient;
+8 + pub use soroban_sdk::token::Client as PaymentsContractClient;
+  |
+
+error[E0432]: unresolved import `ticket_contract::Client`
+  --> contracts/event/src/lib.rs:15:9
+   |
+15 | pub use ticket_contract::Client as TicketContractClient;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `Client` in `ticket_contract`
+   |
+help: consider importing this struct instead
+   |
+15 - pub use ticket_contract::Client as TicketContractClient;
+15 + pub use soroban_sdk::token::Client as TicketContractClient;
+   |
+
+error[E0425]: cannot find value `WASM` in module `crate::ticket_contract`
+   --> contracts/event/src/test.rs:764:87
+    |
+764 |     let ticket_contract_id = env.register_contract_wasm(None, crate::ticket_contract::WASM);
+    |                                                                                       ^^^^ not found in `crate::ticket_contract`
+
+error[E0425]: cannot find value `WASM` in module `crate::payments_contract`
+   --> contracts/event/src/test.rs:765:91
+    |
+765 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+    |                                                                                           ^^^^ not found in `crate::payments_contract`
+
+error[E0425]: cannot find value `WASM` in module `crate::ticket_contract`
+  --> contracts/event/src/integration_tests.rs:52:87
+   |
+52 |     let ticket_contract_id = env.register_contract_wasm(None, crate::ticket_contract::WASM);
+   |                                                                                       ^^^^ not found in `crate::ticket_contract`
+
+error[E0425]: cannot find value `WASM` in module `crate::payments_contract`
+  --> contracts/event/src/integration_tests.rs:55:91
+   |
+55 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+   |                                                                                           ^^^^ not found in `crate::payments_contract`
+
+error[E0425]: cannot find value `WASM` in module `crate::payments_contract`
+   --> contracts/event/src/integration_tests.rs:104:91
+    |
+104 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+    |                                                                                           ^^^^ not found in `crate::payments_contract`
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract_wasm`: use `register`
+   --> contracts/event/src/test.rs:764:34
+    |
+764 |     let ticket_contract_id = env.register_contract_wasm(None, crate::ticket_contract::WASM);
+    |                                  ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract_wasm`: use `register`
+   --> contracts/event/src/test.rs:765:36
+    |
+765 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract_wasm`: use `register`
+  --> contracts/event/src/integration_tests.rs:52:34
+   |
+52 |     let ticket_contract_id = env.register_contract_wasm(None, crate::ticket_contract::WASM);
+   |                                  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract_wasm`: use `register`
+  --> contracts/event/src/integration_tests.rs:55:36
+   |
+55 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+   |                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: use of deprecated method `soroban_sdk::Env::register_contract_wasm`: use `register`
+   --> contracts/event/src/integration_tests.rs:104:36
+    |
+104 |     let payments_contract_id = env.register_contract_wasm(None, crate::payments_contract::WASM);
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^
+
+Some errors have detailed explanations: E0425, E0432.
+For more information about an error, try `rustc --explain E0425`.
+warning: `event-contract` (lib test) generated 5 warnings
+error: could not compile `event-contract` (lib test) due to 9 previous errors; 5 warnings emitted

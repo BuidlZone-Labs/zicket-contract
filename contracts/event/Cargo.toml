@@ -10,8 +10,6 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-payments-contract = { path = "../payments" }
-ticket-contract = { path = "../ticket" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

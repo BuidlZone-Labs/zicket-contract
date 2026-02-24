@@ -49,12 +49,11 @@ fn test_registration_cross_contract_happy_path() {
     let event_contract_id = env.register(EventContract, ());
     let event_client = EventContractClient::new(&env, &event_contract_id);
 
-    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
-    let ticket_client = ticket_contract::TicketContractClient::new(&env, &ticket_contract_id);
+    let ticket_contract_id = env.register(crate::ticket_contract::WASM, ());
+    let ticket_client = crate::TicketContractClient::new(&env, &ticket_contract_id);
 
-    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
-    let payments_client =
-        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+    let payments_contract_id = env.register(crate::payments_contract::WASM, ());
+    let payments_client = crate::PaymentsContractClient::new(&env, &payments_contract_id);
 
     let token_admin = Address::generate(&env);
     let token_address = env
@@ -101,9 +100,8 @@ fn test_registration_reverts_if_minting_fails() {
     let event_contract_id = env.register(EventContract, ());
     let event_client = EventContractClient::new(&env, &event_contract_id);
 
-    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
-    let payments_client =
-        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+    let payments_contract_id = env.register(crate::payments_contract::WASM, ());
+    let payments_client = crate::PaymentsContractClient::new(&env, &payments_contract_id);
 
     let token_admin = Address::generate(&env);
     let token_address = env

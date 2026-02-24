@@ -761,16 +761,15 @@ fn setup_registration_contracts(
     event_client: &EventContractClient,
     admin: &Address,
 ) -> (Address, Address, Address) {
-    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
-    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let ticket_contract_id = env.register(crate::ticket_contract::WASM, ());
+    let payments_contract_id = env.register(crate::payments_contract::WASM, ());
 
     let token_admin = Address::generate(env);
     let token = env
         .register_stellar_asset_contract_v2(token_admin.clone())
         .address();
 
-    let payments_client =
-        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+    let payments_client = crate::PaymentsContractClient::new(env, &payments_contract_id);
     payments_client.initialize(admin, &token);
 
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
