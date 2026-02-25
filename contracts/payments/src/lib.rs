@@ -79,6 +79,51 @@ impl PaymentsContract {
 
         Ok(payment_id)
     }
+
+    /// Refund a payment. Transfers tokens from contract back to payer.
+    pub fn refund(env: Env, payment_id: u64) -> Result<(), PaymentError> {
+        // Retrieve the payment record
+        let mut payment = storage::get_payment(&env, payment_id)?;
+
+        // Verify status is Held
+        if payment.status == PaymentStatus::Refunded {
+            return Err(PaymentError::PaymentAlreadyRefunded);
+        }
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        let token_client = token::Client::new(&env, &payment.token);
+        let contract_address = env.current_contract_address();
+
+        // Transfer tokens back to payer
+        token_client.transfer(&contract_address, &payment.payer, &payment.amount);
+
+        // Update status and save
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+
+        // Update event revenue
+        let mut revenue = storage::get_event_revenue(&env, &payment.event_id);
+        revenue -= payment.amount;
+        let key = storage::DataKey::EventRevenue(payment.event_id.clone());
+        env.storage().persistent().set(&key, &revenue);
+
+        events::emit_payment_refunded(
+            &env,
+            payment_id,
+            payment.event_id,
+            payment.payer,
+            payment.amount,
+        );
+
+        Ok(())
+    }
+
+    /// Get all payment IDs for an event.
+    pub fn get_event_payments(env: Env, event_id: Symbol) -> soroban_sdk::Vec<u64> {
+        storage::get_event_payments(&env, &event_id)
+    }
 }
 
 #[cfg(test)]

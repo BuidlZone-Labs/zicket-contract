@@ -48,7 +48,14 @@ pub fn emit_status_changed(
 /// Publish a Soroban event when an event is cancelled.
 pub fn emit_event_cancelled(env: &Env, event_id: &Symbol) {
     env.events()
-        .publish((symbol_short!("cancel"),), (event_id.clone(),));
+        .publish((symbol_short!("ev_cnc"), event_id.clone()), (event_id,));
+}
+
+pub fn emit_refunds_processed(env: &Env, event_id: &Symbol, refund_count: u32) {
+    env.events().publish(
+        (symbol_short!("refs_prc"), event_id.clone()),
+        (event_id, refund_count),
+    );
 }
 
 pub fn emit_registration(

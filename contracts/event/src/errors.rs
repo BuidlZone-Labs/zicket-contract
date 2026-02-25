@@ -19,4 +19,5 @@ pub enum EventError {
     TierNotFound = 13,
     TierSoldOut = 14,
     ContractLinksNotConfigured = 15,
+    RefundFailed = 16,
 }

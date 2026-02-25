@@ -13,8 +13,8 @@ pub use storage::*;
 pub use types::*;
 
 use events::{
-    emit_event_cancelled, emit_event_created, emit_event_updated, emit_registration,
-    emit_status_changed,
+    emit_event_cancelled, emit_event_created, emit_event_updated, emit_refunds_processed,
+    emit_registration, emit_status_changed,
 };
 
 #[contract]
@@ -330,6 +330,31 @@ impl EventContract {
         update_event(&env, &event_id, &event)?;
         emit_status_changed(&env, &event_id, &old_status, &EventStatus::Cancelled);
         emit_event_cancelled(&env, &event_id);
+
+        // Process refunds if contracts are linked
+        if has_linked_contracts(&env) {
+            let payments_contract = get_payments_contract(&env)?;
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+
+            let payment_ids = payments_client.get_event_payments(&event_id);
+            let mut refund_count = 0;
+
+            for payment_id in payment_ids.iter() {
+                // We attempt to refund each payment.
+                // If a refund fails, we log it (or in this case, we could choose to revert,
+                // but usually for cancellation we want to try to refund as many as possible).
+                // However, per requirements, we should decide on behavior.
+                // Let's go with: if one fails, we continue but we might want to track failures.
+                // For simplicity and atomicity, if we want it fully on-chain,
+                // a failure in a cross-contract call will revert the whole transaction
+                // unless we handle it. In Soroban, sub-calls that fail will revert the parent.
+
+                payments_client.refund(&payment_id);
+                refund_count += 1;
+            }
+
+            emit_refunds_processed(&env, &event_id, refund_count);
+        }
 
         Ok(())
     }
