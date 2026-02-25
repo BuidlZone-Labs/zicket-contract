@@ -1,6 +1,6 @@
-use soroban_sdk::{Address, Env, Symbol};
+use soroban_sdk::{contractevent, Address};
 
-pub fn emit_factory_initialized(env: &Env, admin: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "factory_initialized"),), admin.clone());
+#[contractevent]
+pub struct FactoryInitialized {
+    pub admin: Address,
 }
