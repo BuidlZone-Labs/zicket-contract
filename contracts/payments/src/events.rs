@@ -47,3 +47,8 @@ pub fn emit_payment_refunded(
     }
     .publish(env);
 }
+
+pub fn emit_revenue_withdrawn(env: &Env, event_id: Symbol, organizer: Address, amount: i128) {
+    env.events()
+        .publish((symbol_short!("withdraw"),), (event_id, organizer, amount));
+}

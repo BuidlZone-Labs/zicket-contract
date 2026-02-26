@@ -1,7 +1,18 @@
 #![no_std]
-use payments_contract::PaymentsContractClient;
+
+mod payments_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/payments_contract.wasm"
+    );
+}
+pub use payments_contract::Client as PaymentsContractClient;
+
+mod ticket_contract {
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/ticket_contract.wasm");
+}
+pub use ticket_contract::Client as TicketContractClient;
+
 use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
-use ticket_contract::TicketContractClient;
 
 mod errors;
 mod events;
