@@ -1,4 +1,20 @@
-use soroban_sdk::{symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contractevent, Address, Env, Symbol};
+
+#[contractevent(data_format = "vec", topics = ["payment"])]
+pub struct PaymentReceived {
+    pub payment_id: u64,
+    pub event_id: Symbol,
+    pub payer: Address,
+    pub amount: i128,
+}
+
+#[contractevent(data_format = "vec", topics = ["refund"])]
+pub struct PaymentRefunded {
+    pub payment_id: u64,
+    pub event_id: Symbol,
+    pub payer: Address,
+    pub amount: i128,
+}
 
 pub fn emit_payment_received(
     env: &Env,
@@ -7,10 +23,13 @@ pub fn emit_payment_received(
     payer: Address,
     amount: i128,
 ) {
-    env.events().publish(
-        (symbol_short!("payment"),),
-        (payment_id, event_id, payer, amount),
-    );
+    PaymentReceived {
+        payment_id,
+        event_id,
+        payer,
+        amount,
+    }
+    .publish(env);
 }
 
 pub fn emit_payment_refunded(
@@ -20,8 +39,11 @@ pub fn emit_payment_refunded(
     payer: Address,
     amount: i128,
 ) {
-    env.events().publish(
-        (symbol_short!("refund"),),
-        (payment_id, event_id, payer, amount),
-    );
+    PaymentRefunded {
+        payment_id,
+        event_id,
+        payer,
+        amount,
+    }
+    .publish(env);
 }
