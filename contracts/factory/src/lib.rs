@@ -31,7 +31,7 @@ impl FactoryContract {
         storage::set_admin(&env, &admin);
         storage::set_event_wasm_hash(&env, &event_wasm_hash);
 
-        FactoryInitialized { admin: admin.clone() }.publish(&env);
+        FactoryInitialized { admin }.publish(&env);
 
         Ok(())
     }
