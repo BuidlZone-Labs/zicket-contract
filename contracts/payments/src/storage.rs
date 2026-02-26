@@ -49,7 +49,7 @@ pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     );
 }
 
-///check ifcontract isinitialized.
+/// Check if contract is initialized.
 pub fn is_initialized(env: &Env) -> bool {
     env.storage().persistent().has(&DataKey::Admin)
         && env.storage().persistent().has(&DataKey::AcceptedToken)

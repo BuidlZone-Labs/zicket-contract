@@ -8,6 +8,7 @@ mod storage;
 mod types;
 
 pub use errors::*;
+pub use events::*;
 pub use storage::*;
 pub use types::*;
 
@@ -30,7 +31,7 @@ impl FactoryContract {
         storage::set_admin(&env, &admin);
         storage::set_event_wasm_hash(&env, &event_wasm_hash);
 
-        events::emit_factory_initialized(&env, &admin);
+        FactoryInitialized { admin }.publish(&env);
 
         Ok(())
     }
