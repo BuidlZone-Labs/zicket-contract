@@ -1,8 +1,15 @@
-use soroban_sdk::{Address, Env, Symbol};
+use soroban_sdk::{contractevent, Address, Env};
+
+#[contractevent(data_format = "single-value", topics = ["factory_initialized"])]
+pub struct FactoryInitialized {
+    pub admin: Address,
+}
 
 pub fn emit_factory_initialized(env: &Env, admin: &Address) {
-    env.events()
-        .publish((Symbol::new(env, "factory_initialized"),), admin.clone());
+    FactoryInitialized {
+        admin: admin.clone(),
+    }
+    .publish(env);
 }
 
 pub fn emit_event_deployed(
