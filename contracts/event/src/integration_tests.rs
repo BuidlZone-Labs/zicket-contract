@@ -139,3 +139,61 @@ fn test_registration_reverts_if_minting_fails() {
     let registered = event_client.is_registered(&event_id, &attendee);
     assert!(!registered);
 }
+
+#[test]
+fn test_cancel_event_triggers_refunds() {
+    let env = setup_env();
+
+    let organizer = Address::generate(&env);
+    let attendee1 = Address::generate(&env);
+    let attendee2 = Address::generate(&env);
+
+    let event_contract_id = env.register(EventContract, ());
+    let event_client = EventContractClient::new(&env, &event_contract_id);
+
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_address);
+    let token_client = token::Client::new(&env, &token_address);
+
+    payments_client.initialize(&organizer, &token_address);
+    event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+
+    let price = 100_000_000i128;
+    token_admin_client.mint(&token_admin, &(price * 2));
+    token_client.transfer(&token_admin, &attendee1, &price);
+    token_client.transfer(&token_admin, &attendee2, &price);
+
+    let event_id = Symbol::new(&env, "evt_refund_1");
+    create_active_event(&env, &event_client, &organizer, event_id.clone());
+
+    event_client.register_for_event(&attendee1, &event_id, &0);
+    event_client.register_for_event(&attendee2, &event_id, &0);
+
+    assert_eq!(token_client.balance(&attendee1), 0);
+    assert_eq!(token_client.balance(&attendee2), 0);
+    assert_eq!(token_client.balance(&payments_contract_id), price * 2);
+    assert_eq!(payments_client.get_event_revenue(&event_id), price * 2);
+
+    // Cancel event - should trigger refunds
+    event_client.cancel_event(&organizer, &event_id);
+
+    // Check event status
+    assert_eq!(
+        event_client.get_event_status(&event_id),
+        EventStatus::Cancelled
+    );
+
+    // Check balances restored
+    assert_eq!(token_client.balance(&attendee1), price);
+    assert_eq!(token_client.balance(&attendee2), price);
+    assert_eq!(token_client.balance(&payments_contract_id), 0);
+    assert_eq!(payments_client.get_event_revenue(&event_id), 0);
+}
