@@ -7,6 +7,7 @@ pub enum DataKey {
     Event(Symbol),
     Registration(Symbol, Address),
     EventAttendees(Symbol),
+    Admin,
     TicketContract,
     PaymentsContract,
 }
@@ -77,6 +78,22 @@ pub fn get_attendees(env: &Env, event_id: &Symbol) -> Vec<Address> {
         .persistent()
         .get(&DataKey::EventAttendees(event_id.clone()))
         .unwrap_or(Vec::new(env))
+}
+
+pub fn set_admin(env: &Env, admin: &Address) {
+    env.storage().persistent().set(&DataKey::Admin, admin);
+    env.storage().persistent().extend_ttl(
+        &DataKey::Admin,
+        60 * 60 * 24 * 30,
+        60 * 60 * 24 * 30 * 2,
+    );
+}
+
+pub fn get_admin(env: &Env) -> Result<Address, EventError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Admin)
+        .ok_or(EventError::ContractLinksNotConfigured)
 }
 
 pub fn set_ticket_contract(env: &Env, ticket_contract: &Address) {

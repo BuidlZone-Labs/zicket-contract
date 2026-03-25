@@ -14,4 +14,5 @@ pub enum PaymentError {
     NotInitialized = 7,
     PaymentAlreadyRefunded = 8,
     WalletAuthRequired = 10,
+    NoRevenue = 10,
 }
