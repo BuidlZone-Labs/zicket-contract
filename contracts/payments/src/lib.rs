@@ -1,4 +1,18 @@
 #![no_std]
+//! # Payments Contract
+//! 
+//! This contract ensures that payments only happen when wallet interaction is explicitly triggered.
+//! 
+//! ## Wallet Authentication Requirements:
+//! - `pay_for_ticket`: Requires payer wallet authentication via `payer.require_auth()`
+//! - `refund`: Requires admin wallet authentication via `caller.require_auth()`
+//! 
+//! ## Security Features:
+//! - No implicit/automatic payments allowed
+//! - All payment operations require explicit wallet signatures
+//! - Only authenticated admin can process refunds
+//! - Comprehensive test coverage for authentication failures
+
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
 
 mod errors;
