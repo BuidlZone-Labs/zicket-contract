@@ -13,4 +13,5 @@ pub enum PaymentError {
     RefundFailed = 6,
     NotInitialized = 7,
     PaymentAlreadyRefunded = 8,
+    WalletAuthRequired = 10,
 }

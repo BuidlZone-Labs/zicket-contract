@@ -229,12 +229,14 @@ fn test_pay_for_ticket_invalid_amount_negative() {
 #[should_panic(expected = "Auth")]
 fn test_pay_for_ticket_unauthorized() {
     let env = Env::default();
+    // Note: NOT calling env.mock_all_auths() - this ensures auth is required
 
     let (_admin, _token, client, _, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
 
+    // This should panic because payer.require_auth() will fail without proper auth
     client.pay_for_ticket(&payer, &event_id, &amount);
 }
 
@@ -323,4 +325,103 @@ fn test_pay_for_ticket_query_record() {
     assert_eq!(payment.token, token);
     assert_eq!(payment.status, PaymentStatus::Held);
     assert!(payment.paid_at > 0);
+}
+
+#[test]
+fn test_refund_authorized_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    // Setup: mint tokens and make payment
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    
+    let payment_id = client.pay_for_ticket(&payer, &event_id, &amount);
+    
+    // Verify payment was created
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.status, PaymentStatus::Held);
+    
+    // Admin should be able to refund
+    client.refund(&admin, &payment_id);
+    
+    // Verify refund was processed
+    let refunded_payment = client.get_payment(&payment_id);
+    assert_eq!(refunded_payment.status, PaymentStatus::Refunded);
+    
+    // Verify tokens were returned to payer
+    let payer_balance = token_client.balance(&payer);
+    assert_eq!(payer_balance, amount);
+    
+    let contract_balance = token_client.balance(&contract_id);
+    assert_eq!(contract_balance, 0);
+}
+
+#[test]
+fn test_refund_unauthorized_non_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let non_admin = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    // Setup: mint tokens and make payment
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    
+    let payment_id = client.pay_for_ticket(&payer, &event_id, &amount);
+    
+    // Non-admin should not be able to refund
+    let result = client.try_refund(&non_admin, &payment_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_wallet_only_payment_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    // Setup tokens
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    // Test: Wallet-authenticated payment succeeds
+    let payment_id = client.pay_for_ticket(&payer, &event_id, &amount);
+    
+    // Verify payment record
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.amount, amount);
+    assert_eq!(payment.status, PaymentStatus::Held);
+    
+    // Verify ticket was issued to the authenticated payer
+    let owner_tickets = client.get_owner_tickets(&payer);
+    assert_eq!(owner_tickets.len(), 1);
+    let ticket = client.get_ticket(&owner_tickets.get(0).unwrap());
+    assert_eq!(ticket.owner, payer);
+    assert_eq!(ticket.payment_id, payment_id);
+    
+    // Verify contract received tokens
+    let contract_balance = token_client.balance(&contract_id);
+    assert_eq!(contract_balance, amount);
+    
+    // Verify payer's tokens were transferred
+    let payer_balance = token_client.balance(&payer);
+    assert_eq!(payer_balance, 0);
 }

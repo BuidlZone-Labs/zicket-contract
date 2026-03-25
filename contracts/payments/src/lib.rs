@@ -1,4 +1,18 @@
 #![no_std]
+//! # Payments Contract
+//! 
+//! This contract ensures that payments only happen when wallet interaction is explicitly triggered.
+//! 
+//! ## Wallet Authentication Requirements:
+//! - `pay_for_ticket`: Requires payer wallet authentication via `payer.require_auth()`
+//! - `refund`: Requires admin wallet authentication via `caller.require_auth()`
+//! 
+//! ## Security Features:
+//! - No implicit/automatic payments allowed
+//! - All payment operations require explicit wallet signatures
+//! - Only authenticated admin can process refunds
+//! - Comprehensive test coverage for authentication failures
+
 use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
 
 mod errors;
@@ -102,7 +116,16 @@ impl PaymentsContract {
     }
 
     /// Refund a payment. Transfers tokens from contract back to payer.
-    pub fn refund(env: Env, payment_id: u64) -> Result<(), PaymentError> {
+    /// Only the admin can initiate refunds.
+    pub fn refund(env: Env, caller: Address, payment_id: u64) -> Result<(), PaymentError> {
+        caller.require_auth();
+        
+        // Only admin can refund payments
+        let admin = storage::get_admin(&env)?;
+        if caller != admin {
+            return Err(PaymentError::Unauthorized);
+        }
+
         // Retrieve the payment record
         let mut payment = storage::get_payment(&env, payment_id)?;
 
