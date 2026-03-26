@@ -10,6 +10,8 @@ pub enum DataKey {
     Ticket(u64),
     EventPayments(Symbol),
     EventRevenue(Symbol),
+    EventTokenRevenue(Symbol, Address), // Revenue per token per event
+    EventTokens(Symbol),                // List of tokens used for an event
     EventStatus(Symbol),
     OwnerTickets(Address),
     WithdrawalHistory(Symbol),
@@ -261,4 +263,77 @@ pub fn get_withdrawal_history(env: &Env, event_id: &Symbol) -> Vec<crate::types:
 pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
     let key = DataKey::EventRevenue(event_id.clone());
     env.storage().persistent().set(&key, &0i128);
+}
+/// Get the total revenue for an event and specific token.
+pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokenRevenue(
+            event_id.clone(),
+            token_address.clone(),
+        ))
+        .unwrap_or(0)
+}
+
+/// Add to the total revenue for an event and specific token.
+pub fn add_event_token_revenue(
+    env: &Env,
+    event_id: &Symbol,
+    token_address: &Address,
+    amount: i128,
+) {
+    let current_revenue = get_event_token_revenue(env, event_id, token_address);
+    let new_revenue = current_revenue + amount;
+    let key = DataKey::EventTokenRevenue(event_id.clone(), token_address.clone());
+    env.storage().persistent().set(&key, &new_revenue);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Set the total revenue for an event and specific token.
+pub fn set_event_token_revenue(
+    env: &Env,
+    event_id: &Symbol,
+    token_address: &Address,
+    amount: i128,
+) {
+    let key = DataKey::EventTokenRevenue(event_id.clone(), token_address.clone());
+    env.storage().persistent().set(&key, &amount);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Add a token to the list of tokens used for an event.
+pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
+    let key = DataKey::EventTokens(event_id.clone());
+    let mut tokens: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    // Only add if not already present
+    for i in 0..tokens.len() {
+        if let Some(existing_token) = tokens.get(i) {
+            if existing_token == *token_address {
+                return;
+            }
+        }
+    }
+
+    tokens.push_back(token_address.clone());
+    env.storage().persistent().set(&key, &tokens);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Get all tokens used for an event.
+pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokens(event_id.clone()))
+        .unwrap_or_else(|| Vec::new(env))
 }
