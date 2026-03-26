@@ -285,6 +285,11 @@ impl PaymentsContract {
         storage::get_event_tokens(&env, &event_id)
     }
 
+    /// Get the accepted token address (for backward compatibility).
+    pub fn get_accepted_token(env: Env) -> Result<Address, PaymentError> {
+        storage::get_accepted_token(&env)
+    }
+
     /// Withdraw revenue for a specific token from an event.
     pub fn withdraw_token(
         env: Env,
