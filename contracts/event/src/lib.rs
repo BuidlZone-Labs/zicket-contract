@@ -528,7 +528,9 @@ impl EventContract {
 
         if tier.price > 0 {
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
-            let token_result = payments_client.try_get_accepted_token().map_err(|_| EventError::InvalidInput)?;
+            let token_result = payments_client
+                .try_get_accepted_token()
+                .map_err(|_| EventError::InvalidInput)?;
             let token_address = token_result.map_err(|_| EventError::InvalidInput)?;
             payments_client.pay_for_ticket(&attendee, &event_id, &tier.price, &token_address);
         }
