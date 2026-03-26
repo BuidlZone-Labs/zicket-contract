@@ -50,6 +50,9 @@ impl PaymentsContract {
     }
 
     /// Pay for a ticket. Transfers tokens from payer to contract escrow.
+    ///
+    /// This function is fully atomic: if the token transfer fails, no payment
+    /// record is created and revenue is not updated.
     pub fn pay_for_ticket(
         env: Env,
         payer: Address,
@@ -65,9 +68,14 @@ impl PaymentsContract {
         let token_address = storage::get_accepted_token(&env)?;
         let contract_address = env.current_contract_address();
 
+        // Attempt the transfer first — before any state is written.
+        // If this fails we return TransferFailed and nothing is persisted.
         let token_client = token::Client::new(&env, &token_address);
-        token_client.transfer(&payer, &contract_address, &amount);
+        token_client
+            .try_transfer(&payer, &contract_address, &amount)
+            .map_err(|_| PaymentError::TransferFailed)?;
 
+        // Transfer succeeded — now safe to write state.
         let payment_id = storage::get_next_payment_id(&env);
         let paid_at = env.ledger().timestamp();
 
@@ -85,7 +93,7 @@ impl PaymentsContract {
         storage::add_event_payment(&env, &event_id, payment_id);
         storage::add_event_revenue(&env, &event_id, amount);
 
-        events::emit_payment_received(&env, payment_id, event_id, payer, amount);
+        events::emit_payment_received(&env, payment_id, event_id.clone(), payer.clone(), amount);
 
         let ticket_id = storage::get_next_ticket_id(&env);
         let ticket = Ticket {
@@ -118,11 +126,13 @@ impl PaymentsContract {
         }
 
         let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &payment.payer,
-            &payment.amount,
-        );
+        token_client
+            .try_transfer(
+                &env.current_contract_address(),
+                &payment.payer,
+                &payment.amount,
+            )
+            .map_err(|_| PaymentError::RefundFailed)?;
 
         payment.status = PaymentStatus::Refunded;
         storage::update_payment(&env, &payment)?;
@@ -202,10 +212,8 @@ impl PaymentsContract {
         let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&env.current_contract_address(), &to, &revenue);
 
-        // Update revenue tracking
         storage::reset_event_revenue(&env, &event_id);
 
-        // Record withdrawal history
         let record = WithdrawalRecord {
             amount: revenue,
             timestamp: env.ledger().timestamp(),
