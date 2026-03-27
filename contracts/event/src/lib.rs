@@ -1,5 +1,5 @@
 #![no_std]
-use payments_contract::PaymentsContractClient;
+use payments_contract::{PaymentPrivacy, PaymentsContractClient};
 use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 use ticket_contract::TicketContractClient;
 
@@ -89,20 +89,46 @@ impl EventContract {
             return Err(EventError::EventAlreadyExists);
         }
 
+        if has_linked_contracts(&env) {
+            let payments_contract = get_payments_contract(&env)?;
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            let accepted_token = payments_client.get_accepted_token();
+
+            if params.payout_token != accepted_token {
+                return Err(EventError::InvalidPayoutToken);
+            }
+        }
+
         let event = Event {
             event_id: params.event_id.clone(),
             organizer: params.organizer.clone(),
+            payout_token: params.payout_token.clone(),
             name: params.name.clone(),
             description: params.description.clone(),
             venue: params.venue.clone(),
             event_date: params.event_date,
+            allow_anonymous: params.allow_anonymous,
+            requires_verification: params.requires_verification,
             tiers,
             status: EventStatus::Upcoming,
             created_at: env.ledger().timestamp(),
         };
 
         save_event(&env, &params.event_id, &event);
-        emit_event_created(&env, &params);
+        if has_linked_contracts(&env) {
+            let payments_contract = get_payments_contract(&env)?;
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            payments_client.sync_event_config(
+                &env.current_contract_address(),
+                &params.event_id,
+                &params.organizer,
+                &params.payout_token,
+                &params.allow_anonymous,
+                &params.requires_verification,
+            );
+        }
+        let privacy = storage::get_event_privacy(&env, &params.event_id);
+        emit_event_created(&env, &params, &privacy);
 
         Ok(event)
     }
@@ -157,11 +183,39 @@ impl EventContract {
             }
             event.event_date = date;
         }
+        if let Some(allow_anonymous) = params.allow_anonymous {
+            event.allow_anonymous = allow_anonymous;
+        }
+        if let Some(requires_verification) = params.requires_verification {
+            event.requires_verification = requires_verification;
+        }
 
         save_event(&env, &params.event_id, &event);
+        if has_linked_contracts(&env) {
+            let payments_contract = get_payments_contract(&env)?;
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            payments_client.sync_event_config(
+                &env.current_contract_address(),
+                &params.event_id,
+                &event.organizer,
+                &event.payout_token,
+                &event.allow_anonymous,
+                &event.requires_verification,
+            );
+        }
         emit_event_updated(&env, &event);
 
         Ok(event)
+    }
+
+    pub fn get_allow_anonymous(env: Env, event_id: Symbol) -> bool {
+        storage::get_event(&env, &event_id).unwrap().allow_anonymous
+    }
+
+    pub fn get_requires_verification(env: Env, event_id: Symbol) -> bool {
+        storage::get_event(&env, &event_id)
+            .unwrap()
+            .requires_verification
     }
 
     /// Add a new ticket tier to an Upcoming event. Only the organizer can do this.
@@ -473,6 +527,7 @@ impl EventContract {
         attendee: Address,
         event_id: Symbol,
         tier_id: u32,
+        _is_verified: bool,
     ) -> Result<(), EventError> {
         attendee.require_auth();
 
@@ -528,11 +583,20 @@ impl EventContract {
 
         if tier.price > 0 {
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+<<<<<<< main
             let token_result = payments_client
                 .try_get_accepted_token()
                 .map_err(|_| EventError::InvalidInput)?;
             let token_address = token_result.map_err(|_| EventError::InvalidInput)?;
             payments_client.pay_for_ticket(&attendee, &event_id, &tier.price, &token_address);
+=======
+            payments_client.pay_for_ticket(
+                &attendee,
+                &event_id,
+                &tier.price,
+                &PaymentPrivacy::Standard,
+            );
+>>>>>>> main
         }
 
         let ticket_client = TicketContractClient::new(&env, &ticket_contract);
@@ -550,7 +614,8 @@ impl EventContract {
         tier.sold += 1;
         event.tiers.set(index, tier.clone());
         update_event(&env, &event_id, &event)?;
-        emit_registration(&env, &event_id, &attendee, tier_id, tier.sold);
+        let privacy = storage::get_event_privacy(&env, &event_id);
+        emit_registration(&env, &event_id, &attendee, tier_id, tier.sold, &privacy);
 
         Ok(())
     }
@@ -610,6 +675,29 @@ impl EventContract {
         let payments_contract = storage::get_payments_contract(&env)?;
         let payments_client = PaymentsContractClient::new(&env, &payments_contract);
         Ok(payments_client.get_withdrawal_history(&event_id))
+    }
+
+    /// Set the privacy level for an event. Only the organizer can change this.
+    pub fn set_event_privacy(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        level: PrivacyLevel,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+
+        let event = storage::get_event(&env, &event_id)?;
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+
+        storage::set_event_privacy(&env, &event_id, &level);
+        Ok(())
+    }
+
+    /// Get the privacy level for an event.
+    pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
+        storage::get_event_privacy(&env, &event_id)
     }
 }
 

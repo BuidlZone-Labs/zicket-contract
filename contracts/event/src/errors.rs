@@ -22,4 +22,6 @@ pub enum EventError {
     RefundFailed = 16,
     ReservationNotFound = 17,
     ReservationExpired = 18,
+    InvalidOrganizer = 19,
+    InvalidPayoutToken = 20,
 }
