@@ -25,4 +25,6 @@ pub enum PaymentError {
     EscrowNotExpired = 19,
     EscrowAlreadyReleased = 20,
     EscrowNotConfigured = 21,
+    /// Token transfer failed; no state has been modified
+    TransferFailed = 22,
 }
