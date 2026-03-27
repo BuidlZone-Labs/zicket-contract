@@ -1,3 +1,4 @@
+use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
 use soroban_sdk::{contractevent, Address, Env, Symbol};
 
 #[contractevent]
@@ -11,7 +12,7 @@ pub struct FactoryInitialized {
 pub struct EventDeployed {
     pub event_id: Symbol,
     pub contract_address: Address,
-    pub organizer: Address,
+    pub organizer: MaskedAddress,
 }
 
 pub fn emit_event_deployed(
@@ -19,11 +20,12 @@ pub fn emit_event_deployed(
     event_id: Symbol,
     contract_address: Address,
     organizer: Address,
+    privacy_level: PrivacyLevel,
 ) {
     EventDeployed {
         event_id,
         contract_address,
-        organizer,
+        organizer: mask_address(env, &organizer, privacy_level),
     }
     .publish(env);
 }

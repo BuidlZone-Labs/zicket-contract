@@ -12,6 +12,7 @@ doctest = false
 soroban-sdk = { workspace = true }
 payments-contract = { path = "../payments" }
 ticket-contract = { path = "../ticket" }
+privacy-utils = { path = "../privacy-utils" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

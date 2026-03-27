@@ -77,7 +77,13 @@ impl FactoryContract {
 
         storage::save_deployed_event(&env, &deployed_event)?;
 
-        events::emit_event_deployed(&env, event_id, contract_address.clone(), organizer);
+        events::emit_event_deployed(
+            &env,
+            event_id,
+            contract_address.clone(),
+            organizer,
+            privacy_utils::PrivacyLevel::Standard,
+        );
 
         Ok(contract_address)
     }

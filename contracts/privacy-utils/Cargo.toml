@@ -1,17 +1,15 @@
 [package]
-name = "payments-contract"
+name = "privacy-utils"
 version = "0.0.0"
 edition = "2021"
 publish = false
 
 [lib]
-crate-type = ["lib", "cdylib"]
+crate-type = ["lib"]
 doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-privacy-utils = { path = "../privacy-utils" }
 
 [dev-dependencies]
-mock-event-contract = { path = "../mock-event" }
 soroban-sdk = { workspace = true, features = ["testutils"] }

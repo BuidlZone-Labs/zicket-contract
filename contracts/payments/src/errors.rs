@@ -16,4 +16,15 @@ pub enum PaymentError {
     NoRevenue = 10,
     /// Token transfer failed; no state has been modified
     TransferFailed = 11,
+    AnonymousPaymentsDisabled = 11,
+    VerificationRequired = 12,
+    UnauthorizedWithdrawal = 13,
+    InvalidOrganizer = 14,
+    InvalidPayoutToken = 15,
+    EventNotActive = 16,
+    EventNotCompleted = 17,
+    RefundNotAllowed = 18,
+    EscrowNotExpired = 19,
+    EscrowAlreadyReleased = 20,
+    EscrowNotConfigured = 21,
 }

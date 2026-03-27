@@ -60,7 +60,14 @@ impl TicketContract {
             .set(&DataKey::EventTickets(event_id), &event_tickets);
 
         write_next_ticket_id(&env, ticket_id + 1);
-        events::emit_ticket_minted(&env, ticket_id);
+        events::emit_ticket_minted(
+            &env,
+            ticket_id,
+            ticket.event_id.clone(),
+            ticket.owner.clone(),
+            ticket.organizer.clone(),
+            ticket.issued_at,
+        );
 
         Ok(ticket_id)
     }
@@ -126,7 +133,7 @@ impl TicketContract {
             .persistent()
             .set(&DataKey::OwnerTickets(to.clone()), &to_tickets);
 
-        events::emit_ticket_transferred(&env, ticket_id, from, to);
+        events::emit_ticket_transferred(&env, ticket_id, ticket.event_id.clone(), from, to);
 
         Ok(())
     }
@@ -170,7 +177,12 @@ impl TicketContract {
             .set(&DataKey::Ticket(ticket_id), &ticket);
 
         // 7. Emit ticket used event
-        events::emit_ticket_used(&env, ticket_id);
+        events::emit_ticket_used(
+            &env,
+            ticket_id,
+            ticket.event_id.clone(),
+            ticket.owner.clone(),
+        );
 
         Ok(())
     }
@@ -207,7 +219,12 @@ impl TicketContract {
         ticket.status = TicketStatus::Cancelled;
         storage::update_ticket(&env, &ticket);
 
-        events::emit_ticket_cancelled(&env, ticket_id);
+        events::emit_ticket_cancelled(
+            &env,
+            ticket_id,
+            ticket.event_id.clone(),
+            ticket.owner.clone(),
+        );
 
         Ok(())
     }
