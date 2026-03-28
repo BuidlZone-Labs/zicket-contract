@@ -1,0 +1,106 @@
+    Checking payments-contract v0.0.0 (/home/walzeem/zicket-contract/contracts/payments)
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:274:75
+    |
+270 | ...n, _token, client, _, _) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+274 | ... = client.try_pay_for_ticket(&payer, &event_id, &0, &None, &token, &...
+    |                                                                ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+270 -     let (_admin, _token, client, _, _) = setup_contract_with_token(&env);
+270 +     let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:287:76
+    |
+283 | ...n, _token, client, _, _) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+287 | ... = client.try_pay_for_ticket(&payer, &event_id, &-1, &None, &token, &...
+    |                                                                 ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+283 -     let (_admin, _token, client, _, _) = setup_contract_with_token(&env);
+283 +     let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    |
+
+warning: duplicated attribute
+    --> contracts/payments/src/test.rs:1205:1
+     |
+1205 | #[test]
+     | ^^^^^^^
+     |
+     = note: `#[warn(duplicate_macro_attributes)]` on by default
+
+warning: unused import: `Events`
+ --> contracts/payments/src/test.rs:2:44
+  |
+2 | ..._, Events, Le...
+  |       ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `IntoVal` and `Symbol`
+ --> contracts/payments/src/test.rs:3:54
+  |
+3 | ...v, IntoVal, Symbol};
+  |       ^^^^^^^  ^^^^^^
+
+warning: unused variable: `token`
+   --> contracts/payments/src/test.rs:885:17
+    |
+885 | ...n, token, c...
+    |       ^^^^^ help: if this is intentional, prefix it with an underscore: `_token`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `token_contract`
+   --> contracts/payments/src/test.rs:885:46
+    |
+885 | ...d, token_contract) =...
+    |       ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_token_contract`
+
+warning: unused variable: `token`
+   --> contracts/payments/src/test.rs:927:17
+    |
+927 | ...n, token, c...
+    |       ^^^^^ help: if this is intentional, prefix it with an underscore: `_token`
+
+warning: unused variable: `token_contract`
+   --> contracts/payments/src/test.rs:927:46
+    |
+927 | ...d, token_contract) =...
+    |       ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_token_contract`
+
+warning: unused variable: `token`
+   --> contracts/payments/src/test.rs:941:17
+    |
+941 | ...n, token, c...
+    |       ^^^^^ help: if this is intentional, prefix it with an underscore: `_token`
+
+warning: unused variable: `token_contract`
+   --> contracts/payments/src/test.rs:941:46
+    |
+941 | ...d, token_contract) =...
+    |       ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_token_contract`
+
+warning: unused variable: `not_admin`
+    --> contracts/payments/src/test.rs:1098:9
+     |
+1098 | ...et not_admin = ...
+     |       ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_not_admin`
+
+warning: unused variable: `token`
+    --> contracts/payments/src/test.rs:1148:17
+     |
+1148 | ...n, token, c...
+     |       ^^^^^ help: if this is intentional, prefix it with an underscore: `_token`
+
+For more information about this error, try `rustc --explain E0423`.
+warning: `payments-contract` (lib test) generated 11 warnings
+error: could not compile `payments-contract` (lib test) due to 2 previous errors; 11 warnings emitted

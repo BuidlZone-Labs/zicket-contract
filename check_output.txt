@@ -1,0 +1,547 @@
+    Checking payments-contract v0.0.0 (/home/walzeem/zicket-contract/contracts/payments)
+warning: unused import: `Events`
+ --> contracts/event/src/integration_tests.rs:3:44
+  |
+3 | ..._, Events, Le...
+  |       ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `IntoVal`
+ --> contracts/event/src/integration_tests.rs:4:48
+  |
+4 | ...v, IntoVal, S...
+  |       ^^^^^^^
+
+warning: unused variable: `email_hash`
+   --> contracts/event/src/lib.rs:416:9
+    |
+416 | ...   email_hash: O...
+    |       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_email_hash`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `is_verified`
+   --> contracts/event/src/lib.rs:530:9
+    |
+530 | ...   is_verified: b...
+    |       ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_verified`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:684:9
+    |
+684 | ...et result = ...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:728:9
+    |
+728 | ...et result = ...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:750:9
+    |
+750 | ...et result = ...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:771:9
+    |
+771 | ...et result = ...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: `event-contract` (lib test) generated 8 warnings (run `cargo fix --lib -p event-contract --tests` to apply 8 suggestions)
+error: expected expression, found `,`
+    --> contracts/payments/src/test.rs:1227:95
+     |
+1227 | ...ne(, &toke...
+     |       ^ expected expression
+
+error: expected one of `.`, `;`, `?`, `else`, or an operator, found `)`
+    --> contracts/payments/src/test.rs:1227:132
+     |
+1227 | ...d)));
+     |       ^ expected one of `.`, `;`, `?`, `else`, or an operator
+
+error[E0252]: the name `Ledger` is defined multiple times
+ --> contracts/payments/src/test.rs:5:44
+  |
+2 | ..._, Events, Ledger};
+  |               ------ previous import of the trait `Ledger` here
+...
+5 | ..._, Ledger};
+  |       ^^^^^^ `Ledger` reimported here
+  |
+  = note: `Ledger` must be defined only once in the type namespace of this module
+
+error[E0252]: the name `symbol_short` is defined multiple times
+ --> contracts/payments/src/test.rs:6:19
+  |
+3 | ...::{symbol_short, tok...
+  |       ------------ previous import of the macro `symbol_short` here
+...
+6 | ...::{symbol_short, tok...
+  |       ^^^^^^^^^^^^--
+  |       |
+  |       `symbol_short` reimported here
+  |       help: remove unnecessary import
+  |
+  = note: `symbol_short` must be defined only once in the macro namespace of this module
+
+error[E0252]: the name `token` is defined multiple times
+ --> contracts/payments/src/test.rs:6:33
+  |
+3 | ...t, token, Add...
+  |       ----- previous import of the module `token` here
+...
+6 | ...t, token, Add...
+  |       ^^^^^--
+  |       |
+  |       `token` reimported here
+  |       help: remove unnecessary import
+  |
+  = note: `token` must be defined only once in the type namespace of this module
+
+error[E0252]: the name `Address` is defined multiple times
+ --> contracts/payments/src/test.rs:6:40
+  |
+3 | ...n, Address, Env...
+  |       ------- previous import of the type `Address` here
+...
+6 | ...n, Address, Env};
+  |       ^^^^^^^--
+  |       |
+  |       `Address` reimported here
+  |       help: remove unnecessary import
+  |
+  = note: `Address` must be defined only once in the type namespace of this module
+
+error[E0252]: the name `Env` is defined multiple times
+ --> contracts/payments/src/test.rs:6:49
+  |
+3 | ...s, Env, IntoV...
+  |       --- previous import of the type `Env` here
+...
+6 | ...s, Env};
+  |       ^^^ `Env` reimported here
+  |
+  = note: `Env` must be defined only once in the type namespace of this module
+
+error[E0428]: the name `test_refund_nonexistent_payment` is defined multiple times
+    --> contracts/payments/src/test.rs:1151:1
+     |
+ 677 | fn test_refund_nonexistent_payment() {
+     | ------------------------------------ previous definition of the value `test_refund_nonexistent_payment` here
+...
+1151 | fn test_refund_nonexistent_payment() {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `test_refund_nonexistent_payment` redefined here
+     |
+     = note: `test_refund_nonexistent_payment` must be defined only once in the value namespace of this module
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:276:75
+    |
+272 | ...n, _token, client, _, _) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+276 | ... = client.try_pay_for_ticket(&payer, &event_id, &0, &None, &token, &...
+    |                                                                ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+272 -     let (_admin, _token, client, _, _) = setup_contract_with_token(&env);
+272 +     let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:289:76
+    |
+285 | ...n, _token, client, _, _) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+289 | ... = client.try_pay_for_ticket(&payer, &event_id, &-1, &None, &token, &...
+    |                                                                 ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+285 -     let (_admin, _token, client, _, _) = setup_contract_with_token(&env);
+285 +     let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    |
+
+error[E0425]: cannot find value `not_admin` in this scope
+   --> contracts/payments/src/test.rs:528:37
+    |
+528 | ...d(&not_admin, &...
+    |       ^^^^^^^^^ help: a function with a similar name exists: `get_admin`
+    |
+   ::: contracts/payments/src/storage.rs:59:1
+    |
+ 59 | ...aymentError> {
+    | ...------------ similarly named function `get_admin` defined here
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:539:50
+    |
+537 | ...n, _token, client, _, token_contract) = setu...
+    |       ------ `_token` defined here
+538 | ... = Address::generate(&env);
+539 | ..._client = token::Client::new(&env, &token);
+    |                                        ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+537 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+537 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0425]: cannot find value `amount` in this scope
+   --> contracts/payments/src/test.rs:543:34
+    |
+543 | ..., &amount);
+    |       ^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `amount` in this scope
+   --> contracts/payments/src/test.rs:544:44
+    |
+544 | ..., &amount);
+    |       ^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `event_id` in this scope
+   --> contracts/payments/src/test.rs:545:53
+    |
+545 | ..., &event_id, &...
+    |       ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `amount` in this scope
+   --> contracts/payments/src/test.rs:545:64
+    |
+545 | ..., &amount, &N...
+    |       ^^^^^^ not found in this scope
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:545:80
+    |
+537 | ...n, _token, client, _, token_contract) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+545 | ...nt_id = client.pay_for_ticket(&payer, &event_id, &amount, &None, &token, &...
+    |                                                                      ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+537 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+537 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0425]: cannot find value `event_id` in this scope
+   --> contracts/payments/src/test.rs:548:38
+    |
+548 | ..., &event_id, &...
+    |       ^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `event_id` in this scope
+   --> contracts/payments/src/test.rs:549:34
+    |
+549 | ..., &event_id);
+    |       ^^^^^^^^ not found in this scope
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:572:50
+    |
+563 | ...n, _token, client, contract_id, token_contra...
+    |       ------ `_token` defined here
+...
+572 | ..._client = token::Client::new(&env, &token);
+    |                                        ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+563 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+563 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:576:76
+    |
+563 | ...n, _token, client, contract_id, token_contract) = setup_contract_with_...
+    |       ------ `_token` defined here
+...
+576 | ...= client.pay_for_ticket(&payer1, &event_id, &amount1, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+563 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+563 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:577:76
+    |
+563 | ...n, _token, client, contract_id, token_contract) = setup_contract_with_...
+    |       ------ `_token` defined here
+...
+577 | ...= client.pay_for_ticket(&payer2, &event_id, &amount2, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+563 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+563 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:621:50
+    |
+609 | ...n, _token, client, contract_id, token_contra...
+    |       ------ `_token` defined here
+...
+621 | ..._client = token::Client::new(&env, &token);
+    |                                        ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+609 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+609 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:626:76
+    |
+609 | ...n, _token, client, contract_id, token_contract) = setup_contract_with_...
+    |       ------ `_token` defined here
+...
+626 | ...= client.pay_for_ticket(&payer1, &event_id, &amount1, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+609 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+609 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:627:76
+    |
+609 | ...n, _token, client, contract_id, token_contract) = setup_contract_with_...
+    |       ------ `_token` defined here
+...
+627 | ...= client.pay_for_ticket(&payer2, &event_id, &amount2, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+609 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+609 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:628:76
+    |
+609 | ...n, _token, client, contract_id, token_contract) = setup_contract_with_...
+    |       ------ `_token` defined here
+...
+628 | ...= client.pay_for_ticket(&payer3, &event_id, &amount3, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+609 -     let (admin, _token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+609 +     let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:663:50
+    |
+655 | ...n, _token, client, _, token_contract) = setu...
+    |       ------ `_token` defined here
+...
+663 | ..._client = token::Client::new(&env, &token);
+    |                                        ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+655 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+655 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:667:76
+    |
+655 | ...n, _token, client, _, token_contract) = setup_contract_with_token(&env);
+    |       ------ `_token` defined here
+...
+667 | ...= client.pay_for_ticket(&payer1, &event_id, &amount1, &None, &token, &...
+    |                                                                  ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+655 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+655 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:668:65
+    |
+655 | ...n, _token, client, _, token_contract) = setup_contract_with...
+    |       ------ `_token` defined here
+...
+668 | ...y_for_ticket(&payer2, &event_id, &amount2, &None, &token, &...
+    |                                                       ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+655 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+655 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:699:49
+    |
+691 | ...n, _token, client, _contract_id, token_cont...
+    |       ------ `_token` defined here
+...
+699 | ..._utils = token::Client::new(&env, &token);
+    |                                       ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+691 -     let (admin, _token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+691 +     let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:704:62
+    |
+691 | ...n, _token, client, _contract_id, token_contract) = setup...
+    |       ------ `_token` defined here
+...
+704 | ...y_for_ticket(&payer1, &event1, &amount, &None, &token, &...
+    |                                                    ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+691 -     let (admin, _token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+691 +     let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:706:62
+    |
+691 | ...n, _token, client, _contract_id, token_contract) = setup...
+    |       ------ `_token` defined here
+...
+706 | ...y_for_ticket(&payer1, &event2, &amount, &None, &token, &...
+    |                                                    ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+691 -     let (admin, _token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+691 +     let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:708:62
+    |
+691 | ...n, _token, client, _contract_id, token_contract) = setup...
+    |       ------ `_token` defined here
+...
+708 | ...y_for_ticket(&payer2, &event1, &amount, &None, &token, &...
+    |                                                    ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+691 -     let (admin, _token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+691 +     let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+   --> contracts/payments/src/test.rs:710:62
+    |
+691 | ...n, _token, client, _contract_id, token_contract) = setup...
+    |       ------ `_token` defined here
+...
+710 | ...y_for_ticket(&payer2, &event2, &amount, &None, &token, &...
+    |                                                    ^^^^^
+    |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+    |
+691 -     let (admin, _token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+691 +     let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    |
+
+error[E0423]: expected value, found module `token`
+    --> contracts/payments/src/test.rs:1111:50
+     |
+1104 | ...n, _token, client, _, token_contract) = setu...
+     |       ------ `_token` defined here
+...
+1111 | ..._client = token::Client::new(&env, &token);
+     |                                        ^^^^^
+     |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+     |
+1104 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+1104 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+     |
+
+error[E0423]: expected value, found module `token`
+    --> contracts/payments/src/test.rs:1114:80
+     |
+1104 | ...n, _token, client, _, token_contract) = setup_contract_with_token(&env);
+     |       ------ `_token` defined here
+...
+1114 | ...nt_id = client.pay_for_ticket(&payer, &event_id, &amount, &None, &token, &...
+     |                                                                      ^^^^^
+     |
+help: the leading underscore in `_token` marks it as unused, consider renaming it to `token`
+     |
+1104 -     let (admin, _token, client, _, token_contract) = setup_contract_with_token(&env);
+1104 +     let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+     |
+
+warning: unused import: `Events`
+ --> contracts/payments/src/test.rs:2:44
+  |
+2 | ... _, Events, Led...
+  |        ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `IntoVal` and `Symbol`
+ --> contracts/payments/src/test.rs:3:54
+  |
+3 | ...v, IntoVal, Symbol};
+  |       ^^^^^^^  ^^^^^^
+
+warning: unused import: `Ledger`
+ --> contracts/payments/src/test.rs:5:44
+  |
+5 | ... _, Ledger};
+  |        ^^^^^^
+
+warning: unused imports: `Address`, `Env`, `symbol_short`, and `token`
+ --> contracts/payments/src/test.rs:6:19
+  |
+6 | ...::{symbol_short, token, Address, Env};
+  |       ^^^^^^^^^^^^  ^^^^^  ^^^^^^^  ^^^
+
+warning: unused import: `Address`
+ --> contracts/payments/src/test.rs:5:30
+  |
+5 | ...s::{Address as ...
+  |        ^^^^^^^
+
+warning: unused variable: `token`
+   --> contracts/payments/src/test.rs:681:17
+    |
+681 | ...n, token, cli...
+    |       ^^^^^ help: if this is intentional, prefix it with an underscore: `_token`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+Some errors have detailed explanations: E0252, E0423, E0425, E0428.
+For more information about an error, try `rustc --explain E0252`.
+warning: `payments-contract` (lib test) generated 6 warnings
+error: could not compile `payments-contract` (lib test) due to 36 previous errors; 6 warnings emitted

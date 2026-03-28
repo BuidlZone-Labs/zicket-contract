@@ -18,4 +18,6 @@ pub enum TicketError {
     TransferToSelf = 12,
     TicketAlreadyUsed = 13,
     EventNotActive = 14,
+    MigrationFailed = 15,
+    UnsupportedVersion = 16,
 }

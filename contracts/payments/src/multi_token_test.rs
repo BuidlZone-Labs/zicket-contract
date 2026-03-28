@@ -68,6 +68,7 @@ fn test_multi_token_payments() {
         &payer1,
         &event_id,
         &amount1,
+        &None,
         &token1,
         &PaymentPrivacy::Standard,
     );
@@ -75,6 +76,7 @@ fn test_multi_token_payments() {
         &payer2,
         &event_id,
         &amount2,
+        &None,
         &token2,
         &PaymentPrivacy::Standard,
     );

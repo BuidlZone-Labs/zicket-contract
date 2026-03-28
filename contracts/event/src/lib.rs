@@ -1,12 +1,15 @@
 #![no_std]
 use payments_contract::{PaymentPrivacy, PaymentsContractClient};
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 use ticket_contract::TicketContractClient;
 
 mod errors;
 mod events;
 mod storage;
 mod types;
+
+#[cfg(test)]
+mod migration_test;
 
 pub use errors::*;
 pub use storage::*;
@@ -415,6 +418,7 @@ impl EventContract {
         attendee: Address,
         event_id: Symbol,
         tier_id: u32,
+        _email_hash: Option<BytesN<32>>,
     ) -> Result<(), EventError> {
         attendee.require_auth();
 
@@ -529,6 +533,7 @@ impl EventContract {
         event_id: Symbol,
         tier_id: u32,
         _is_verified: bool,
+        _email_hash: Option<BytesN<32>>,
     ) -> Result<(), EventError> {
         attendee.require_auth();
 
@@ -585,10 +590,12 @@ impl EventContract {
         if tier.price > 0 {
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
             let token = payments_client.get_accepted_token();
+
             payments_client.pay_for_ticket(
                 &attendee,
                 &event_id,
                 &tier.price,
+                &_email_hash,
                 &token,
                 &PaymentPrivacy::Standard,
             );
@@ -693,6 +700,45 @@ impl EventContract {
     /// Get the privacy level for an event.
     pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
         storage::get_event_privacy(&env, &event_id)
+    }
+
+    /// Get the current contract version.
+    pub fn contract_version(env: Env) -> u32 {
+        storage::get_contract_version(&env)
+    }
+
+    /// Migrate the contract to a new version. Only admin can call this.
+    pub fn migrate(env: Env, admin: Address) -> Result<u32, EventError> {
+        admin.require_auth();
+
+        let current_admin = storage::get_admin(&env)?;
+        if current_admin != admin {
+            return Err(EventError::Unauthorized);
+        }
+
+        let current_version = storage::get_contract_version(&env);
+        let new_version = current_version + 1;
+
+        // Perform any necessary migrations based on version transitions
+        match current_version {
+            0 => {
+                // First migration: initialize version tracking
+                storage::set_contract_version(&env, 1);
+            }
+            1 => {
+                // Future migrations can be added here
+                storage::set_contract_version(&env, 2);
+            }
+            2 => {
+                // v2 -> v3 migration
+                storage::set_contract_version(&env, 3);
+            }
+            _ => {
+                return Err(EventError::UnsupportedVersion);
+            }
+        }
+
+        Ok(new_version)
     }
 }
 

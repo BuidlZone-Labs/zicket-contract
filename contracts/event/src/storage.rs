@@ -2,6 +2,10 @@ use crate::errors::EventError;
 use crate::types::{Event, PrivacyLevel};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
+const CURRENT_VERSION: u32 = 1;
+const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
+const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
+
 #[contracttype]
 pub enum DataKey {
     Event(Symbol),
@@ -12,6 +16,7 @@ pub enum DataKey {
     TicketContract,
     PaymentsContract,
     EventPrivacy(Symbol),
+    ContractVersion,
 }
 
 /// Check if an event exists in storage.
@@ -157,6 +162,33 @@ pub fn get_reservation(
 pub fn remove_reservation(env: &Env, event_id: &Symbol, attendee: &Address) {
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
     env.storage().persistent().remove(&key);
+}
+
+/// Get the current contract version from storage.
+pub fn get_contract_version(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(1)
+}
+
+/// Set the contract version in storage.
+pub fn set_contract_version(env: &Env, version: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ContractVersion, &version);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Verify that the contract version is supported. Returns error if version is not compatible.
+pub fn verify_version(env: &Env) -> Result<(), EventError> {
+    let version = get_contract_version(env);
+    if version > CURRENT_VERSION {
+        return Err(EventError::UnsupportedVersion);
+    }
+    Ok(())
 }
 
 pub fn set_event_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) {

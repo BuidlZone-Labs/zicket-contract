@@ -45,16 +45,9 @@ pub fn mask_address(env: &Env, address: &Address, privacy_level: PrivacyLevel) -
         PrivacyLevel::Standard => MaskedAddress::Full(address.clone()),
 
         PrivacyLevel::Private => {
-            let xdr = address.clone().to_xdr(env);
+            let xdr = address.to_xdr(env);
             let limit = 8_u32.min(xdr.len());
-            // Build a Bytes of at most 8 bytes from the XDR representation.
-            let mut partial = Bytes::new(env);
-            let mut i = 0u32;
-            while i < limit {
-                partial.push_back(xdr.get(i).unwrap());
-                i += 1;
-            }
-            MaskedAddress::Partial(partial)
+            MaskedAddress::Partial(xdr.slice(0..limit))
         }
 
         PrivacyLevel::Anonymous => {

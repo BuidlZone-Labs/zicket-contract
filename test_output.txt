@@ -1,0 +1,144 @@
+   Compiling payments-contract v0.0.0 (/home/walzeem/zicket-contract/contracts/payments)
+   Compiling event-contract v0.0.0 (/home/walzeem/zicket-contract/contracts/event)
+error: unexpected closing delimiter: `}`
+   --> contracts/payments/src/test.rs:680:1
+    |
+651 | fn test_refund_reduces_revenue_correctly() {
+    |                                            - this opening brace...
+...
+674 | }
+    | - ...matches this closing brace
+...
+680 | }
+    | ^ unexpected closing delimiter
+
+error: could not compile `payments-contract` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0423]: expected value, found struct `Address`
+   --> contracts/event/src/integration_tests.rs:240:21
+    |
+240 | ... = Address.ge...
+    |       ^^^^^^^
+    |
+help: use the path separator to refer to an item
+    |
+240 -     let organizer = Address.generate(&env);
+240 +     let organizer = Address::generate(&env);
+    |
+help: consider importing one of these items instead
+    |
+  1 + use soroban_sdk::xdr::ContractIdPreimage::Address;
+    |
+  1 + use soroban_sdk::xdr::ContractIdPreimageType::Address;
+    |
+  1 + use soroban_sdk::xdr::ScSpecType::Address;
+    |
+  1 + use soroban_sdk::xdr::ScSpecTypeDef::Address;
+    |
+    = and 4 other candidates
+
+error[E0423]: expected value, found struct `Address`
+   --> contracts/event/src/integration_tests.rs:241:20
+    |
+241 | ... = Address.ge...
+    |       ^^^^^^^
+    |
+help: use the path separator to refer to an item
+    |
+241 -     let attendee = Address.generate(&env);
+241 +     let attendee = Address::generate(&env);
+    |
+help: consider importing one of these items instead
+    |
+  1 + use soroban_sdk::xdr::ContractIdPreimage::Address;
+    |
+  1 + use soroban_sdk::xdr::ContractIdPreimageType::Address;
+    |
+  1 + use soroban_sdk::xdr::ScSpecType::Address;
+    |
+  1 + use soroban_sdk::xdr::ScSpecTypeDef::Address;
+    |
+    = and 4 other candidates
+
+warning: unused import: `Events`
+ --> contracts/event/src/integration_tests.rs:3:44
+  |
+3 | ... _, Events, Led...
+  |        ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `IntoVal`
+ --> contracts/event/src/integration_tests.rs:4:48
+  |
+4 | ...nv, IntoVal, St...
+  |        ^^^^^^^
+
+error[E0609]: no field `allow_anonymous` on type `Result<..., ...>`
+   --> contracts/event/src/lib.rs:213:45
+    |
+213 | ...d).allow_anonymous
+    |       ^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: the full name for the type has been written to '/home/walzeem/zicket-contract/target/debug/deps/event_contract-6b71e5a30de4e23a.long-type-4732014316480381311.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+help: one of the expressions' fields has a field of the same name
+    |
+213 |         storage::get_event(&env, &event_id).unwrap().allow_anonymous
+    |                                             +++++++++
+
+error[E0609]: no field `requires_verification` on type `Result<..., ...>`
+   --> contracts/event/src/lib.rs:219:14
+    |
+219 | ...  .requires_verification
+    |       ^^^^^^^^^^^^^^^^^^^^^ unknown field
+    |
+    = note: the full name for the type has been written to '/home/walzeem/zicket-contract/target/debug/deps/event_contract-6b71e5a30de4e23a.long-type-4732014316480381311.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+help: one of the expressions' fields has a field of the same name
+    |
+219 |             .unwrap().requires_verification
+    |              +++++++++
+
+warning: unused variable: `email_hash`
+   --> contracts/event/src/lib.rs:418:9
+    |
+418 | ...   email_hash: O...
+    |       ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_email_hash`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `is_verified`
+   --> contracts/event/src/lib.rs:532:9
+    |
+532 | ...   is_verified: b...
+    |       ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_is_verified`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:684:9
+    |
+684 | ...et result = c...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:728:9
+    |
+728 | ...et result = c...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:750:9
+    |
+750 | ...et result = c...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+warning: unused variable: `result`
+   --> contracts/event/src/test.rs:771:9
+    |
+771 | ...et result = c...
+    |       ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`
+
+Some errors have detailed explanations: E0423, E0609.
+For more information about an error, try `rustc --explain E0423`.
+warning: `event-contract` (lib test) generated 8 warnings
+error: could not compile `event-contract` (lib test) due to 4 previous errors; 8 warnings emitted

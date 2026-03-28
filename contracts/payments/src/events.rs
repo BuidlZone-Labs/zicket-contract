@@ -1,5 +1,5 @@
 use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
-use soroban_sdk::{contractevent, Address, Env, Symbol};
+use soroban_sdk::{contractevent, Address, BytesN, Env, Symbol};
 
 #[contractevent(data_format = "vec", topics = ["payment"])]
 pub struct PaymentReceived {
@@ -9,6 +9,20 @@ pub struct PaymentReceived {
     pub amount: i128,
     pub token: Address,
     pub paid_at: u64,
+}
+
+#[contractevent(data_format = "vec", topics = ["receipt_requested"])]
+pub struct PaymentReceiptRequested {
+    pub payment_id: u64,
+    pub email_hash: Option<BytesN<32>>,
+}
+
+pub fn emit_payment_receipt_requested(env: &Env, payment_id: u64, email_hash: Option<BytesN<32>>) {
+    PaymentReceiptRequested {
+        payment_id,
+        email_hash,
+    }
+    .publish(env);
 }
 
 #[contractevent(data_format = "vec", topics = ["refund"])]

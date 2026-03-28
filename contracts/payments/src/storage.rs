@@ -2,6 +2,10 @@ use crate::errors::PaymentError;
 use crate::types::{EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
+const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
+const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
+const CURRENT_VERSION: u32 = 1;
+
 #[contracttype]
 #[derive(Clone)]
 pub struct EventPrivacyConfig {
@@ -33,11 +37,13 @@ pub enum DataKey {
     EventTokens(Symbol),                // List of tokens used for an event
     EventStatus(Symbol),
     OwnerTickets(Address),
+    PayerPayments(Address),
     WithdrawalHistory(Symbol),
     NextPaymentId,
     NextTicketId,
     EmissionPrivacy(Symbol),
     EscrowMeta(Symbol),
+    ContractVersion,
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -278,6 +284,29 @@ pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
+/// add a payment id to the list of payments for a payer
+pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
+    let key = DataKey::PayerPayments(payer.clone());
+    let mut payments: Vec<u64> = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    payments.push_back(payment_id);
+    env.storage().persistent().set(&key, &payments);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Get all payment IDs for a payer.
+pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PayerPayments(payer.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
 /// Get the total revenue for an event.
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     env.storage()
@@ -378,6 +407,34 @@ pub fn get_escrow_meta(env: &Env, event_id: &Symbol) -> Result<EscrowMetadata, P
         .get(&DataKey::EscrowMeta(event_id.clone()))
         .ok_or(PaymentError::EscrowNotConfigured)
 }
+
+/// Get the current contract version from storage.
+pub fn get_contract_version(env: &Env) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ContractVersion)
+        .unwrap_or(1)
+}
+
+/// Set the contract version in storage.
+pub fn set_contract_version(env: &Env, version: u32) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::ContractVersion, &version);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Verify that the contract version is supported. Returns error if version is not compatible.
+pub fn verify_version(env: &Env) -> Result<(), PaymentError> {
+    let version = get_contract_version(env);
+    if version > CURRENT_VERSION {
+        return Err(PaymentError::UnsupportedVersion);
+    }
+    Ok(())
+}
+
 /// Get the total revenue for an event and specific token.
 pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Address) -> i128 {
     env.storage()

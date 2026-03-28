@@ -596,6 +596,7 @@ name = "event-contract"
 version = "0.0.0"
 dependencies = [
  "payments-contract",
+ "privacy-utils",
  "soroban-sdk",
  "ticket-contract",
 ]
@@ -604,6 +605,7 @@ dependencies = [
 name = "factory-contract"
 version = "0.0.0"
 dependencies = [
+ "privacy-utils",
  "soroban-sdk",
 ]
 
@@ -961,6 +963,7 @@ name = "payments-contract"
 version = "0.0.0"
 dependencies = [
  "mock-event-contract",
+ "privacy-utils",
  "soroban-sdk",
 ]
 
@@ -1006,6 +1009,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
 dependencies = [
  "elliptic-curve",
+]
+
+[[package]]
+name = "privacy-utils"
+version = "0.0.0"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]
@@ -1591,6 +1601,7 @@ dependencies = [
 name = "ticket-contract"
 version = "0.0.0"
 dependencies = [
+ "privacy-utils",
  "soroban-sdk",
 ]
 

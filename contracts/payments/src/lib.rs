@@ -1,10 +1,13 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, token, Address, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
 
 mod errors;
 mod events;
 mod storage;
 mod types;
+
+#[cfg(test)]
+mod migration_test;
 
 pub use errors::*;
 pub use events::*;
@@ -20,6 +23,7 @@ struct PaymentParams {
     is_anonymous: bool,
     is_verified: bool,
     privacy_level: PaymentPrivacy,
+    email_hash: Option<BytesN<32>>,
 }
 
 #[contract]
@@ -87,6 +91,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
 
     storage::save_payment(&env, &payment);
     storage::add_event_payment(&env, &params.event_id, payment_id);
+    storage::add_payer_payment(&env, &params.payer, payment_id);
     storage::add_event_revenue(&env, &params.event_id, params.amount);
 
     // Track token-specific revenue
@@ -98,13 +103,17 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     events::emit_payment_received(
         &env,
         payment_id,
-        params.event_id,
-        params.payer,
+        params.event_id.clone(),
+        params.payer.clone(),
         params.amount,
         params.token_address.clone(),
         paid_at,
         &privacy,
     );
+
+    if let Some(hash) = params.email_hash {
+        events::emit_payment_receipt_requested(&env, payment_id, Some(hash));
+    }
 
     let ticket_id = storage::get_next_ticket_id(&env);
     let ticket = Ticket {
@@ -198,6 +207,7 @@ impl PaymentsContract {
         payer: Address,
         event_id: Symbol,
         amount: i128,
+        email_hash: Option<BytesN<32>>,
         token_address: Address,
         privacy_level: PaymentPrivacy,
     ) -> Result<u64, PaymentError> {
@@ -211,6 +221,7 @@ impl PaymentsContract {
                 is_anonymous: false,
                 is_verified: false,
                 privacy_level,
+                email_hash,
             },
         )
     }
@@ -234,6 +245,7 @@ impl PaymentsContract {
                 is_anonymous,
                 is_verified,
                 privacy_level: PaymentPrivacy::Standard,
+                email_hash: None,
             },
         )
     }
@@ -417,6 +429,28 @@ impl PaymentsContract {
         storage::get_event_payments(&env, &event_id)
     }
 
+    pub fn get_payments_by_event(env: Env, event_id: Symbol) -> soroban_sdk::Vec<PaymentRecord> {
+        let payment_ids = storage::get_event_payments(&env, &event_id);
+        let mut payments = soroban_sdk::Vec::new(&env);
+        for id in payment_ids {
+            if let Ok(payment) = storage::get_payment(&env, id) {
+                payments.push_back(payment);
+            }
+        }
+        payments
+    }
+
+    pub fn get_payments_by_user(env: Env, user: Address) -> soroban_sdk::Vec<PaymentRecord> {
+        let payment_ids = storage::get_payer_payments(&env, &user);
+        let mut payments = soroban_sdk::Vec::new(&env);
+        for id in payment_ids {
+            if let Ok(payment) = storage::get_payment(&env, id) {
+                payments.push_back(payment);
+            }
+        }
+        payments
+    }
+
     /// Register escrow metadata for an event. Admin only.
     /// Must be called before release_if_expired can be used.
     pub fn set_event_end_time(
@@ -463,11 +497,12 @@ impl PaymentsContract {
         let mut to_release: soroban_sdk::Vec<PaymentRecord> = soroban_sdk::Vec::new(&env);
 
         for i in 0..payment_ids.len() {
-            let pid = payment_ids.get(i).unwrap();
-            let payment = storage::get_payment(&env, pid)?;
-            if payment.status == PaymentStatus::Held {
-                total += payment.amount;
-                to_release.push_back(payment);
+            if let Some(pid) = payment_ids.get(i) {
+                let payment = storage::get_payment(&env, pid)?;
+                if payment.status == PaymentStatus::Held {
+                    total += payment.amount;
+                    to_release.push_back(payment);
+                }
             }
         }
 
@@ -475,9 +510,10 @@ impl PaymentsContract {
             token_client.transfer(&env.current_contract_address(), &meta.organizer, &total);
 
             for i in 0..to_release.len() {
-                let mut payment = to_release.get(i).unwrap();
-                payment.status = PaymentStatus::Released;
-                storage::update_payment(&env, &payment)?;
+                if let Some(mut payment) = to_release.get(i) {
+                    payment.status = PaymentStatus::Released;
+                    storage::update_payment(&env, &payment)?;
+                }
             }
 
             storage::set_event_revenue(&env, &event_id, 0);
@@ -546,6 +582,45 @@ impl PaymentsContract {
     /// Get the privacy level for event emissions.
     pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
         storage::get_emission_privacy(&env, &event_id)
+    }
+
+    /// Get the current contract version.
+    pub fn contract_version(env: Env) -> u32 {
+        storage::get_contract_version(&env)
+    }
+
+    /// Migrate the contract to a new version. Only admin can call this.
+    pub fn migrate(env: Env, admin: Address) -> Result<u32, PaymentError> {
+        admin.require_auth();
+
+        let current_admin = storage::get_admin(&env)?;
+        if current_admin != admin {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let current_version = storage::get_contract_version(&env);
+        let new_version = current_version + 1;
+
+        // Perform any necessary migrations based on version transitions
+        match current_version {
+            0 => {
+                // First migration: initialize version tracking
+                storage::set_contract_version(&env, 1);
+            }
+            1 => {
+                // Future migrations can be added here
+                storage::set_contract_version(&env, 2);
+            }
+            2 => {
+                // v2 -> v3 migration
+                storage::set_contract_version(&env, 3);
+            }
+            _ => {
+                return Err(PaymentError::UnsupportedVersion);
+            }
+        }
+
+        Ok(new_version)
     }
 
     /// Get the total revenue for an event and specific token.

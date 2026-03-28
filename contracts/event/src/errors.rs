@@ -24,4 +24,6 @@ pub enum EventError {
     ReservationExpired = 18,
     InvalidOrganizer = 19,
     InvalidPayoutToken = 20,
+    MigrationFailed = 21,
+    UnsupportedVersion = 22,
 }

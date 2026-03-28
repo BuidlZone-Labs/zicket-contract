@@ -258,7 +258,7 @@ fn test_use_ticket_happy_path() {
         env.storage()
             .persistent()
             .get(&DataKey::Ticket(ticket_id))
-            .unwrap()
+            .expect("ticket should exist")
     });
     assert_eq!(ticket.status, TicketStatus::Used);
 }
