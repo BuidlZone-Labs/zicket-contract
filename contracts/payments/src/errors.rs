@@ -1,4 +1,4 @@
-use soroban_sdk::contracterror;
+﻿use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -28,4 +28,6 @@ pub enum PaymentError {
     DuplicateRequest = 22,
     MigrationFailed = 23,
     UnsupportedVersion = 24,
+    /// Token transfer failed; no state has been modified
+    TransferFailed = 25,
 }

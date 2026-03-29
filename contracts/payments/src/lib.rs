@@ -1,4 +1,4 @@
-#![no_std]
+﻿#![no_std]
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
 
 mod errors;
@@ -77,7 +77,9 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     let contract_address = env.current_contract_address();
 
     let token_client = token::Client::new(&env, &params.token_address);
-    token_client.transfer(&params.payer, &contract_address, &params.amount);
+    token_client
+        .try_transfer(&params.payer, &contract_address, &params.amount)
+        .map_err(|_| PaymentError::TransferFailed)?;
 
     let payment_id = storage::get_next_payment_id(&env);
     let paid_at = env.ledger().timestamp();
