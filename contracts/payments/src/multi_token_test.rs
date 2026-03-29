@@ -65,6 +65,7 @@ fn test_multi_token_payments() {
 
     // Pay with different tokens
     let payment_id1 = client.pay_for_ticket(
+        &1,
         &payer1,
         &event_id,
         &amount1,
@@ -73,6 +74,7 @@ fn test_multi_token_payments() {
         &PaymentPrivacy::Standard,
     );
     let payment_id2 = client.pay_for_ticket(
+        &1,
         &payer2,
         &event_id,
         &amount2,

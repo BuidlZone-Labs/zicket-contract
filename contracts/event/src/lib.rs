@@ -529,6 +529,7 @@ impl EventContract {
 
     pub fn register_for_event(
         env: Env,
+        nonce: u64,
         attendee: Address,
         event_id: Symbol,
         tier_id: u32,
@@ -592,6 +593,7 @@ impl EventContract {
             let token = payments_client.get_accepted_token();
 
             payments_client.pay_for_ticket(
+                &nonce,
                 &attendee,
                 &event_id,
                 &tier.price,

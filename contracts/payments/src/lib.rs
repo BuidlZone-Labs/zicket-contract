@@ -16,6 +16,7 @@ pub use types::*;
 
 #[derive(Clone)]
 struct PaymentParams {
+    nonce: u64,
     payer: Address,
     event_id: Symbol,
     amount: i128,
@@ -48,8 +49,13 @@ fn validate_payment_privacy(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> {
     params.payer.require_auth();
+
+    if storage::has_nonce(&env, &params.payer, params.nonce) {
+        return Err(PaymentError::DuplicateRequest);
+    }
 
     if params.amount <= 0 {
         return Err(PaymentError::InvalidAmount);
@@ -92,6 +98,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     storage::save_payment(&env, &payment);
     storage::add_event_payment(&env, &params.event_id, payment_id);
     storage::add_payer_payment(&env, &params.payer, payment_id);
+    storage::set_nonce(&env, &params.payer, params.nonce);
     storage::add_event_revenue(&env, &params.event_id, params.amount);
 
     // Track token-specific revenue
@@ -202,8 +209,10 @@ impl PaymentsContract {
     }
 
     /// Pay for a ticket with a specific token. Transfers tokens from payer to contract escrow.
+    #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket(
         env: Env,
+        nonce: u64,
         payer: Address,
         event_id: Symbol,
         amount: i128,
@@ -214,6 +223,7 @@ impl PaymentsContract {
         create_payment(
             env,
             PaymentParams {
+                nonce,
                 payer,
                 event_id,
                 amount,
@@ -226,8 +236,10 @@ impl PaymentsContract {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket_with_options(
         env: Env,
+        nonce: u64,
         payer: Address,
         event_id: Symbol,
         amount: i128,
@@ -238,6 +250,7 @@ impl PaymentsContract {
         create_payment(
             env,
             PaymentParams {
+                nonce,
                 payer,
                 event_id,
                 amount,
@@ -540,6 +553,16 @@ impl PaymentsContract {
         let token_address = storage::get_accepted_token(&env)?;
         let token_client = token::Client::new(&env, &token_address);
         token_client.transfer(&env.current_contract_address(), &to, &revenue);
+        // Release payments
+        let payment_ids = storage::get_event_payments(&env, &event_id);
+        for i in 0..payment_ids.len() {
+            let pid = payment_ids.get(i).ok_or(PaymentError::PaymentNotFound)?;
+            let mut payment = storage::get_payment(&env, pid)?;
+            if payment.status == PaymentStatus::Held && payment.token == token_address {
+                payment.status = PaymentStatus::Released;
+                storage::update_payment(&env, &payment)?;
+            }
+        }
 
         // Update revenue tracking
         storage::reset_event_revenue(&env, &event_id);

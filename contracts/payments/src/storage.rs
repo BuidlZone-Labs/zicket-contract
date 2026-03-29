@@ -43,6 +43,7 @@ pub enum DataKey {
     NextTicketId,
     EmissionPrivacy(Symbol),
     EscrowMeta(Symbol),
+    ProcessedNonce(Address, u64),
     ContractVersion,
 }
 
@@ -406,6 +407,21 @@ pub fn get_escrow_meta(env: &Env, event_id: &Symbol) -> Result<EscrowMetadata, P
         .persistent()
         .get(&DataKey::EscrowMeta(event_id.clone()))
         .ok_or(PaymentError::EscrowNotConfigured)
+}
+
+pub fn has_nonce(env: &Env, address: &Address, nonce: u64) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProcessedNonce(address.clone(), nonce))
+        .unwrap_or(false)
+}
+
+pub fn set_nonce(env: &Env, address: &Address, nonce: u64) {
+    let key = DataKey::ProcessedNonce(address.clone(), nonce);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
 }
 
 /// Get the current contract version from storage.

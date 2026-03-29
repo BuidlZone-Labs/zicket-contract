@@ -657,7 +657,7 @@ fn test_register_for_event_happy_path() {
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee, &event_id, &0, &false, &None);
+    client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
 
     let event = client.get_event(&event_id);
     assert_eq!(event.tiers.get(0).unwrap().sold, 1);
@@ -680,8 +680,7 @@ fn test_register_for_event_not_active_fails() {
 
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
 
-    let _result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
-    let result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
+    let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
 }
 
@@ -723,8 +722,8 @@ fn test_register_for_event_sold_out_fails() {
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee1, &event_id, &0, &false, &None);
-    let result = client.try_register_for_event(&attendee2, &event_id, &0, &false, &None);
+    client.register_for_event(&1, &attendee1, &event_id, &0, &false, &None);
+    let result = client.try_register_for_event(&2, &attendee2, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
 }
 
@@ -743,8 +742,8 @@ fn test_register_for_event_duplicate_fails() {
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee, &event_id, &0, &false, &None);
-    let result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
+    client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+    let result = client.try_register_for_event(&2, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::AlreadyRegistered)));
 }
 
@@ -763,8 +762,7 @@ fn test_register_for_event_cancelled_fails() {
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.cancel_event(&organizer, &event_id);
 
-    let _result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
-    let result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
+    let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::EventNotActive)));
 }
 
@@ -785,8 +783,8 @@ fn test_get_attendees() {
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    client.register_for_event(&attendee1, &event_id, &0, &false, &None);
-    client.register_for_event(&attendee2, &event_id, &0, &false, &None);
+    client.register_for_event(&1, &attendee1, &event_id, &0, &false, &None);
+    client.register_for_event(&2, &attendee2, &event_id, &0, &false, &None);
 
     let attendees = client.get_attendees(&event_id);
     assert_eq!(attendees.len(), 2);
@@ -918,7 +916,7 @@ fn test_reserve_and_pay_success() {
     client.reserve_ticket(&attendee, &event_id, &0, &None);
 
     // 2. Pay
-    client.register_for_event(&attendee, &event_id, &0, &false, &None);
+    client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
 
     let event = client.get_event(&event_id);
     let tier = event.tiers.get(0).unwrap();
@@ -1015,7 +1013,7 @@ fn test_pay_with_expired_reservation_fails() {
     });
 
     // 3. Try to pay -> should fail
-    let result = client.try_register_for_event(&attendee, &event_id, &0, &false, &None);
+    let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::ReservationExpired)));
 }
 

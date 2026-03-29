@@ -29,4 +29,7 @@ pub enum PaymentError {
     TransferFailed = 22,
     MigrationFailed = 22,
     UnsupportedVersion = 23,
+    DuplicateRequest = 22,
+    MigrationFailed = 23,
+    UnsupportedVersion = 24,
 }
