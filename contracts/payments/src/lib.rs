@@ -110,6 +110,11 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
     }
     if storage::get_event_revenue(env, event_id) != expected_event_revenue {
         return Err(PaymentError::AccountingMismatch);
+    }
+
+    Ok(())
+}
+
 fn require_not_paused(env: &Env) -> Result<(), PaymentError> {
     if storage::is_paused(env) {
         return Err(PaymentError::ContractPaused);
