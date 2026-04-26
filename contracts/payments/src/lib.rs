@@ -74,7 +74,9 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
         }
     }
 
-    if total_payments != current_revenue + total_refunds + total_withdrawn {
+    let platform_revenue = storage::get_platform_revenue(env, event_id);
+
+    if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue {
         return Err(PaymentError::AccountingMismatch);
     }
 
