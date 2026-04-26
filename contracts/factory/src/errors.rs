@@ -8,4 +8,6 @@ pub enum FactoryError {
     EventAlreadyDeployed = 2,
     EventNotFoundInRegistry = 3,
     NotInitialized = 4,
+    MigrationFailed = 5,
+    UnsupportedVersion = 6,
 }

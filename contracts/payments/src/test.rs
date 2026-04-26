@@ -12,8 +12,9 @@ fn test_initialize() {
 
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
 
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(&admin, &token, &250, &platform_wallet, &event_contract_id);
 
     let stored_admin = env
         .as_contract(&contract_id, || storage::get_admin(&env))
@@ -24,6 +25,7 @@ fn test_initialize() {
 
     assert_eq!(stored_admin, admin);
     assert_eq!(stored_token, token);
+    assert_eq!(client.get_platform_fee_bps(), 250);
 }
 
 #[test]
@@ -35,10 +37,11 @@ fn test_double_initialization() {
 
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
 
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
 
-    let result = client.try_initialize(&admin, &token, &event_contract_id);
+    let result = client.try_initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
     assert!(result.is_ok());
 
     let stored_admin = env
@@ -60,8 +63,9 @@ fn test_get_nonexistent_payment() {
 
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
 
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
     let result = client.try_get_payment(&999);
     assert_eq!(result.err(), Some(Ok(PaymentError::PaymentNotFound)));
 }
@@ -75,11 +79,85 @@ fn test_get_event_revenue_initial() {
 
     let admin = Address::generate(&env);
     let token = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
 
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
     let event_id = symbol_short!("EVENT1");
     let revenue = client.get_event_revenue(&event_id);
     assert_eq!(revenue, 0);
+}
+
+#[test]
+fn test_pause_unpause_and_blocks_sensitive_actions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    assert!(!client.is_paused());
+    client.set_paused(&admin, &true);
+    assert!(client.is_paused());
+
+    let status_result = client.try_set_event_status(&admin, &event_id, &EventStatus::Active);
+    assert_eq!(status_result.err(), Some(Ok(PaymentError::ContractPaused)));
+
+    let payment_result = client.try_pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(payment_result.err(), Some(Ok(PaymentError::ContractPaused)));
+    assert_eq!(token_client.balance(&payer), amount);
+
+    let wallet = Address::generate(&env);
+    let fee_result = client.try_set_platform_fee(&250, &wallet);
+    assert_eq!(fee_result.err(), Some(Ok(PaymentError::ContractPaused)));
+
+    client.set_paused(&admin, &false);
+    assert!(!client.is_paused());
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.set_paused(&admin, &true);
+    let refund_result = client.try_refund(&admin, &payment_id, &None);
+    assert_eq!(refund_result.err(), Some(Ok(PaymentError::ContractPaused)));
+    assert_eq!(client.get_payment(&payment_id).status, PaymentStatus::Held);
+}
+
+#[test]
+fn test_pause_requires_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, _token, client, _contract_id, _token_contract, _) = setup_contract_with_token(&env);
+    let not_admin = Address::generate(&env);
+
+    let result = client.try_set_paused(&not_admin, &true);
+    assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
+    assert!(!client.is_paused());
+
+    client.set_paused(&admin, &true);
+    assert!(client.is_paused());
 }
 
 fn setup_contract_with_token(
@@ -90,18 +168,47 @@ fn setup_contract_with_token(
     PaymentsContractClient<'_>,
     Address,
     token::StellarAssetClient<'_>,
+    Address,
+) {
+    setup_contract_with_fee(env, 0)
+}
+
+fn setup_contract_with_fee(
+    env: &Env,
+    fee_bps: u32,
+) -> (
+    Address,
+    Address,
+    PaymentsContractClient<'_>,
+    Address,
+    token::StellarAssetClient<'_>,
+    Address,
 ) {
     let contract_id = env.register(PaymentsContract, ());
     let client = PaymentsContractClient::new(env, &contract_id);
     let event_contract_id = env.register(MockEventContract, ());
 
     let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
     let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
     let token = token_contract.address();
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(
+        &admin,
+        &token,
+        &fee_bps,
+        &platform_wallet,
+        &event_contract_id,
+    );
 
     let token_client = token::StellarAssetClient::new(env, &token);
-    (admin, token, client, contract_id, token_client)
+    (
+        admin,
+        token,
+        client,
+        contract_id,
+        token_client,
+        event_contract_id,
+    )
 }
 
 fn setup_contract_with_token_and_event(
@@ -119,9 +226,10 @@ fn setup_contract_with_token_and_event(
     let event_contract_id = env.register(MockEventContract, ());
 
     let admin = Address::generate(env);
+    let platform_wallet = Address::generate(env);
     let token_contract = env.register_stellar_asset_contract_v2(admin.clone());
     let token = token_contract.address();
-    client.initialize(&admin, &token, &event_contract_id);
+    client.initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
 
     let token_client = token::StellarAssetClient::new(env, &token);
     (
@@ -148,6 +256,8 @@ fn bind_event(
         payout_token,
         &true,
         &false,
+        &0,
+        &0,
     );
 }
 
@@ -165,7 +275,7 @@ fn test_pay_for_ticket() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -175,6 +285,7 @@ fn test_pay_for_ticket() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -216,7 +327,7 @@ fn test_payment_issues_ticket_and_links_payment() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -226,6 +337,7 @@ fn test_payment_issues_ticket_and_links_payment() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -250,7 +362,7 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount1 = 100_000_000i128;
@@ -261,6 +373,7 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
     token_client.transfer(&admin, &payer, &(amount1 + amount2));
 
     let payment_id_1 = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount1,
@@ -269,6 +382,7 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
         &PaymentPrivacy::Standard,
     );
     let payment_id_2 = client.pay_for_ticket(
+        &2,
         &payer,
         &event_id,
         &amount2,
@@ -295,11 +409,12 @@ fn test_pay_for_ticket_invalid_amount_zero() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    let (_admin, token, client, _, _, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
 
     let result = client.try_pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &0,
@@ -315,11 +430,12 @@ fn test_pay_for_ticket_invalid_amount_negative() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    let (_admin, token, client, _, _, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
 
     let result = client.try_pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &-1,
@@ -348,8 +464,8 @@ fn test_pay_for_ticket_rejects_anonymous_when_disabled() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
 
-    let result =
-        client.try_pay_for_ticket_with_options(&payer, &event_id, &amount, &token, &true, &false);
+    let result = client
+        .try_pay_for_ticket_with_options(&1, &payer, &event_id, &amount, &token, &true, &false);
     assert_eq!(
         result.err(),
         Some(Ok(PaymentError::AnonymousPaymentsDisabled))
@@ -374,8 +490,8 @@ fn test_pay_for_ticket_rejects_unverified_when_required() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
 
-    let result =
-        client.try_pay_for_ticket_with_options(&payer, &event_id, &amount, &token, &false, &false);
+    let result = client
+        .try_pay_for_ticket_with_options(&1, &payer, &event_id, &amount, &token, &false, &false);
     assert_eq!(result.err(), Some(Ok(PaymentError::VerificationRequired)));
 }
 
@@ -398,7 +514,7 @@ fn test_pay_for_ticket_with_options_allows_verified_flow() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id =
-        client.pay_for_ticket_with_options(&payer, &event_id, &amount, &token, &false, &true);
+        client.pay_for_ticket_with_options(&1, &payer, &event_id, &amount, &token, &false, &true);
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.status, PaymentStatus::Held);
@@ -410,12 +526,13 @@ fn test_pay_for_ticket_with_options_allows_verified_flow() {
 fn test_pay_for_ticket_unauthorized() {
     let env = Env::default();
 
-    let (_admin, token, client, _, _) = setup_contract_with_token(&env);
+    let (_admin, token, client, _, _, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
 
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -430,7 +547,7 @@ fn test_pay_for_ticket_multiple_payments() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer1 = Address::generate(&env);
     let payer2 = Address::generate(&env);
     let event_id1 = symbol_short!("EVENT1");
@@ -445,6 +562,7 @@ fn test_pay_for_ticket_multiple_payments() {
     token_client.transfer(&admin, &payer2, &amount2);
 
     let payment_id1 = client.pay_for_ticket(
+        &1,
         &payer1,
         &event_id1,
         &amount1,
@@ -453,6 +571,7 @@ fn test_pay_for_ticket_multiple_payments() {
         &PaymentPrivacy::Standard,
     );
     let payment_id2 = client.pay_for_ticket(
+        &2,
         &payer2,
         &event_id2,
         &amount2,
@@ -461,6 +580,7 @@ fn test_pay_for_ticket_multiple_payments() {
         &PaymentPrivacy::Standard,
     );
     let payment_id3 = client.pay_for_ticket(
+        &3,
         &payer1,
         &event_id1,
         &amount3,
@@ -509,7 +629,7 @@ fn test_pay_for_ticket_query_record() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -519,6 +639,7 @@ fn test_pay_for_ticket_query_record() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -548,7 +669,7 @@ fn test_withdraw_revenue_success() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -558,6 +679,7 @@ fn test_withdraw_revenue_success() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -597,7 +719,7 @@ fn test_multiple_withdrawals_tracked() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -607,6 +729,7 @@ fn test_multiple_withdrawals_tracked() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -614,8 +737,8 @@ fn test_multiple_withdrawals_tracked() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    let not_admin = Address::generate(&env);
-    let result = client.try_refund(&not_admin, &payment_id);
+    let _not_admin = Address::generate(&env);
+    let result = client.try_refund(&_not_admin, &payment_id, &None);
     assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
 }
 
@@ -633,11 +756,22 @@ fn test_refund_after_withdrawal() {
     let amount = 100_000_000i128;
 
     // First withdrawal
-    token_contract.mint(&admin, &amount);
-    token_client.transfer(&admin, &payer, &amount);
+    token_contract.mint(&admin, &(amount * 3));
+    token_client.transfer(&admin, &payer, &(amount * 3));
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    client.withdraw_revenue(&event_id, &organizer);
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     let payment_id = client.pay_for_ticket(
+        &123,
         &payer,
         &event_id,
         &amount,
@@ -650,7 +784,7 @@ fn test_refund_after_withdrawal() {
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     client.withdraw(&organizer, &event_id);
 
-    let result = client.try_refund(&admin, &payment_id);
+    let result = client.try_refund(&admin, &payment_id, &None);
     assert_eq!(
         result.err(),
         Some(Ok(PaymentError::PaymentAlreadyProcessed))
@@ -678,6 +812,7 @@ fn test_withdraw_happy_path() {
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     let pid1 = client.pay_for_ticket(
+        &1,
         &payer1,
         &event_id,
         &amount1,
@@ -686,6 +821,7 @@ fn test_withdraw_happy_path() {
         &PaymentPrivacy::Standard,
     );
     let pid2 = client.pay_for_ticket(
+        &1,
         &payer2,
         &event_id,
         &amount2,
@@ -747,6 +883,7 @@ fn test_mixed_refund_then_withdraw() {
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     let pid1 = client.pay_for_ticket(
+        &1,
         &payer1,
         &event_id,
         &amount1,
@@ -755,6 +892,7 @@ fn test_mixed_refund_then_withdraw() {
         &PaymentPrivacy::Standard,
     );
     let pid2 = client.pay_for_ticket(
+        &1,
         &payer2,
         &event_id,
         &amount2,
@@ -763,6 +901,7 @@ fn test_mixed_refund_then_withdraw() {
         &PaymentPrivacy::Standard,
     );
     let pid3 = client.pay_for_ticket(
+        &1,
         &payer3,
         &event_id,
         &amount3,
@@ -772,7 +911,7 @@ fn test_mixed_refund_then_withdraw() {
     );
 
     // Refund payment 2
-    client.refund(&admin, &pid2);
+    client.refund(&admin, &pid2, &None);
     assert_eq!(client.get_event_revenue(&event_id), amount1 + amount3);
     assert_eq!(token_client.balance(&payer2), amount2);
 
@@ -797,7 +936,7 @@ fn test_refund_reduces_revenue_correctly() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
     let payer1 = Address::generate(&env);
     let payer2 = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -810,6 +949,7 @@ fn test_refund_reduces_revenue_correctly() {
     token_client.transfer(&admin, &payer2, &amount2);
 
     let pid1 = client.pay_for_ticket(
+        &1,
         &payer1,
         &event_id,
         &amount1,
@@ -818,6 +958,7 @@ fn test_refund_reduces_revenue_correctly() {
         &PaymentPrivacy::Standard,
     );
     client.pay_for_ticket(
+        &1,
         &payer2,
         &event_id,
         &amount2,
@@ -828,7 +969,7 @@ fn test_refund_reduces_revenue_correctly() {
 
     assert_eq!(client.get_event_revenue(&event_id), amount1 + amount2);
 
-    client.refund(&admin, &pid1);
+    client.refund(&admin, &pid1, &None);
     assert_eq!(client.get_event_revenue(&event_id), amount2);
 }
 
@@ -856,6 +997,7 @@ fn test_query_payments() {
 
     // P1 -> E1
     client.pay_for_ticket(
+        &1,
         &payer1,
         &event1,
         &amount,
@@ -865,6 +1007,7 @@ fn test_query_payments() {
     );
     // P1 -> E2
     client.pay_for_ticket(
+        &2,
         &payer1,
         &event2,
         &amount,
@@ -874,6 +1017,7 @@ fn test_query_payments() {
     );
     // P2 -> E1
     client.pay_for_ticket(
+        &1,
         &payer2,
         &event1,
         &amount,
@@ -883,6 +1027,7 @@ fn test_query_payments() {
     );
     // P2 -> E2
     client.pay_for_ticket(
+        &2,
         &payer2,
         &event2,
         &amount,
@@ -917,7 +1062,7 @@ fn test_pay_for_ticket_with_email_hash() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -930,6 +1075,7 @@ fn test_pay_for_ticket_with_email_hash() {
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -951,7 +1097,8 @@ fn test_set_event_end_time_success() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (_admin, _token, client, _contract_id, _token_contract, _) =
+        setup_contract_with_token(&env);
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let event_end_time: u64 = 1704067200 + 86_400;
@@ -974,7 +1121,7 @@ fn test_release_if_expired_before_deadline_fails() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -985,6 +1132,7 @@ fn test_release_if_expired_before_deadline_fails() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1007,7 +1155,7 @@ fn test_release_if_expired_after_deadline_succeeds() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -1018,6 +1166,7 @@ fn test_release_if_expired_after_deadline_succeeds() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1047,7 +1196,7 @@ fn test_release_if_expired_no_double_payout() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -1058,6 +1207,7 @@ fn test_release_if_expired_no_double_payout() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1084,7 +1234,8 @@ fn test_release_if_expired_not_configured() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (_admin, _token, client, _contract_id, _token_contract, _) =
+        setup_contract_with_token(&env);
     let event_id = symbol_short!("EVENT1");
 
     let result = client.try_release_if_expired(&event_id);
@@ -1099,7 +1250,7 @@ fn test_release_if_expired_no_held_funds_still_marks_released() {
         li.timestamp = 1704067200;
     });
 
-    let (admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (admin, _token, client, _contract_id, _token_contract, _) = setup_contract_with_token(&env);
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let event_end_time: u64 = env.ledger().timestamp() + 86_400;
@@ -1127,7 +1278,8 @@ fn test_payments_privacy_default_is_standard() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (_admin, _token, client, _contract_id, _token_contract, _) =
+        setup_contract_with_token(&env);
     let event_id = symbol_short!("EVENT1");
 
     let level = client.get_event_privacy(&event_id);
@@ -1141,7 +1293,7 @@ fn test_payments_set_privacy_level_private() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (admin, _token, client, _contract_id, _token_contract, _) = setup_contract_with_token(&env);
     let event_id = symbol_short!("EVENT1");
 
     client.set_event_privacy(&admin, &event_id, &PrivacyLevel::Private);
@@ -1155,7 +1307,7 @@ fn test_payments_set_privacy_level_anonymous() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (admin, _token, client, _contract_id, _token_contract, _) = setup_contract_with_token(&env);
     let event_id = symbol_short!("EVENT1");
 
     client.set_event_privacy(&admin, &event_id, &PrivacyLevel::Anonymous);
@@ -1169,7 +1321,8 @@ fn test_payments_set_privacy_unauthorized() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_admin, _token, client, _contract_id, _token_contract) = setup_contract_with_token(&env);
+    let (_admin, _token, client, _contract_id, _token_contract, _) =
+        setup_contract_with_token(&env);
     let intruder = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
 
@@ -1182,7 +1335,7 @@ fn test_pay_for_ticket_anonymous_privacy() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -1192,6 +1345,7 @@ fn test_pay_for_ticket_anonymous_privacy() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1212,7 +1366,7 @@ fn test_pay_for_ticket_private_privacy() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 50_000_000i128;
@@ -1222,6 +1376,7 @@ fn test_pay_for_ticket_private_privacy() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1242,7 +1397,7 @@ fn test_pay_for_ticket_standard_privacy() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 75_000_000i128;
@@ -1252,6 +1407,7 @@ fn test_pay_for_ticket_standard_privacy() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1272,7 +1428,7 @@ fn test_anonymous_event_does_not_expose_payer() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -1282,6 +1438,7 @@ fn test_anonymous_event_does_not_expose_payer() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1304,7 +1461,7 @@ fn test_privacy_levels_stored_correctly() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 50_000_000i128;
@@ -1314,6 +1471,7 @@ fn test_privacy_levels_stored_correctly() {
     token_client.transfer(&admin, &payer, &(amount * 3));
 
     let pid_anon = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1322,6 +1480,7 @@ fn test_privacy_levels_stored_correctly() {
         &PaymentPrivacy::Anonymous,
     );
     let pid_priv = client.pay_for_ticket(
+        &2,
         &payer,
         &event_id,
         &amount,
@@ -1330,6 +1489,7 @@ fn test_privacy_levels_stored_correctly() {
         &PaymentPrivacy::Private,
     );
     let pid_std = client.pay_for_ticket(
+        &3,
         &payer,
         &event_id,
         &amount,
@@ -1357,7 +1517,7 @@ fn test_refund_unauthorized() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let _not_admin = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -1368,6 +1528,7 @@ fn test_refund_unauthorized() {
     token_client.transfer(&admin, &payer, &amount);
 
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1375,8 +1536,7 @@ fn test_refund_unauthorized() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    let not_admin = Address::generate(&env);
-    let result = client.try_refund(&not_admin, &payment_id);
+    let result = client.try_refund(&_not_admin, &payment_id, &None);
     assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
 }
 
@@ -1415,8 +1575,8 @@ fn test_refund_nonexistent_payment() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, _token, client, _, _) = setup_contract_with_token(&env);
-    let result = client.try_refund(&admin, &999);
+    let (admin, _token, client, _, _, _) = setup_contract_with_token(&env);
+    let result = client.try_refund(&admin, &999, &None);
     assert_eq!(result.err(), Some(Ok(PaymentError::PaymentNotFound)));
 }
 
@@ -1439,6 +1599,7 @@ fn test_withdraw_unauthorized_organizer_rejected() {
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1471,6 +1632,8 @@ fn test_sync_event_config_invalid_payout_token_rejected() {
         &invalid_token,
         &true,
         &false,
+        &0,
+        &0,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidPayoutToken)));
 
@@ -1489,22 +1652,21 @@ fn test_double_withdraw_rejected_after_revenue_cleared() {
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
-    let email_hash = BytesN::from_array(&env, &[3u8; 32]);
 
     token_contract.mint(&admin, &amount);
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
-    let _payment_id = client.pay_for_ticket(
+    client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
-        &Some(email_hash.clone()),
+        &None,
         &token,
         &PaymentPrivacy::Standard,
     );
-
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     client.withdraw(&organizer, &event_id);
 
@@ -1518,7 +1680,7 @@ fn test_pay_after_event_completed_fails() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, _contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENTCPL");
     let amount = 100_000_000i128;
@@ -1528,14 +1690,8 @@ fn test_pay_after_event_completed_fails() {
     token_client.transfer(&admin, &payer, &amount);
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
-    let result = client.try_pay_for_ticket(
-        &payer,
-        &event_id,
-        &amount,
-        &None,
-        &token,
-        &PaymentPrivacy::Standard,
-    );
+    let result = client
+        .try_pay_for_ticket_with_options(&1, &payer, &event_id, &amount, &token, &true, &false);
     assert_eq!(result.err(), Some(Ok(PaymentError::EventNotActive)));
 }
 
@@ -1558,6 +1714,7 @@ fn test_withdraw_before_completion_fails() {
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
     client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1575,7 +1732,7 @@ fn test_refund_on_cancelled_event_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENTCAN");
     let amount = 100_000_000i128;
@@ -1586,6 +1743,7 @@ fn test_refund_on_cancelled_event_succeeds() {
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
     let payment_id = client.pay_for_ticket(
+        &1,
         &payer,
         &event_id,
         &amount,
@@ -1595,10 +1753,683 @@ fn test_refund_on_cancelled_event_succeeds() {
     );
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Cancelled);
-    client.refund(&admin, &payment_id);
+    client.refund(&admin, &payment_id, &None);
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.status, PaymentStatus::Refunded);
     assert_eq!(token_client.balance(&payer), amount);
     assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+#[should_panic]
+fn test_idempotent_payment() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, token, client, _, _, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    // First attempt succeeds
+    let nonce = 12345u64;
+    client.pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Check storage manually
+    let contract_id = client.address.clone();
+    let has_in_storage = env.as_contract(&contract_id, || storage::has_nonce(&env, &payer, nonce));
+    assert!(
+        has_in_storage,
+        "Nonce should be in storage after first call"
+    );
+
+    // First attempt succeeds
+    let nonce = 123456u64;
+    client.pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Second attempt with same nonce fails (should panic with DuplicateRequest)
+    client.pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_idempotent_payment_with_options() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, _, _, _) = setup_contract_with_token(&env);
+
+    let payer = Address::generate(&env);
+    let event_id = Symbol::new(&env, "EVENT1");
+    let amount = 100_000_000i128;
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    // First attempt succeeds
+    let nonce = 54321u64;
+    client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
+
+    // Second attempt with same nonce fails
+    client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
+}
+
+// ===== Max Tickets Per User Tests =====
+
+#[test]
+fn test_max_tickets_per_user_enforcement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("LIMIT_EV");
+    let amount = 100_000_000i128;
+
+    // Mint plenty of tokens for tests
+    token_contract.mint(&admin, &(amount * 5));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer1, &(amount * 3));
+    token_client.transfer(&admin, &payer2, &amount);
+
+    // Sync config with limit of 2 tickets per user
+    client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token,
+        &true,
+        &false,
+        &2,
+        &0,
+    );
+
+    // Payer 1: First ticket -> Success
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Payer 1: Second ticket -> Success
+    client.pay_for_ticket(
+        &2,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Payer 1: Third ticket -> Failure
+    let result = client.try_pay_for_ticket(
+        &3,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
+
+    // Payer 2: First ticket -> Success (limit is per user)
+    client.pay_for_ticket(
+        &1,
+        &payer2,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    assert_eq!(client.get_owner_tickets(&payer1).len(), 2);
+    assert_eq!(client.get_owner_tickets(&payer2).len(), 1);
+}
+
+#[test]
+fn test_event_supply_enforcement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let payer3 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("SUPPLY");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 3));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer1, &amount);
+    token_client.transfer(&admin, &payer2, &amount);
+    token_client.transfer(&admin, &payer3, &amount);
+
+    client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token,
+        &true,
+        &false,
+        &0,
+        &2,
+    );
+
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    client.pay_for_ticket(
+        &1,
+        &payer2,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    let config = client.get_event_config(&event_id);
+    assert_eq!(config.max_supply, 2);
+    assert_eq!(config.sold_count, 2);
+
+    let result = client.try_pay_for_ticket(
+        &1,
+        &payer3,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::EventSoldOut)));
+    assert_eq!(token_client.balance(&payer3), amount);
+}
+
+// ===== Platform Fee Tests =====
+
+#[test]
+fn test_initialize_invalid_fee_bps() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentsContract, ());
+    let client = PaymentsContractClient::new(&env, &contract_id);
+    let event_contract_id = env.register(MockEventContract, ());
+
+    let admin = Address::generate(&env);
+    let token = Address::generate(&env);
+    let platform_wallet = Address::generate(&env);
+
+    let result = client.try_initialize(
+        &admin,
+        &token,
+        &10_001,
+        &platform_wallet,
+        &event_contract_id,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::InvalidFeeBps)));
+}
+
+#[test]
+fn test_withdraw_revenue_with_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 1704067200;
+    });
+
+    // 2.5% fee = 250 bps
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 250);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128; // 100 tokens
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Withdraw revenue — fee should be deducted
+    let organizer = Address::generate(&env);
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Fee = 100_000_000 * 250 / 10_000 = 2_500_000
+    let expected_fee = 2_500_000i128;
+    let expected_organizer = amount - expected_fee;
+
+    // Organizer gets amount minus fee
+    assert_eq!(token_client.balance(&organizer), expected_organizer);
+    // Contract still holds the fee portion
+    assert_eq!(token_client.balance(&contract_id), expected_fee);
+    // Platform revenue accumulated
+    assert_eq!(client.get_platform_revenue(&event_id), expected_fee);
+    // Event revenue is reset
+    assert_eq!(client.get_event_revenue(&event_id), 0);
+
+    // Withdrawal history records organizer amount (after fee)
+    let history = client.get_withdrawal_history(&event_id);
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.get(0).unwrap().amount, expected_organizer);
+}
+
+#[test]
+fn test_withdraw_revenue_zero_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|li| {
+        li.timestamp = 1704067200;
+    });
+
+    // 0% fee
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 0);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    let organizer = Address::generate(&env);
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Full amount to organizer, nothing retained
+    assert_eq!(token_client.balance(&organizer), amount);
+    assert_eq!(token_client.balance(&contract_id), 0);
+    assert_eq!(client.get_platform_revenue(&event_id), 0);
+}
+
+#[test]
+fn test_withdraw_platform_revenue() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 5% fee = 500 bps
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 500);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 200_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Withdraw revenue — fee accumulated
+    let organizer = Address::generate(&env);
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Fee = 200_000_000 * 500 / 10_000 = 10_000_000
+    let expected_fee = 10_000_000i128;
+    assert_eq!(client.get_platform_revenue(&event_id), expected_fee);
+    assert_eq!(token_client.balance(&contract_id), expected_fee);
+
+    // Withdraw platform revenue
+    client.withdraw_platform_revenue(&event_id);
+
+    // Platform revenue reset, contract balance zero
+    assert_eq!(client.get_platform_revenue(&event_id), 0);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn test_withdraw_platform_revenue_no_revenue() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, _token, client, _, _, _) = setup_contract_with_fee(&env, 500);
+    let event_id = symbol_short!("EVENT1");
+
+    let result = client.try_withdraw_platform_revenue(&event_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::NoPlatformRevenue)));
+}
+
+#[test]
+fn test_set_platform_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, _token, client, _, _, _) = setup_contract_with_fee(&env, 250);
+
+    assert_eq!(client.get_platform_fee_bps(), 250);
+
+    let new_wallet = Address::generate(&env);
+    client.set_platform_fee(&500, &new_wallet);
+
+    assert_eq!(client.get_platform_fee_bps(), 500);
+}
+
+#[test]
+fn test_set_platform_fee_invalid_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, _token, client, _, _, _) = setup_contract_with_fee(&env, 250);
+    let new_wallet = Address::generate(&env);
+
+    let result = client.try_set_platform_fee(&10_001, &new_wallet);
+    assert_eq!(result.err(), Some(Ok(PaymentError::InvalidFeeBps)));
+}
+
+#[test]
+fn test_organizer_withdraw_with_fee() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 10% fee = 1000 bps
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_fee(&env, 1000);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    // Set up event config for organizer withdraw
+    let organizer = Address::generate(&env);
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Mark event as completed, then organizer withdraws via `withdraw` function
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    client.withdraw(&organizer, &event_id);
+
+    // Fee = 100_000_000 * 1000 / 10_000 = 10_000_000
+    let expected_fee = 10_000_000i128;
+    let expected_organizer = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&organizer), expected_organizer);
+    assert_eq!(token_client.balance(&contract_id), expected_fee);
+    assert_eq!(client.get_platform_revenue(&event_id), expected_fee);
+}
+
+#[test]
+fn test_platform_revenue_accumulates_across_withdrawals() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    // 5% fee = 500 bps
+    let (admin, token, client, _contract_id, token_contract, _) =
+        setup_contract_with_fee(&env, 500);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+    let token_client = token::Client::new(&env, &token);
+    let organizer = Address::generate(&env);
+
+    // First cycle
+    token_contract.mint(&admin, &amount);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    client.withdraw_revenue(&event_id, &organizer);
+
+    let fee_per_cycle = 5_000_000i128; // 100M * 500 / 10000
+    assert_eq!(client.get_platform_revenue(&event_id), fee_per_cycle);
+
+    // Second cycle
+    token_contract.mint(&admin, &amount);
+    token_client.transfer(&admin, &payer, &amount);
+    client.pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Platform revenue should accumulate
+    assert_eq!(client.get_platform_revenue(&event_id), fee_per_cycle * 2);
+}
+
+#[test]
+fn test_replay_attack_rejected_detailed() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 2));
+
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let nonce = 101u64;
+
+    // First attempt succeeds
+    client.pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Second attempt with same nonce fails with DuplicateRequest
+    let result = client.try_pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::DuplicateRequest)));
+    assert_eq!(client.get_owner_tickets(&payer).len(), 1);
+    assert_eq!(token_client.balance(&payer), amount);
+}
+
+#[test]
+fn test_zero_nonce_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 2));
+
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let nonce = 0u64;
+
+    let result = client.try_pay_for_ticket(
+        &nonce,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::NonceRequired)));
+
+    assert_eq!(client.get_owner_tickets(&payer).len(), 0);
+    assert_eq!(token_client.balance(&payer), amount * 2);
+}
+
+#[test]
+fn test_partial_refund_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Initial revenue
+    assert_eq!(client.get_event_revenue(&event_id), amount);
+
+    // 1. Partial refund 30%
+    let partial_1 = 30_000_000i128;
+    client.refund(&admin, &payment_id, &Some(partial_1));
+
+    assert_eq!(token_client.balance(&payer), partial_1);
+    assert_eq!(client.get_event_revenue(&event_id), amount - partial_1);
+
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.refunded_amount, partial_1);
+    assert_eq!(payment.status, PaymentStatus::Held);
+
+    // 2. Partial refund another 20%
+    let partial_2 = 20_000_000i128;
+    client.refund(&admin, &payment_id, &Some(partial_2));
+
+    assert_eq!(token_client.balance(&payer), partial_1 + partial_2);
+    assert_eq!(
+        client.get_event_revenue(&event_id),
+        amount - partial_1 - partial_2
+    );
+
+    // 3. Full refund remaining (passing None)
+    client.refund(&admin, &payment_id, &None);
+
+    assert_eq!(token_client.balance(&payer), amount);
+    assert_eq!(client.get_event_revenue(&event_id), 0);
+
+    let final_payment = client.get_payment(&payment_id);
+    assert_eq!(final_payment.refunded_amount, amount);
+    assert_eq!(final_payment.status, PaymentStatus::Refunded);
+}
+
+#[test]
+fn test_partial_refund_exceeds_amount_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Try to refund more than original amount
+    let result = client.try_refund(&admin, &payment_id, &Some(amount + 1));
+    assert!(result.is_err());
 }

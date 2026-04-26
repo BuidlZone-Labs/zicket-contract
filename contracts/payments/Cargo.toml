@@ -4,6 +4,9 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[lints.clippy]
+too_many_arguments = "allow"
+
 [lib]
 crate-type = ["lib", "cdylib"]
 doctest = false

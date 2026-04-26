@@ -45,6 +45,7 @@ pub struct PaymentRecord {
     pub status: PaymentStatus,
     pub paid_at: u64,
     pub privacy_level: PaymentPrivacy,
+    pub refunded_amount: i128,
 }
 
 #[contracttype]
