@@ -36,4 +36,3 @@ pub enum PaymentError {
     NonceRequired = 30,
     ContractPaused = 31,
 }
-
