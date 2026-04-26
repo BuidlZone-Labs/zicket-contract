@@ -613,8 +613,14 @@ impl PaymentsContract {
                 .ok_or(PaymentError::PaymentNotFound)?;
             payment.status = PaymentStatus::Released;
             storage::update_payment(&env, &payment)?;
-            let current_token_rev = storage::get_event_token_revenue(&env, &event_id, &payment.token);
-            storage::set_event_token_revenue(&env, &event_id, &payment.token, current_token_rev - payment.amount);
+            let current_token_rev =
+                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+            storage::set_event_token_revenue(
+                &env,
+                &event_id,
+                &payment.token,
+                current_token_rev - payment.amount,
+            );
         }
 
         storage::set_event_token_revenue(&env, &event_id, &payout_token, 0);
@@ -707,12 +713,6 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
-        let token_address = storage::get_accepted_token(&env)?;
-        let token_client = token::Client::new(&env, &token_address);
-        let payment_ids = storage::get_event_payments(&env, &event_id);
-
-        let mut total: i128 = 0;
-        let mut to_release: soroban_sdk::Vec<PaymentRecord> = soroban_sdk::Vec::new(&env);
         let tokens = storage::get_event_tokens(&env, &event_id);
         let mut total = 0i128;
 
@@ -735,24 +735,22 @@ impl PaymentsContract {
                         }
                     }
 
-            for i in 0..to_release.len() {
-                if let Some(mut payment) = to_release.get(i) {
-                    payment.status = PaymentStatus::Released;
-                    storage::update_payment(&env, &payment)?;
-                    let current_token_rev = storage::get_event_token_revenue(&env, &event_id, &payment.token);
-                    storage::set_event_token_revenue(&env, &event_id, &payment.token, current_token_rev - payment.amount);
-                }
-            }
-
-            storage::set_event_revenue(&env, &event_id, 0);
-
-            let record = WithdrawalRecord {
-                amount: total,
-                timestamp: env.ledger().timestamp(),
-                organizer: meta.organizer.clone(),
-            };
-            storage::add_withdrawal_record(&env, &event_id, &record);
                     storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+
+                    let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                    storage::set_event_revenue(
+                        &env,
+                        &event_id,
+                        current_event_revenue - token_total,
+                    );
+
+                    let record = WithdrawalRecord {
+                        amount: token_total,
+                        timestamp: env.ledger().timestamp(),
+                        organizer: meta.organizer.clone(),
+                    };
+                    storage::add_withdrawal_record(&env, &event_id, &record);
+
                     total += token_total;
                 }
             }
@@ -776,7 +774,6 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
-        let revenue = storage::get_event_revenue(&env, &event_id);
         let token_address = storage::get_accepted_token(&env)?;
         let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
         if revenue <= 0 {
@@ -1033,8 +1030,14 @@ impl PaymentsContract {
                 .ok_or(PaymentError::PaymentNotFound)?;
             payment.status = PaymentStatus::Released;
             storage::update_payment(&env, &payment)?;
-            let current_token_rev = storage::get_event_token_revenue(&env, &event_id, &payment.token);
-            storage::set_event_token_revenue(&env, &event_id, &payment.token, current_token_rev - payment.amount);
+            let current_token_rev =
+                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+            storage::set_event_token_revenue(
+                &env,
+                &event_id,
+                &payment.token,
+                current_token_rev - payment.amount,
+            );
         }
 
         storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
