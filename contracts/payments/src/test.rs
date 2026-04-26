@@ -87,6 +87,79 @@ fn test_get_event_revenue_initial() {
     assert_eq!(revenue, 0);
 }
 
+#[test]
+fn test_pause_unpause_and_blocks_sensitive_actions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, _) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    assert!(!client.is_paused());
+    client.set_paused(&admin, &true);
+    assert!(client.is_paused());
+
+    let status_result = client.try_set_event_status(&admin, &event_id, &EventStatus::Active);
+    assert_eq!(status_result.err(), Some(Ok(PaymentError::ContractPaused)));
+
+    let payment_result = client.try_pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(payment_result.err(), Some(Ok(PaymentError::ContractPaused)));
+    assert_eq!(token_client.balance(&payer), amount);
+
+    let wallet = Address::generate(&env);
+    let fee_result = client.try_set_platform_fee(&250, &wallet);
+    assert_eq!(fee_result.err(), Some(Ok(PaymentError::ContractPaused)));
+
+    client.set_paused(&admin, &false);
+    assert!(!client.is_paused());
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.set_paused(&admin, &true);
+    let refund_result = client.try_refund(&admin, &payment_id, &None);
+    assert_eq!(refund_result.err(), Some(Ok(PaymentError::ContractPaused)));
+    assert_eq!(client.get_payment(&payment_id).status, PaymentStatus::Held);
+}
+
+#[test]
+fn test_pause_requires_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, _token, client, _contract_id, _token_contract, _) = setup_contract_with_token(&env);
+    let not_admin = Address::generate(&env);
+
+    let result = client.try_set_paused(&not_admin, &true);
+    assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
+    assert!(!client.is_paused());
+
+    client.set_paused(&admin, &true);
+    assert!(client.is_paused());
+}
+
 fn setup_contract_with_token(
     env: &Env,
 ) -> (
@@ -183,6 +256,7 @@ fn bind_event(
         payout_token,
         &true,
         &false,
+        &0,
         &0,
     );
 }
@@ -1559,6 +1633,7 @@ fn test_sync_event_config_invalid_payout_token_rejected() {
         &true,
         &false,
         &0,
+        &0,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidPayoutToken)));
 
@@ -1791,6 +1866,7 @@ fn test_max_tickets_per_user_enforcement() {
         &true,
         &false,
         &2,
+        &0,
     );
 
     // Payer 1: First ticket -> Success
@@ -1840,6 +1916,73 @@ fn test_max_tickets_per_user_enforcement() {
 
     assert_eq!(client.get_owner_tickets(&payer1).len(), 2);
     assert_eq!(client.get_owner_tickets(&payer2).len(), 1);
+}
+
+#[test]
+fn test_event_supply_enforcement() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let payer3 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("SUPPLY");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 3));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer1, &amount);
+    token_client.transfer(&admin, &payer2, &amount);
+    token_client.transfer(&admin, &payer3, &amount);
+
+    client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token,
+        &true,
+        &false,
+        &0,
+        &2,
+    );
+
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    client.pay_for_ticket(
+        &1,
+        &payer2,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    let config = client.get_event_config(&event_id);
+    assert_eq!(config.max_supply, 2);
+    assert_eq!(config.sold_count, 2);
+
+    let result = client.try_pay_for_ticket(
+        &1,
+        &payer3,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::EventSoldOut)));
+    assert_eq!(token_client.balance(&payer3), amount);
 }
 
 // ===== Platform Fee Tests =====
@@ -2162,10 +2305,12 @@ fn test_replay_attack_rejected_detailed() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::DuplicateRequest)));
+    assert_eq!(client.get_owner_tickets(&payer).len(), 1);
+    assert_eq!(token_client.balance(&payer), amount);
 }
 
 #[test]
-fn test_optional_nonce_success() {
+fn test_zero_nonce_rejected() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2180,10 +2325,9 @@ fn test_optional_nonce_success() {
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
 
-    let nonce = 0u64; // Optional nonce
+    let nonce = 0u64;
 
-    // First attempt succeeds
-    client.pay_for_ticket(
+    let result = client.try_pay_for_ticket(
         &nonce,
         &payer,
         &event_id,
@@ -2192,20 +2336,10 @@ fn test_optional_nonce_success() {
         &token,
         &PaymentPrivacy::Standard,
     );
+    assert_eq!(result.err(), Some(Ok(PaymentError::NonceRequired)));
 
-    // Second attempt with nonce 0 also succeeds (skip deduplication)
-    client.pay_for_ticket(
-        &nonce,
-        &payer,
-        &event_id,
-        &amount,
-        &None,
-        &token,
-        &PaymentPrivacy::Standard,
-    );
-
-    let owner_tickets = client.get_owner_tickets(&payer);
-    assert_eq!(owner_tickets.len(), 2);
+    assert_eq!(client.get_owner_tickets(&payer).len(), 0);
+    assert_eq!(token_client.balance(&payer), amount * 2);
 }
 
 #[test]

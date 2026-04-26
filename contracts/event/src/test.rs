@@ -678,6 +678,8 @@ fn test_register_for_event_happy_path() {
 
     let event = client.get_event(&event_id);
     assert_eq!(event.tiers.get(0).unwrap().sold, 1);
+    assert_eq!(event.max_supply, 500);
+    assert_eq!(event.sold_count, 1);
 
     let registered = client.is_registered(&event_id, &attendee);
     assert!(registered);
@@ -741,8 +743,12 @@ fn test_register_for_event_sold_out_fails() {
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
     client.register_for_event(&1, &attendee1, &event_id, &0, &false, &None);
+    let event = client.get_event(&event_id);
+    assert_eq!(event.sold_count, 1);
+    assert_eq!(event.max_supply, 1);
+
     let result = client.try_register_for_event(&2, &attendee2, &event_id, &0, &false, &None);
-    assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
+    assert_eq!(result.err(), Some(Ok(EventError::EventSoldOut)));
 }
 
 #[test]

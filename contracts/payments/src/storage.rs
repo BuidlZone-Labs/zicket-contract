@@ -21,6 +21,8 @@ pub struct EventConfig {
     pub allow_anonymous: bool,
     pub requires_verification: bool,
     pub max_tickets_per_user: u32,
+    pub max_supply: u32,
+    pub sold_count: u32,
 }
 
 #[contracttype]
@@ -50,6 +52,7 @@ pub enum DataKey {
     ProcessedNonce(Address, u64),
     ContractVersion,
     UserEventTickets(Symbol, Address),
+    Paused,
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -81,6 +84,20 @@ pub fn set_admin(env: &Env, admin: &soroban_sdk::Address) {
         60 * 60 * 24 * 30,
         60 * 60 * 24 * 30 * 2,
     );
+}
+
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+pub fn set_paused(env: &Env, paused: bool) {
+    env.storage().persistent().set(&DataKey::Paused, &paused);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::Paused, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Get the accepted token address from storage.
@@ -627,4 +644,14 @@ pub fn increment_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address
     env.storage()
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+pub fn increment_event_sold_count(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
+    let mut config = get_event_config(env, event_id).ok_or(PaymentError::InvalidOrganizer)?;
+    config.sold_count = config
+        .sold_count
+        .checked_add(1)
+        .ok_or(PaymentError::EventSoldOut)?;
+    set_event_config(env, event_id, &config);
+    Ok(())
 }

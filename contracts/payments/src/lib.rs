@@ -49,11 +49,24 @@ fn validate_payment_privacy(
     Ok(())
 }
 
+fn require_not_paused(env: &Env) -> Result<(), PaymentError> {
+    if storage::is_paused(env) {
+        return Err(PaymentError::ContractPaused);
+    }
+
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> {
     params.payer.require_auth();
+    require_not_paused(&env)?;
 
-    if params.nonce != 0 && storage::has_nonce(&env, &params.payer, params.nonce) {
+    if params.nonce == 0 {
+        return Err(PaymentError::NonceRequired);
+    }
+
+    if storage::has_nonce(&env, &params.payer, params.nonce) {
         return Err(PaymentError::DuplicateRequest);
     }
 
@@ -69,6 +82,10 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     )?;
 
     if let Some(config) = storage::get_event_config(&env, &params.event_id) {
+        if config.max_supply > 0 && config.sold_count >= config.max_supply {
+            return Err(PaymentError::EventSoldOut);
+        }
+
         if config.max_tickets_per_user > 0 {
             let current_tickets =
                 storage::get_user_event_tickets(&env, &params.event_id, &params.payer);
@@ -107,9 +124,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     storage::save_payment(&env, &payment)?;
     storage::add_event_payment(&env, &params.event_id, payment_id);
     storage::add_payer_payment(&env, &params.payer, payment_id);
-    if params.nonce != 0 {
-        storage::set_nonce(&env, &params.payer, params.nonce);
-    }
+    storage::set_nonce(&env, &params.payer, params.nonce);
     storage::add_event_revenue(&env, &params.event_id, params.amount);
 
     // Track token-specific revenue
@@ -130,7 +145,12 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     );
 
     if let Some(hash) = params.email_hash {
-        events::emit_payment_receipt_requested(&env, payment_id, Some(hash));
+        events::emit_payment_receipt_requested(
+            &env,
+            payment_id,
+            params.event_id.clone(),
+            Some(hash),
+        );
     }
 
     let ticket_id = storage::get_next_ticket_id(&env);
@@ -143,6 +163,9 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     storage::save_ticket(&env, &ticket)?;
     storage::add_owner_ticket(&env, &payment.payer, ticket_id);
     storage::increment_user_event_tickets(&env, &params.event_id, &params.payer);
+    if storage::get_event_config(&env, &params.event_id).is_some() {
+        storage::increment_event_sold_count(&env, &params.event_id)?;
+    }
     events::emit_ticket_issued(
         &env,
         ticket_id,
@@ -236,6 +259,21 @@ impl PaymentsContract {
         storage::get_owner_tickets(&env, &owner)
     }
 
+    pub fn is_paused(env: Env) -> bool {
+        storage::is_paused(&env)
+    }
+
+    pub fn set_paused(env: Env, admin: Address, paused: bool) -> Result<(), PaymentError> {
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        admin.require_auth();
+
+        storage::set_paused(&env, paused);
+        Ok(())
+    }
+
     /// Set the current lifecycle status for an event.
     pub fn set_event_status(
         env: Env,
@@ -243,6 +281,7 @@ impl PaymentsContract {
         event_id: Symbol,
         status: EventStatus,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
@@ -314,6 +353,7 @@ impl PaymentsContract {
         allow_anonymous: bool,
         requires_verification: bool,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         if event_contract != storage::get_event_contract(&env)? {
             return Err(PaymentError::Unauthorized);
         }
@@ -338,7 +378,9 @@ impl PaymentsContract {
         allow_anonymous: bool,
         requires_verification: bool,
         max_tickets_per_user: u32,
+        max_supply: u32,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         if event_contract != storage::get_event_contract(&env)? {
             return Err(PaymentError::Unauthorized);
         }
@@ -349,14 +391,18 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidPayoutToken);
         }
 
-        if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
-            if existing_config.organizer != organizer {
-                return Err(PaymentError::InvalidOrganizer);
-            }
-            if existing_config.payout_token != payout_token {
-                return Err(PaymentError::InvalidPayoutToken);
-            }
-        }
+        let existing_sold_count =
+            if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
+                if existing_config.organizer != organizer {
+                    return Err(PaymentError::InvalidOrganizer);
+                }
+                if existing_config.payout_token != payout_token {
+                    return Err(PaymentError::InvalidPayoutToken);
+                }
+                existing_config.sold_count
+            } else {
+                0
+            };
 
         storage::set_event_config(
             &env,
@@ -367,6 +413,8 @@ impl PaymentsContract {
                 allow_anonymous,
                 requires_verification,
                 max_tickets_per_user,
+                max_supply,
+                sold_count: existing_sold_count,
             },
         );
 
@@ -379,6 +427,7 @@ impl PaymentsContract {
         payment_id: u64,
         amount: Option<i128>,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
@@ -430,6 +479,7 @@ impl PaymentsContract {
             payment.event_id.clone(),
             payment.payer,
             refund_amt,
+            payment.token.clone(),
             &storage::get_emission_privacy(&env, &payment.event_id),
         );
 
@@ -437,6 +487,7 @@ impl PaymentsContract {
     }
 
     pub fn withdraw(env: Env, organizer: Address, event_id: Symbol) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         organizer.require_auth();
 
         let stored_organizer = storage::get_event_organizer(&env, &event_id)?;
@@ -484,6 +535,7 @@ impl PaymentsContract {
                 event_id.clone(),
                 fee_amount,
                 organizer_amount,
+                payout_token.clone(),
             );
         }
 
@@ -500,8 +552,10 @@ impl PaymentsContract {
         events::emit_revenue_withdrawn(
             &env,
             event_id.clone(),
-            stored_organizer,
+            stored_organizer.clone(),
             organizer_amount,
+            payout_token,
+            stored_organizer,
             &storage::get_emission_privacy(&env, &event_id),
         );
 
@@ -543,6 +597,7 @@ impl PaymentsContract {
         organizer: Address,
         event_end_time: u64,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
@@ -562,6 +617,7 @@ impl PaymentsContract {
     /// Permissionless: anyone can trigger this after expiry.
     /// Idempotent: calling after already released returns EscrowAlreadyReleased.
     pub fn release_if_expired(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let mut meta = storage::get_escrow_meta(&env, &event_id)?;
 
         if meta.auto_released {
@@ -612,6 +668,7 @@ impl PaymentsContract {
     /// to the specified address. Platform fees are accumulated for later
     /// withdrawal by the admin.
     pub fn withdraw_revenue(env: Env, event_id: Symbol, to: Address) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
 
@@ -639,6 +696,7 @@ impl PaymentsContract {
                 event_id.clone(),
                 fee_amount,
                 organizer_amount,
+                token_address.clone(),
             );
         }
 
@@ -664,6 +722,16 @@ impl PaymentsContract {
         };
         storage::add_withdrawal_record(&env, &event_id, &record);
 
+        events::emit_revenue_withdrawn(
+            &env,
+            event_id.clone(),
+            to.clone(),
+            organizer_amount,
+            token_address,
+            to,
+            &storage::get_emission_privacy(&env, &event_id),
+        );
+
         Ok(())
     }
 
@@ -677,6 +745,7 @@ impl PaymentsContract {
 
     /// Update the platform fee (admin only). Fee is in basis points (0-10000).
     pub fn set_platform_fee(env: Env, fee_bps: u32, wallet: Address) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
 
@@ -688,7 +757,7 @@ impl PaymentsContract {
         storage::set_platform_fee_bps(&env, fee_bps);
         storage::set_platform_wallet(&env, &wallet);
 
-        events::emit_platform_fee_updated(&env, old_bps, fee_bps);
+        events::emit_platform_fee_updated(&env, admin, old_bps, fee_bps);
 
         Ok(())
     }
@@ -706,6 +775,7 @@ impl PaymentsContract {
     /// Withdraw accumulated platform fees for an event (admin only).
     /// Sends fees to the configured platform wallet.
     pub fn withdraw_platform_revenue(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
 
@@ -726,7 +796,13 @@ impl PaymentsContract {
 
         storage::reset_platform_revenue(&env, &event_id);
 
-        events::emit_platform_revenue_withdrawn(&env, event_id, platform_revenue, platform_wallet);
+        events::emit_platform_revenue_withdrawn(
+            &env,
+            event_id,
+            platform_revenue,
+            token_address,
+            platform_wallet,
+        );
 
         Ok(())
     }
@@ -738,6 +814,7 @@ impl PaymentsContract {
         event_id: Symbol,
         level: PrivacyLevel,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
@@ -759,6 +836,7 @@ impl PaymentsContract {
 
     /// Migrate the contract to a new version. Only admin can call this.
     pub fn migrate(env: Env, admin: Address) -> Result<u32, PaymentError> {
+        require_not_paused(&env)?;
         admin.require_auth();
 
         let current_admin = storage::get_admin(&env)?;
@@ -808,6 +886,7 @@ impl PaymentsContract {
         event_id: Symbol,
         token_address: Address,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         organizer.require_auth();
 
         match storage::get_event_status(&env, &event_id) {
@@ -854,8 +933,10 @@ impl PaymentsContract {
         events::emit_revenue_withdrawn(
             &env,
             event_id.clone(),
-            organizer,
+            organizer.clone(),
             total,
+            token_address,
+            organizer,
             &storage::get_emission_privacy(&env, &event_id),
         );
 
@@ -868,6 +949,7 @@ impl PaymentsContract {
         organizer: Address,
         event_id: Symbol,
     ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
         organizer.require_auth();
 
         match storage::get_event_status(&env, &event_id) {
@@ -918,6 +1000,8 @@ impl PaymentsContract {
                         event_id.clone(),
                         organizer.clone(),
                         total,
+                        token_address.clone(),
+                        organizer.clone(),
                         &storage::get_emission_privacy(&env, &event_id),
                     );
                 }

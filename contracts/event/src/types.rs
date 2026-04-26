@@ -46,6 +46,8 @@ pub struct Event {
     pub created_at: u64,
     pub privacy_level: PrivacyLevel,
     pub max_tickets_per_user: u32,
+    pub max_supply: u32,
+    pub sold_count: u32,
 }
 
 #[contracttype]
