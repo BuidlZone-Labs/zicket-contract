@@ -2433,3 +2433,225 @@ fn test_partial_refund_exceeds_amount_fails() {
     let result = client.try_refund(&admin, &payment_id, &Some(amount + 1));
     assert!(result.is_err());
 }
+
+// ===== Issue #100: Per-User Purchase Limits (On-Chain Enforcement) =====
+
+/// Verify that a purchase within the per-user limit succeeds and the on-chain
+/// counter is correctly updated.
+#[test]
+fn test_per_user_limit_within_limit_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("LIM_OK");
+    let amount = 100_000_000i128;
+
+    // Mint enough tokens for 2 tickets
+    token_contract.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 2));
+
+    // Configure event with max 2 tickets per user
+    client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token,
+        &true,
+        &false,
+        &2,
+        &0,
+    );
+
+    // Counter starts at zero
+    assert_eq!(client.get_user_tickets(&event_id, &payer), 0);
+
+    // First purchase within limit
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(client.get_user_tickets(&event_id, &payer), 1);
+
+    // Second purchase still within limit
+    client.pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(client.get_user_tickets(&event_id, &payer), 2);
+
+    // Tickets are properly recorded
+    assert_eq!(client.get_owner_tickets(&payer).len(), 2);
+}
+
+/// Verify that exceeding the per-user limit is rejected on-chain regardless of
+/// how the request is submitted (i.e., not bypassable via frontend).
+#[test]
+fn test_per_user_limit_exceed_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("LIM_FAIL");
+    let amount = 100_000_000i128;
+
+    // Mint enough tokens for 3 tickets
+    token_contract.mint(&admin, &(amount * 3));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 3));
+
+    // Configure event with max 1 ticket per user
+    client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token,
+        &true,
+        &false,
+        &1,
+        &0,
+    );
+
+    // First purchase succeeds
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Second purchase via pay_for_ticket is rejected on-chain
+    let result = client.try_pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
+
+    // Second purchase via pay_for_ticket_with_options is also rejected on-chain
+    let result2 = client.try_pay_for_ticket_with_options(
+        &3,
+        &payer,
+        &event_id,
+        &amount,
+        &token,
+        &false,
+        &false,
+    );
+    assert_eq!(result2.err(), Some(Ok(PaymentError::MaxTicketsReached)));
+
+    // Counter must not have advanced beyond the limit
+    assert_eq!(client.get_user_tickets(&event_id, &payer), 1);
+    // Token balance must be unchanged after rejected purchases
+    assert_eq!(token_client.balance(&payer), amount * 2);
+}
+
+/// Verify that get_user_tickets can be queried on-chain and is independent
+/// per (event_id, payer) pair — different events or different users do not
+/// share limits.
+#[test]
+fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer_a = Address::generate(&env);
+    let payer_b = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_x = symbol_short!("EVT_X");
+    let event_y = symbol_short!("EVT_Y");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 4));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer_a, &(amount * 2));
+    token_client.transfer(&admin, &payer_b, &(amount * 2));
+
+    // Both events limit to 1 ticket per user
+    for event_id in [&event_x, &event_y] {
+        client.sync_event_config(
+            &event_contract_id,
+            event_id,
+            &organizer,
+            &token,
+            &true,
+            &false,
+            &1,
+            &0,
+        );
+    }
+
+    // payer_a buys one ticket for event_x
+    client.pay_for_ticket(
+        &1,
+        &payer_a,
+        &event_x,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    // payer_b buys one ticket for event_x — separate counter
+    client.pay_for_ticket(
+        &2,
+        &payer_b,
+        &event_x,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    // payer_a buys one ticket for event_y — separate counter (different event)
+    client.pay_for_ticket(
+        &3,
+        &payer_a,
+        &event_y,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Each (event, user) counter is independent
+    assert_eq!(client.get_user_tickets(&event_x, &payer_a), 1);
+    assert_eq!(client.get_user_tickets(&event_x, &payer_b), 1);
+    assert_eq!(client.get_user_tickets(&event_y, &payer_a), 1);
+    assert_eq!(client.get_user_tickets(&event_y, &payer_b), 0);
+
+    // payer_a cannot buy a second ticket for event_x (limit reached)
+    let result = client.try_pay_for_ticket(
+        &4,
+        &payer_a,
+        &event_x,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
+}
