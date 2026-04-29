@@ -41,6 +41,7 @@ fn setup_test_ticket_with_transferable(
         issued_at: 123456,
         status,
         is_transferable,
+        is_used: false,
     };
 
     env.as_contract(contract_id, || {
@@ -253,7 +254,7 @@ fn test_use_ticket_happy_path() {
     // Organizer uses the ticket
     client.use_ticket(&organizer, &ticket_id);
 
-    // Verify ticket status is Used
+    // Verify ticket status is Used and is_used is true
     let ticket: Ticket = env.as_contract(&contract_id, || {
         env.storage()
             .persistent()
@@ -261,6 +262,7 @@ fn test_use_ticket_happy_path() {
             .expect("ticket should exist")
     });
     assert_eq!(ticket.status, TicketStatus::Used);
+    assert_eq!(ticket.is_used, true);
 }
 
 #[test]
@@ -276,14 +278,23 @@ fn test_use_ticket_double_checkin() {
     let owner = Address::generate(&env);
     let ticket_id = 1;
 
-    setup_test_ticket(
-        &env,
-        &contract_id,
-        &organizer,
-        &owner,
+    // Create a ticket and mark it as used
+    let mut ticket = Ticket {
         ticket_id,
-        TicketStatus::Used,
-    );
+        event_id: Symbol::new(&env, "event_1"),
+        organizer: organizer.clone(),
+        owner: owner.clone(),
+        issued_at: 123456,
+        status: TicketStatus::Valid,
+        is_transferable: true,
+        is_used: true, // Mark as used
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(ticket_id), &ticket);
+    });
 
     // Attempt to use already used ticket
     client.use_ticket(&organizer, &ticket_id);
