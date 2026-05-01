@@ -49,6 +49,74 @@ fn validate_payment_privacy(
     Ok(())
 }
 
+fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
+    let payment_ids = storage::get_event_payments(env, event_id);
+    let mut total_payments: i128 = 0;
+    let mut total_refunds: i128 = 0;
+
+    for i in 0..payment_ids.len() {
+        if let Some(pid) = payment_ids.get(i) {
+            if let Ok(payment) = storage::get_payment(env, pid) {
+                total_payments += payment.amount;
+                if payment.status == PaymentStatus::Refunded {
+                    total_refunds += payment.amount;
+                }
+            }
+        }
+    }
+
+    let current_revenue = storage::get_event_revenue(env, event_id);
+    let withdrawal_history = storage::get_withdrawal_history(env, event_id);
+    let mut total_withdrawn: i128 = 0;
+    for i in 0..withdrawal_history.len() {
+        if let Some(record) = withdrawal_history.get(i) {
+            total_withdrawn += record.amount;
+        }
+    }
+
+    let platform_revenue = storage::get_platform_revenue(env, event_id);
+
+    if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue {
+        return Err(PaymentError::AccountingMismatch);
+    }
+
+    // Verify token revenue sum matches Held items
+    let tokens = storage::get_event_tokens(env, event_id);
+    for i in 0..tokens.len() {
+        if let Some(token) = tokens.get(i) {
+            let mut expected_token_revenue: i128 = 0;
+            for j in 0..payment_ids.len() {
+                if let Some(pid) = payment_ids.get(j) {
+                    if let Ok(payment) = storage::get_payment(env, pid) {
+                        if payment.token == token && payment.status == PaymentStatus::Held {
+                            expected_token_revenue += payment.amount;
+                        }
+                    }
+                }
+            }
+            if storage::get_event_token_revenue(env, event_id, &token) != expected_token_revenue {
+                return Err(PaymentError::AccountingMismatch);
+            }
+        }
+    }
+
+    let mut expected_event_revenue: i128 = 0;
+    for i in 0..payment_ids.len() {
+        if let Some(pid) = payment_ids.get(i) {
+            if let Ok(payment) = storage::get_payment(env, pid) {
+                if payment.status == PaymentStatus::Held {
+                    expected_event_revenue += payment.amount;
+                }
+            }
+        }
+    }
+    if storage::get_event_revenue(env, event_id) != expected_event_revenue {
+        return Err(PaymentError::AccountingMismatch);
+    }
+
+    Ok(())
+}
+
 fn require_not_paused(env: &Env) -> Result<(), PaymentError> {
     if storage::is_paused(env) {
         return Err(PaymentError::ContractPaused);
@@ -500,6 +568,8 @@ impl PaymentsContract {
             _ => return Err(PaymentError::EventNotCompleted),
         }
 
+        validate_revenue_invariant(&env, &event_id)?;
+
         let payout_token = storage::get_event_payout_token(&env, &event_id)?;
         let revenue = storage::get_event_token_revenue(&env, &event_id, &payout_token);
         if revenue <= 0 {
@@ -545,9 +615,24 @@ impl PaymentsContract {
                 .ok_or(PaymentError::PaymentNotFound)?;
             payment.status = PaymentStatus::Released;
             storage::update_payment(&env, &payment)?;
+            let current_token_rev =
+                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+            storage::set_event_token_revenue(
+                &env,
+                &event_id,
+                &payment.token,
+                current_token_rev - payment.amount,
+            );
         }
 
         storage::set_event_token_revenue(&env, &event_id, &payout_token, 0);
+
+        let record = WithdrawalRecord {
+            amount: total,
+            timestamp: env.ledger().timestamp(),
+            organizer: stored_organizer.clone(),
+        };
+        storage::add_withdrawal_record(&env, &event_id, &record);
 
         events::emit_revenue_withdrawn(
             &env,
@@ -628,6 +713,8 @@ impl PaymentsContract {
             return Err(PaymentError::EscrowNotExpired);
         }
 
+        validate_revenue_invariant(&env, &event_id)?;
+
         let tokens = storage::get_event_tokens(&env, &event_id);
         let mut total = 0i128;
 
@@ -651,6 +738,21 @@ impl PaymentsContract {
                     }
 
                     storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+
+                    let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                    storage::set_event_revenue(
+                        &env,
+                        &event_id,
+                        current_event_revenue - token_total,
+                    );
+
+                    let record = WithdrawalRecord {
+                        amount: token_total,
+                        timestamp: env.ledger().timestamp(),
+                        organizer: meta.organizer.clone(),
+                    };
+                    storage::add_withdrawal_record(&env, &event_id, &record);
+
                     total += token_total;
                 }
             }
@@ -671,6 +773,8 @@ impl PaymentsContract {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
+
+        validate_revenue_invariant(&env, &event_id)?;
 
         let token_address = storage::get_accepted_token(&env)?;
         let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
@@ -894,6 +998,8 @@ impl PaymentsContract {
             _ => return Err(PaymentError::EventNotCompleted),
         }
 
+        validate_revenue_invariant(&env, &event_id)?;
+
         let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
         if revenue <= 0 {
             return Err(PaymentError::NoRevenue);
@@ -926,9 +1032,27 @@ impl PaymentsContract {
                 .ok_or(PaymentError::PaymentNotFound)?;
             payment.status = PaymentStatus::Released;
             storage::update_payment(&env, &payment)?;
+            let current_token_rev =
+                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+            storage::set_event_token_revenue(
+                &env,
+                &event_id,
+                &payment.token,
+                current_token_rev - payment.amount,
+            );
         }
 
         storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+
+        let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+        storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
+
+        let record = WithdrawalRecord {
+            amount: total,
+            timestamp: env.ledger().timestamp(),
+            organizer: organizer.clone(),
+        };
+        storage::add_withdrawal_record(&env, &event_id, &record);
 
         events::emit_revenue_withdrawn(
             &env,
@@ -956,6 +1080,8 @@ impl PaymentsContract {
             Some(EventStatus::Completed) => {}
             _ => return Err(PaymentError::EventNotCompleted),
         }
+
+        validate_revenue_invariant(&env, &event_id)?;
 
         let tokens = storage::get_event_tokens(&env, &event_id);
         if tokens.is_empty() {
@@ -995,6 +1121,16 @@ impl PaymentsContract {
                     }
 
                     storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+
+                    let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                    storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
+
+                    let record = WithdrawalRecord {
+                        amount: total,
+                        timestamp: env.ledger().timestamp(),
+                        organizer: organizer.clone(),
+                    };
+                    storage::add_withdrawal_record(&env, &event_id, &record);
                     events::emit_revenue_withdrawn(
                         &env,
                         event_id.clone(),
