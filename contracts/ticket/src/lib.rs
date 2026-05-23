@@ -102,6 +102,10 @@ impl TicketContract {
             return Err(TicketError::TicketNotTransferable);
         }
 
+        if ticket.is_used {
+            return Err(TicketError::TicketNotTransferable);
+        }
+
         if ticket.status != TicketStatus::Valid {
             return Err(TicketError::TicketNotTransferable);
         }
@@ -169,11 +173,11 @@ impl TicketContract {
         if ticket.is_used {
             return Err(TicketError::TicketAlreadyUsed);
         }
-        
+
         match ticket.status {
             TicketStatus::Valid => {}
             TicketStatus::Cancelled => return Err(TicketError::EventNotActive),
-            TicketStatus::Used => return Err(TicketError::EventNotActive),
+            TicketStatus::Used => return Err(TicketError::TicketAlreadyUsed),
         }
 
         // 5. Update ticket to used
@@ -219,6 +223,10 @@ impl TicketContract {
 
         if caller != ticket.owner {
             return Err(TicketError::Unauthorized);
+        }
+
+        if ticket.is_used {
+            return Err(TicketError::TicketAlreadyUsed);
         }
 
         if ticket.status != TicketStatus::Valid {

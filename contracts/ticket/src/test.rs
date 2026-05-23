@@ -414,3 +414,72 @@ fn test_transfer_enabled_ticket() {
     let alice_tickets = client.get_tickets_by_owner(&alice);
     assert_eq!(alice_tickets, vec![&env]);
 }
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #11)")]
+fn test_transfer_used_ticket_via_is_used() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
+
+    // Create a ticket with is_used = true
+    let mut ticket = Ticket {
+        ticket_id: 1,
+        event_id: Symbol::new(&env, "event_1"),
+        organizer: organizer.clone(),
+        owner: alice.clone(),
+        issued_at: 123456,
+        status: TicketStatus::Valid,
+        is_transferable: true,
+        is_used: true, // Mark as used
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(1), &ticket);
+    });
+
+    // Alice tries to transfer used ticket - should fail with TicketNotTransferable (11)
+    client.transfer_ticket(&alice, &bob, &1);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #13)")]
+fn test_cancel_used_ticket_via_is_used() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let owner = Address::generate(&env);
+    let organizer = Address::generate(&env);
+
+    // Create a ticket with is_used = true
+    let mut ticket = Ticket {
+        ticket_id: 1,
+        event_id: Symbol::new(&env, "event_1"),
+        organizer: organizer.clone(),
+        owner: owner.clone(),
+        issued_at: 123456,
+        status: TicketStatus::Valid,
+        is_transferable: true,
+        is_used: true, // Mark as used
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(1), &ticket);
+    });
+
+    // Owner tries to cancel used ticket - should fail with TicketAlreadyUsed (13)
+    client.cancel_ticket(&1, &owner);
+}
