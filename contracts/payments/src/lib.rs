@@ -985,6 +985,15 @@ impl PaymentsContract {
         storage::get_event_tokens(&env, &event_id)
     }
 
+    /// Get the number of tickets a user has purchased for a specific event.
+    ///
+    /// This is an on-chain query that can be used to verify per-user purchase
+    /// limits without relying on any off-chain data source or frontend logic.
+    /// Returns 0 if the user has not purchased any tickets for the event.
+    pub fn get_user_tickets(env: Env, event_id: Symbol, user: Address) -> u32 {
+        storage::get_user_event_tickets(&env, &event_id, &user)
+    }
+
     /// Withdraw revenue for a specific token from an event.
     pub fn withdraw_token(
         env: Env,
