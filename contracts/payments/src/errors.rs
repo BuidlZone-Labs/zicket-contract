@@ -1,4 +1,4 @@
-use soroban_sdk::contracterror;
+﻿use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -35,4 +35,6 @@ pub enum PaymentError {
     EventSoldOut = 29,
     NonceRequired = 30,
     ContractPaused = 31,
+    /// Token transfer failed; no state has been modified
+    TransferFailed = 32,
 }

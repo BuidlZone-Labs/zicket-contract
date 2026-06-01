@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 use mock_event_contract::MockEventContract;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{symbol_short, token, Address, Env};
@@ -1834,6 +1834,51 @@ fn test_idempotent_payment_with_options() {
 
     // Second attempt with same nonce fails
     client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
+
+#[test]
+fn test_pay_for_ticket_transfer_failure_no_state_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_admin, token, client, contract_id, _token_contract) = setup_contract_with_token(&env);
+    // payer has zero balance - transfer will fail
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+    let result = client.try_pay_for_ticket(&1, &payer, &event_id, &amount, &None, &token, &PaymentPrivacy::Standard);
+    assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
+    // No payment record created
+    assert_eq!(client.try_get_payment(&1).err(), Some(Ok(PaymentError::PaymentNotFound)));
+    // Revenue unchanged
+    assert_eq!(client.get_event_revenue(&event_id), 0);
+    // No tickets issued
+    assert_eq!(client.get_owner_tickets(&payer).len(), 0);
+    // Contract holds no tokens
+    let token_client = token::Client::new(&env, &token);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn test_pay_for_ticket_partial_funds_no_state_change() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, contract_id, token_contract) = setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount = 100_000_000i128;
+    let partial = 50_000_000i128;
+    // Mint only partial funds to payer
+    token_contract.mint(&admin, &partial);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &partial);
+    // Attempt to pay full amount - should fail
+    let result = client.try_pay_for_ticket(&1, &payer, &event_id, &amount, &None, &token, &PaymentPrivacy::Standard);
+    assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
+    // No state written
+    assert_eq!(client.get_event_revenue(&event_id), 0);
+    assert_eq!(client.get_owner_tickets(&payer).len(), 0);
+    assert_eq!(token_client.balance(&contract_id), 0);
+    // Payer still holds their partial funds
+    assert_eq!(token_client.balance(&payer), partial);
 }
 
 // ===== Max Tickets Per User Tests =====
