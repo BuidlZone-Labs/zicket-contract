@@ -126,6 +126,9 @@ impl EventContract {
         };
 
         save_event(&env, &params.event_id, &event);
+        // Persist privacy level under its own key so get_event_privacy always
+        // returns the value chosen at creation without a separate set_event_privacy call.
+        storage::set_event_privacy(&env, &params.event_id, &params.privacy_level);
         if has_linked_contracts(&env) {
             let payments_contract = get_payments_contract(&env)?;
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
@@ -420,7 +423,8 @@ impl EventContract {
 
         update_event(&env, &event_id, &event)?;
         emit_status_changed(&env, &event_id, &old_status, &EventStatus::Cancelled);
-        emit_event_cancelled(&env, &event_id, &organizer);
+        let privacy = storage::get_event_privacy(&env, &event_id);
+        emit_event_cancelled(&env, &event_id, &organizer, &privacy);
 
         // Process refunds if contracts are linked
         if has_linked_contracts(&env) {
@@ -574,6 +578,36 @@ impl EventContract {
             return Err(EventError::EventNotActive);
         }
 
+        // Sybil-resistance: check free-claim limits before registration state,
+        // so the limit fires even if the wallet has already registered (prevents
+        // gaming via cancellation/re-registration in future flows) and avoids
+        // leaking registration status through the error path on Anonymous events.
+        {
+            let mut req_price: Option<i128> = None;
+            for t in event.tiers.iter() {
+                if t.tier_id == tier_id {
+                    req_price = Some(t.price);
+                    break;
+                }
+            }
+            if req_price == Some(0) {
+                let now = env.ledger().timestamp();
+                let settings = storage::get_claim_settings(&env, &event_id);
+                if settings.max_free_claims > 0 {
+                    let count = storage::get_free_claim_count(&env, &event_id, &attendee);
+                    if count >= settings.max_free_claims {
+                        return Err(EventError::ClaimLimitExceeded);
+                    }
+                }
+                if settings.cooldown_secs > 0 {
+                    let last = storage::get_last_free_claim(&env, &event_id, &attendee);
+                    if last > 0 && now < last + settings.cooldown_secs {
+                        return Err(EventError::ClaimCooldownActive);
+                    }
+                }
+            }
+        }
+
         if storage::is_registered(&env, &event_id, &attendee) {
             return Err(EventError::AlreadyRegistered);
         }
@@ -649,6 +683,12 @@ impl EventContract {
             storage::remove_reservation(&env, &event_id, &attendee);
         }
 
+        // Record free-claim usage after a successful zero-price registration
+        if tier.price == 0 {
+            storage::increment_free_claim_count(&env, &event_id, &attendee);
+            storage::set_last_free_claim(&env, &event_id, &attendee, env.ledger().timestamp());
+        }
+
         tier.sold += 1;
         event.sold_count += 1;
         event.tiers.set(index, tier.clone());
@@ -668,11 +708,38 @@ impl EventContract {
         Ok(storage::is_registered(&env, &event_id, &attendee))
     }
 
+    /// Get the public attendee list for an event.
+    ///
+    /// - `Standard`: returns the full list of attendee addresses.
+    /// - `Private`: returns `UnauthorizedPrivateAccess` — organizer must use
+    ///   `get_attendees_as_organizer` instead.
+    /// - `Anonymous`: returns an empty list; attendee identities are never exposed.
     pub fn get_attendees(
         env: Env,
         event_id: Symbol,
     ) -> Result<soroban_sdk::Vec<Address>, EventError> {
         storage::get_event(&env, &event_id)?;
+        let privacy = storage::get_event_privacy(&env, &event_id);
+        match privacy {
+            PrivacyLevel::Standard => Ok(storage::get_attendees(&env, &event_id)),
+            PrivacyLevel::Private => Err(EventError::UnauthorizedPrivateAccess),
+            PrivacyLevel::Anonymous => Ok(soroban_sdk::Vec::new(&env)),
+        }
+    }
+
+    /// Organizer-only view of the attendee list for Private events.
+    ///
+    /// Requires organizer authorization. Works for all privacy levels.
+    pub fn get_attendees_as_organizer(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+    ) -> Result<soroban_sdk::Vec<Address>, EventError> {
+        organizer.require_auth();
+        let event = storage::get_event(&env, &event_id)?;
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
         Ok(storage::get_attendees(&env, &event_id))
     }
 
@@ -739,6 +806,40 @@ impl EventContract {
         storage::get_event_privacy(&env, &event_id)
     }
 
+    /// Configure sybil-resistance limits for free ticket claims on an event.
+    ///
+    /// - `max_free_claims`: max free tickets a single wallet may claim. 0 = unlimited.
+    /// - `cooldown_secs`: minimum seconds between consecutive free claims. 0 = no cooldown.
+    ///
+    /// Only the event organizer may call this.
+    pub fn set_claim_settings(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        max_free_claims: u32,
+        cooldown_secs: u64,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+        let event = storage::get_event(&env, &event_id)?;
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+        storage::set_claim_settings(
+            &env,
+            &event_id,
+            &ClaimSettings {
+                max_free_claims,
+                cooldown_secs,
+            },
+        );
+        Ok(())
+    }
+
+    /// Get the current sybil-resistance settings for an event.
+    pub fn get_claim_settings(env: Env, event_id: Symbol) -> ClaimSettings {
+        storage::get_claim_settings(&env, &event_id)
+    }
+
     /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
@@ -784,3 +885,9 @@ mod test;
 
 #[cfg(test)]
 mod integration_tests;
+
+#[cfg(test)]
+mod test_privacy;
+
+#[cfg(test)]
+mod test_claims;

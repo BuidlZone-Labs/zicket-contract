@@ -87,3 +87,16 @@ pub struct Reservation {
     pub tier_id: u32,
     pub expires_at: u64,
 }
+
+/// Per-event configuration controlling free-ticket claim abuse prevention.
+///
+/// - `max_free_claims`: max number of free tickets a single wallet may claim for this event.
+///   0 means unlimited (default).
+/// - `cooldown_secs`: minimum seconds between consecutive free claims from the same wallet.
+///   0 means no cooldown (default).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClaimSettings {
+    pub max_free_claims: u32,
+    pub cooldown_secs: u64,
+}
