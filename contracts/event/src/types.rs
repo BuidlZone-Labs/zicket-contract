@@ -45,6 +45,9 @@ pub struct Event {
     pub status: EventStatus,
     pub created_at: u64,
     pub privacy_level: PrivacyLevel,
+    pub max_tickets_per_user: u32,
+    pub max_supply: u32,
+    pub sold_count: u32,
 }
 
 #[contracttype]
@@ -61,6 +64,7 @@ pub struct CreateEventParams {
     pub allow_anonymous: bool,
     pub requires_verification: bool,
     pub privacy_level: PrivacyLevel,
+    pub max_tickets_per_user: u32,
 }
 
 #[contracttype]
@@ -74,6 +78,7 @@ pub struct UpdateEventParams {
     pub event_date: Option<u64>,
     pub allow_anonymous: Option<bool>,
     pub requires_verification: Option<bool>,
+    pub max_tickets_per_user: Option<u32>,
 }
 
 #[contracttype]

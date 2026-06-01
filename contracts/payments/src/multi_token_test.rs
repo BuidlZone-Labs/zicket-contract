@@ -11,6 +11,7 @@ fn setup_contract_with_two_tokens(
     Address,
     PaymentsContractClient<'_>,
     Address,
+    Address,
     token::StellarAssetClient<'_>,
     token::StellarAssetClient<'_>,
 ) {
@@ -24,7 +25,8 @@ fn setup_contract_with_two_tokens(
     let token2 = token2_contract.address();
 
     let event_contract_id = env.register(MockEventContract, ());
-    client.initialize(&admin, &token1, &event_contract_id);
+    let platform_wallet = Address::generate(env);
+    client.initialize(&admin, &token1, &0, &platform_wallet, &event_contract_id);
 
     let token1_client = token::StellarAssetClient::new(env, &token1);
     let token2_client = token::StellarAssetClient::new(env, &token2);
@@ -35,6 +37,7 @@ fn setup_contract_with_two_tokens(
         token2,
         client,
         contract_id,
+        event_contract_id,
         token1_client,
         token2_client,
     )
@@ -45,7 +48,7 @@ fn test_multi_token_payments() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token1, token2, client, contract_id, token1_client, token2_client) =
+    let (admin, token1, token2, client, contract_id, _event_contract, token1_client, token2_client) =
         setup_contract_with_two_tokens(&env);
     let payer1 = Address::generate(&env);
     let payer2 = Address::generate(&env);
@@ -107,5 +110,123 @@ fn test_multi_token_payments() {
 
     // Verify contract balances
     assert_eq!(token1_transfer_client.balance(&contract_id), amount1);
+    assert_eq!(token2_transfer_client.balance(&contract_id), amount2);
+}
+
+#[test]
+fn test_multi_token_refund_updates_only_the_paid_token_bucket() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (
+        admin,
+        token1,
+        token2,
+        client,
+        _contract_id,
+        _event_contract,
+        token1_client,
+        token2_client,
+    ) = setup_contract_with_two_tokens(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount1 = 100_000_000i128;
+    let amount2 = 200_000_000i128;
+
+    token1_client.mint(&admin, &amount1);
+    token2_client.mint(&admin, &amount2);
+
+    let token1_transfer_client = token::Client::new(&env, &token1);
+    let token2_transfer_client = token::Client::new(&env, &token2);
+    token1_transfer_client.transfer(&admin, &payer1, &amount1);
+    token2_transfer_client.transfer(&admin, &payer2, &amount2);
+
+    let payment_id1 = client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount1,
+        &None,
+        &token1,
+        &PaymentPrivacy::Standard,
+    );
+    client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &amount2,
+        &None,
+        &token2,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.refund(&admin, &payment_id1, &None);
+
+    assert_eq!(client.get_event_token_revenue(&event_id, &token1), 0);
+    assert_eq!(client.get_event_token_revenue(&event_id, &token2), amount2);
+    assert_eq!(client.get_event_revenue(&event_id), amount2);
+}
+
+#[test]
+fn test_withdraw_uses_only_the_event_payout_token_revenue() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token1, token2, client, contract_id, event_contract, token1_client, token2_client) =
+        setup_contract_with_two_tokens(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount1 = 100_000_000i128;
+    let amount2 = 200_000_000i128;
+
+    token1_client.mint(&admin, &amount1);
+    token2_client.mint(&admin, &amount2);
+
+    let token1_transfer_client = token::Client::new(&env, &token1);
+    let token2_transfer_client = token::Client::new(&env, &token2);
+    token1_transfer_client.transfer(&admin, &payer1, &amount1);
+    token2_transfer_client.transfer(&admin, &payer2, &amount2);
+
+    client.sync_event_config(
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token1,
+        &true,
+        &false,
+        &0,
+        &0,
+    );
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount1,
+        &None,
+        &token1,
+        &PaymentPrivacy::Standard,
+    );
+    let second_payment_id = client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &amount2,
+        &None,
+        &token2,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+    client.withdraw(&organizer, &event_id);
+
+    let second_payment = client.get_payment(&second_payment_id);
+    assert_eq!(second_payment.status, PaymentStatus::Held);
+    assert_eq!(client.get_event_token_revenue(&event_id, &token1), 0);
+    assert_eq!(client.get_event_token_revenue(&event_id, &token2), amount2);
+    assert_eq!(client.get_event_revenue(&event_id), amount2);
+    assert_eq!(token1_transfer_client.balance(&organizer), amount1);
     assert_eq!(token2_transfer_client.balance(&contract_id), amount2);
 }

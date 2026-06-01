@@ -66,6 +66,7 @@ impl EventContract {
         }
 
         let mut tiers = soroban_sdk::Vec::new(&env);
+        let mut max_supply = 0u32;
         for (current_tier_id, tier_param) in params.initial_tiers.iter().enumerate() {
             if tier_param.name.is_empty() {
                 return Err(EventError::InvalidInput);
@@ -76,6 +77,9 @@ impl EventContract {
             if tier_param.price < 0 {
                 return Err(EventError::InvalidPrice);
             }
+            max_supply = max_supply
+                .checked_add(tier_param.capacity)
+                .ok_or(EventError::InvalidTicketCount)?;
 
             tiers.push_back(TicketTier {
                 tier_id: current_tier_id as u32,
@@ -116,6 +120,9 @@ impl EventContract {
             status: EventStatus::Upcoming,
             created_at: env.ledger().timestamp(),
             privacy_level: params.privacy_level.clone(),
+            max_tickets_per_user: params.max_tickets_per_user,
+            max_supply,
+            sold_count: 0,
         };
 
         save_event(&env, &params.event_id, &event);
@@ -129,6 +136,8 @@ impl EventContract {
                 &params.payout_token,
                 &params.allow_anonymous,
                 &params.requires_verification,
+                &params.max_tickets_per_user,
+                &event.max_supply,
             );
         }
         let privacy = storage::get_event_privacy(&env, &params.event_id);
@@ -193,6 +202,9 @@ impl EventContract {
         if let Some(requires_verification) = params.requires_verification {
             event.requires_verification = requires_verification;
         }
+        if let Some(max_tickets) = params.max_tickets_per_user {
+            event.max_tickets_per_user = max_tickets;
+        }
 
         save_event(&env, &params.event_id, &event);
         if has_linked_contracts(&env) {
@@ -205,6 +217,8 @@ impl EventContract {
                 &event.payout_token,
                 &event.allow_anonymous,
                 &event.requires_verification,
+                &event.max_tickets_per_user,
+                &event.max_supply,
             );
         }
         emit_event_updated(&env, &event);
@@ -252,6 +266,10 @@ impl EventContract {
         if price < 0 {
             return Err(EventError::InvalidPrice);
         }
+        event.max_supply = event
+            .max_supply
+            .checked_add(capacity)
+            .ok_or(EventError::InvalidTicketCount)?;
 
         let new_tier_id = event.tiers.len();
         let new_tier = TicketTier {
@@ -312,7 +330,19 @@ impl EventContract {
                     if c == 0 || c >= 100_000 {
                         return Err(EventError::InvalidTicketCount);
                     }
+                    if c < tier.sold {
+                        return Err(EventError::InvalidTicketCount);
+                    }
+                    let new_max_supply = event
+                        .max_supply
+                        .checked_sub(tier.capacity)
+                        .and_then(|supply| supply.checked_add(c))
+                        .ok_or(EventError::InvalidTicketCount)?;
+                    if new_max_supply < event.sold_count {
+                        return Err(EventError::InvalidTicketCount);
+                    }
                     tier.capacity = c;
+                    event.max_supply = new_max_supply;
                 }
                 event.tiers.set(i, tier);
                 found = true;
@@ -402,7 +432,7 @@ impl EventContract {
             let mut refund_count = 0;
 
             for payment_id in payment_ids.iter() {
-                payments_client.refund(&admin, &payment_id);
+                payments_client.refund(&admin, &payment_id, &None);
                 refund_count += 1;
             }
 
@@ -581,6 +611,10 @@ impl EventContract {
         let index = tier_index.ok_or(EventError::TierNotFound)?;
         let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
 
+        if event.sold_count >= event.max_supply {
+            return Err(EventError::EventSoldOut);
+        }
+
         if !has_res && tier.sold + tier.reserved >= tier.capacity {
             return Err(EventError::TierSoldOut);
         }
@@ -616,6 +650,7 @@ impl EventContract {
         }
 
         tier.sold += 1;
+        event.sold_count += 1;
         event.tiers.set(index, tier.clone());
         update_event(&env, &event_id, &event)?;
         let privacy = storage::get_event_privacy(&env, &event_id);

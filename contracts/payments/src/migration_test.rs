@@ -24,7 +24,8 @@ mod tests {
     fn test_contract_version_initialization() {
         let (_env, client, admin, token, event_contract) = setup_test();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&_env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         let version = client.contract_version();
         assert_eq!(version, 1);
@@ -34,7 +35,8 @@ mod tests {
     fn test_migration_v1_to_v2() {
         let (_env, client, admin, token, event_contract) = setup_test();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&_env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         let current_version = client.contract_version();
         assert_eq!(current_version, 1);
@@ -51,7 +53,8 @@ mod tests {
         let (_env, client, admin, token, event_contract) = setup_test();
         let unauthorized = Address::generate(&_env);
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&_env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         let result = client.try_migrate(&unauthorized);
         assert!(result.is_err());
@@ -62,7 +65,8 @@ mod tests {
         let (env, client, admin, token, event_contract) = setup_test();
         let contract_id = client.address.clone();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         client.migrate(&admin);
 
@@ -82,7 +86,8 @@ mod tests {
     fn test_multiple_migrations() {
         let (_env, client, admin, token, event_contract) = setup_test();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&_env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         let v2 = client.migrate(&admin);
         assert_eq!(v2, 2);
@@ -99,7 +104,8 @@ mod tests {
         let (env, client, admin, token, event_contract) = setup_test();
         let contract_id = client.address.clone();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         env.as_contract(&contract_id, || {
             let result = storage::verify_version(&env);
@@ -111,7 +117,8 @@ mod tests {
     fn test_payment_operations_after_migration() {
         let (_env, client, admin, token, event_contract) = setup_test();
 
-        client.initialize(&admin, &token, &event_contract);
+        let platform_wallet = Address::generate(&_env);
+        client.initialize(&admin, &token, &0, &platform_wallet, &event_contract);
 
         client.migrate(&admin);
 
