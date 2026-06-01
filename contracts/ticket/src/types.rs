@@ -18,4 +18,5 @@ pub struct Ticket {
     pub issued_at: u64,
     pub status: TicketStatus,
     pub is_transferable: bool,
+    pub is_used: bool,
 }

@@ -36,6 +36,7 @@ impl TicketContract {
             issued_at: env.ledger().timestamp(),
             status: TicketStatus::Valid,
             is_transferable: true,
+            is_used: false,
         };
 
         env.storage()
@@ -98,6 +99,10 @@ impl TicketContract {
         }
 
         if !ticket.is_transferable {
+            return Err(TicketError::TicketNotTransferable);
+        }
+
+        if ticket.is_used {
             return Err(TicketError::TicketNotTransferable);
         }
 
@@ -164,14 +169,19 @@ impl TicketContract {
             return Err(TicketError::Unauthorized);
         }
 
-        // 4. Verify ticket status is Valid
-        match ticket.status {
-            TicketStatus::Valid => {}
-            TicketStatus::Used => return Err(TicketError::TicketAlreadyUsed),
-            TicketStatus::Cancelled => return Err(TicketError::EventNotActive),
+        // 4. Verify ticket is not already used and status is Valid
+        if ticket.is_used {
+            return Err(TicketError::TicketAlreadyUsed);
         }
 
-        // 5. Update ticket status to Used
+        match ticket.status {
+            TicketStatus::Valid => {}
+            TicketStatus::Cancelled => return Err(TicketError::EventNotActive),
+            TicketStatus::Used => return Err(TicketError::TicketAlreadyUsed),
+        }
+
+        // 5. Update ticket to used
+        ticket.is_used = true;
         ticket.status = TicketStatus::Used;
 
         // 6. Save the updated ticket back to storage
@@ -213,6 +223,10 @@ impl TicketContract {
 
         if caller != ticket.owner {
             return Err(TicketError::Unauthorized);
+        }
+
+        if ticket.is_used {
+            return Err(TicketError::TicketAlreadyUsed);
         }
 
         if ticket.status != TicketStatus::Valid {
