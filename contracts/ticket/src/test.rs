@@ -262,7 +262,7 @@ fn test_use_ticket_happy_path() {
             .expect("ticket should exist")
     });
     assert_eq!(ticket.status, TicketStatus::Used);
-    assert_eq!(ticket.is_used, true);
+    assert!(ticket.is_used);
 }
 
 #[test]
