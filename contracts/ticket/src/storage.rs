@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 use crate::errors::TicketError;
 use crate::types::Ticket;
@@ -16,6 +16,7 @@ pub enum DataKey {
     EventTickets(Symbol),
     NextTicketId,
     ContractVersion,
+    RecoveryKey(u64),
 }
 
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, TicketError> {
@@ -71,4 +72,22 @@ pub fn verify_version(env: &Env) -> Result<(), TicketError> {
         return Err(TicketError::UnsupportedVersion);
     }
     Ok(())
+}
+
+pub fn get_recovery_key(env: &Env, ticket_id: u64) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::RecoveryKey(ticket_id))
+}
+
+pub fn set_recovery_key(env: &Env, ticket_id: u64, public_key: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::RecoveryKey(ticket_id), public_key);
+}
+
+pub fn remove_recovery_key(env: &Env, ticket_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::RecoveryKey(ticket_id));
 }

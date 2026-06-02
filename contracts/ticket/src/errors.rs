@@ -20,4 +20,6 @@ pub enum TicketError {
     EventNotActive = 14,
     MigrationFailed = 15,
     UnsupportedVersion = 16,
+    RecoveryKeyNotFound = 17,
+    InvalidRecoverySignature = 18,
 }
