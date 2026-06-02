@@ -26,4 +26,8 @@ pub enum EventError {
     InvalidPayoutToken = 20,
     MigrationFailed = 21,
     UnsupportedVersion = 22,
+    UnauthorizedPrivateAccess = 23,
+    PrivacyViolation = 24,
+    ClaimLimitExceeded = 25,
+    ClaimCooldownActive = 26,
 }

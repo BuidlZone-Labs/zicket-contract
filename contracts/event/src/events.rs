@@ -36,7 +36,7 @@ pub struct EventStatusChanged {
 #[contractevent(data_format = "vec", topics = ["ev_cnc"])]
 pub struct EventCancelled {
     pub event_id: Symbol,
-    pub organizer: Address,
+    pub organizer: MaskedAddress,
     pub cancelled_at: u64,
 }
 
@@ -101,10 +101,16 @@ pub fn emit_status_changed(
 }
 
 /// Publish a Soroban event when an event is cancelled.
-pub fn emit_event_cancelled(env: &Env, event_id: &Symbol, organizer: &Address) {
+/// The organizer address is masked according to the event's privacy level.
+pub fn emit_event_cancelled(
+    env: &Env,
+    event_id: &Symbol,
+    organizer: &Address,
+    level: &PrivacyLevel,
+) {
     EventCancelled {
         event_id: event_id.clone(),
-        organizer: organizer.clone(),
+        organizer: mask_address(env, organizer, level.clone()),
         cancelled_at: env.ledger().timestamp(),
     }
     .publish(env);

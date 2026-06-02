@@ -262,7 +262,7 @@ fn test_use_ticket_happy_path() {
             .expect("ticket should exist")
     });
     assert_eq!(ticket.status, TicketStatus::Used);
-    assert_eq!(ticket.is_used, true);
+    assert!(ticket.is_used);
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn test_use_ticket_double_checkin() {
     let ticket_id = 1;
 
     // Create a ticket and mark it as used
-    let mut ticket = Ticket {
+    let ticket = Ticket {
         ticket_id,
         event_id: Symbol::new(&env, "event_1"),
         organizer: organizer.clone(),
@@ -429,7 +429,7 @@ fn test_transfer_used_ticket_via_is_used() {
     let organizer = Address::generate(&env);
 
     // Create a ticket with is_used = true
-    let mut ticket = Ticket {
+    let ticket = Ticket {
         ticket_id: 1,
         event_id: Symbol::new(&env, "event_1"),
         organizer: organizer.clone(),
@@ -441,9 +441,7 @@ fn test_transfer_used_ticket_via_is_used() {
     };
 
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Ticket(1), &ticket);
+        env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
 
     // Alice tries to transfer used ticket - should fail with TicketNotTransferable (11)
@@ -463,7 +461,7 @@ fn test_cancel_used_ticket_via_is_used() {
     let organizer = Address::generate(&env);
 
     // Create a ticket with is_used = true
-    let mut ticket = Ticket {
+    let ticket = Ticket {
         ticket_id: 1,
         event_id: Symbol::new(&env, "event_1"),
         organizer: organizer.clone(),
@@ -475,9 +473,7 @@ fn test_cancel_used_ticket_via_is_used() {
     };
 
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Ticket(1), &ticket);
+        env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
 
     // Owner tries to cancel used ticket - should fail with TicketAlreadyUsed (13)

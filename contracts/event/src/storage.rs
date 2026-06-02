@@ -1,5 +1,5 @@
 use crate::errors::EventError;
-use crate::types::{Event, PrivacyLevel};
+use crate::types::{ClaimSettings, Event, PrivacyLevel};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const CURRENT_VERSION: u32 = 1;
@@ -17,6 +17,12 @@ pub enum DataKey {
     PaymentsContract,
     EventPrivacy(Symbol),
     ContractVersion,
+    /// Number of free tickets claimed by a wallet for a specific event.
+    FreeClaimCount(Symbol, Address),
+    /// Timestamp of the wallet's most recent free claim for a specific event.
+    LastFreeClaim(Symbol, Address),
+    /// Organizer-configured sybil-protection settings for a specific event.
+    EventClaimSettings(Symbol),
 }
 
 /// Check if an event exists in storage.
@@ -209,4 +215,55 @@ pub fn get_event_privacy(env: &Env, event_id: &Symbol) -> PrivacyLevel {
 pub fn has_reservation(env: &Env, event_id: &Symbol, attendee: &Address) -> bool {
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
     env.storage().persistent().has(&key)
+}
+
+// ── Sybil-resistance helpers ──────────────────────────────────────────────────
+
+pub fn get_claim_settings(env: &Env, event_id: &Symbol) -> ClaimSettings {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventClaimSettings(event_id.clone()))
+        .unwrap_or(ClaimSettings {
+            max_free_claims: 0,
+            cooldown_secs: 0,
+        })
+}
+
+pub fn set_claim_settings(env: &Env, event_id: &Symbol, settings: &ClaimSettings) {
+    let key = DataKey::EventClaimSettings(event_id.clone());
+    env.storage().persistent().set(&key, settings);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_free_claim_count(env: &Env, event_id: &Symbol, attendee: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::FreeClaimCount(event_id.clone(), attendee.clone()))
+        .unwrap_or(0u32)
+}
+
+pub fn increment_free_claim_count(env: &Env, event_id: &Symbol, attendee: &Address) {
+    let key = DataKey::FreeClaimCount(event_id.clone(), attendee.clone());
+    let count: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
+    env.storage().persistent().set(&key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::LastFreeClaim(event_id.clone(), attendee.clone()))
+        .unwrap_or(0u64)
+}
+
+pub fn set_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address, timestamp: u64) {
+    let key = DataKey::LastFreeClaim(event_id.clone(), attendee.clone());
+    env.storage().persistent().set(&key, &timestamp);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
