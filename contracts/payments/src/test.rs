@@ -1834,6 +1834,7 @@ fn test_idempotent_payment_with_options() {
 
     // Second attempt with same nonce fails
     client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
+}
 
 #[test]
 fn test_pay_for_ticket_transfer_failure_no_state_change() {

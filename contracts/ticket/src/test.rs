@@ -441,9 +441,7 @@ fn test_transfer_used_ticket_via_is_used() {
     };
 
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Ticket(1), &ticket);
+        env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
 
     // Alice tries to transfer used ticket - should fail with TicketNotTransferable (11)
@@ -475,9 +473,7 @@ fn test_cancel_used_ticket_via_is_used() {
     };
 
     env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .set(&DataKey::Ticket(1), &ticket);
+        env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
 
     // Owner tries to cancel used ticket - should fail with TicketAlreadyUsed (13)
