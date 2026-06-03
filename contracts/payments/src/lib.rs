@@ -172,7 +172,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     let contract_address = env.current_contract_address();
 
     let token_client = token::Client::new(&env, &params.token_address);
-    let _ = token_client
+    token_client
         .try_transfer(&params.payer, &contract_address, &params.amount)
         .map_err(|_| PaymentError::TransferFailed)?
         .map_err(|_| PaymentError::TransferFailed)?;
