@@ -2,7 +2,6 @@ use axum::{routing::post, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tracing_subscriber;
 
 mod captcha;
 mod handlers;
