@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 use mock_event_contract::MockEventContract;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{symbol_short, token, Address, Env};
@@ -1840,8 +1840,7 @@ fn test_idempotent_payment_with_options() {
 fn test_pay_for_ticket_transfer_failure_no_state_change() {
     let env = Env::default();
     env.mock_all_auths();
-    let (_admin, token, client, contract_id, _token_contract, _event_contract_id) =
-        setup_contract_with_token(&env);
+    let (_admin, token, client, contract_id, _token_contract, _) = setup_contract_with_token(&env);
     // payer has zero balance - transfer will fail
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -1874,8 +1873,7 @@ fn test_pay_for_ticket_transfer_failure_no_state_change() {
 fn test_pay_for_ticket_partial_funds_no_state_change() {
     let env = Env::default();
     env.mock_all_auths();
-    let (admin, token, client, contract_id, token_contract, _event_contract_id) =
-        setup_contract_with_token(&env);
+    let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_token(&env);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;

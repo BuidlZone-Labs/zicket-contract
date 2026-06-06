@@ -479,3 +479,90 @@ fn test_cancel_used_ticket_via_is_used() {
     // Owner tries to cancel used ticket - should fail with TicketAlreadyUsed (13)
     client.cancel_ticket(&1, &owner);
 }
+
+#[test]
+fn test_set_recovery_key() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let organizer = Address::generate(&env);
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
+
+    let pub_key = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
+    client.set_recovery_key(&alice, &1, &pub_key);
+
+    // Verify recovery key is set in storage
+    let stored_key: Option<soroban_sdk::BytesN<32>> = env.as_contract(&contract_id, || {
+        env.storage().persistent().get(&DataKey::RecoveryKey(1))
+    });
+    assert_eq!(stored_key.unwrap().to_array(), pub_key.to_array());
+}
+
+#[test]
+#[should_panic]
+fn test_recover_ticket_invalid_signature() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
+
+    let pub_key = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
+    client.set_recovery_key(&alice, &1, &pub_key);
+
+    let invalid_signature = soroban_sdk::BytesN::from_array(&env, &[2; 64]);
+    // This should panic because the signature is invalid for the public key and message.
+    client.recover_ticket(&1, &bob, &invalid_signature);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #17)")]
+fn test_recover_ticket_no_key_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let organizer = Address::generate(&env);
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &alice,
+        1,
+        TicketStatus::Valid,
+    );
+
+    let invalid_signature = soroban_sdk::BytesN::from_array(&env, &[2; 64]);
+    // This should fail with RecoveryKeyNotFound (17) because no key was set.
+    client.recover_ticket(&1, &bob, &invalid_signature);
+}

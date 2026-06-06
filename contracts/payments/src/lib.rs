@@ -1,4 +1,4 @@
-﻿#![no_std]
+#![no_std]
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
 
 mod errors;

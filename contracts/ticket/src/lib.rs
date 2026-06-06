@@ -13,7 +13,7 @@ mod test;
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
@@ -242,6 +242,81 @@ impl TicketContract {
             ticket.event_id.clone(),
             ticket.owner.clone(),
         );
+
+        Ok(())
+    }
+
+    pub fn set_recovery_key(
+        env: Env,
+        owner: Address,
+        ticket_id: u64,
+        public_key: BytesN<32>,
+    ) -> Result<(), TicketError> {
+        owner.require_auth();
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if ticket.owner != owner {
+            return Err(TicketError::Unauthorized);
+        }
+
+        if ticket.is_used || ticket.status != TicketStatus::Valid {
+            return Err(TicketError::TicketNotTransferable);
+        }
+
+        storage::set_recovery_key(&env, ticket_id, &public_key);
+        events::emit_ticket_recovery_key_set(&env, ticket_id, owner);
+
+        Ok(())
+    }
+
+    pub fn recover_ticket(
+        env: Env,
+        ticket_id: u64,
+        new_owner: Address,
+        signature: BytesN<64>,
+    ) -> Result<(), TicketError> {
+        let mut ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if ticket.is_used || ticket.status != TicketStatus::Valid {
+            return Err(TicketError::TicketNotTransferable);
+        }
+
+        let public_key =
+            storage::get_recovery_key(&env, ticket_id).ok_or(TicketError::RecoveryKeyNotFound)?;
+
+        let message = new_owner.clone().to_xdr(&env);
+
+        // Verifies the signature. Panics if verification fails.
+        env.crypto()
+            .ed25519_verify(&public_key, &message, &signature);
+
+        let old_owner = ticket.owner.clone();
+        ticket.owner = new_owner.clone();
+        storage::update_ticket(&env, &ticket);
+
+        // Update old owner's list
+        let mut old_owner_tickets = storage::get_tickets_by_owner(&env, old_owner.clone());
+        if let Some(index) = old_owner_tickets.first_index_of(ticket_id) {
+            old_owner_tickets.remove(index);
+            env.storage().persistent().set(
+                &DataKey::OwnerTickets(old_owner.clone()),
+                &old_owner_tickets,
+            );
+        }
+
+        // Update new owner's list
+        let mut new_owner_tickets = storage::get_tickets_by_owner(&env, new_owner.clone());
+        new_owner_tickets.push_back(ticket_id);
+        env.storage().persistent().set(
+            &DataKey::OwnerTickets(new_owner.clone()),
+            &new_owner_tickets,
+        );
+
+        // Remove recovery key after successful recovery
+        storage::remove_recovery_key(&env, ticket_id);
+
+        events::emit_ticket_recovered(&env, ticket_id, old_owner, new_owner);
 
         Ok(())
     }
