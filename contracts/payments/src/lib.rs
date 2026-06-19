@@ -469,18 +469,29 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidPayoutToken);
         }
 
-        let (existing_sold, existing_admin_delay, existing_cancel, existing_ratio, existing_withdrawn) =
-            if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
-                if existing_config.organizer != organizer {
-                    return Err(PaymentError::InvalidOrganizer);
-                }
-                if existing_config.payout_token != payout_token {
-                    return Err(PaymentError::InvalidPayoutToken);
-                }
-                (existing_config.sold_count, existing_config.admin_delay_extension_ledgers, existing_config.cancel_ledger, existing_config.withdrawable_ratio_bps, existing_config.organizer_withdrawn)
-            } else {
-                (0, 0, None, None, false)
-            };
+        let (
+            existing_sold,
+            existing_admin_delay,
+            existing_cancel,
+            existing_ratio,
+            existing_withdrawn,
+        ) = if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
+            if existing_config.organizer != organizer {
+                return Err(PaymentError::InvalidOrganizer);
+            }
+            if existing_config.payout_token != payout_token {
+                return Err(PaymentError::InvalidPayoutToken);
+            }
+            (
+                existing_config.sold_count,
+                existing_config.admin_delay_extension_ledgers,
+                existing_config.cancel_ledger,
+                existing_config.withdrawable_ratio_bps,
+                existing_config.organizer_withdrawn,
+            )
+        } else {
+            (0, 0, None, None, false)
+        };
 
         storage::set_event_config(
             &env,
@@ -580,7 +591,8 @@ impl PaymentsContract {
             return Err(PaymentError::UnauthorizedWithdrawal);
         }
 
-        let mut config = storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
         if config.organizer_withdrawn {
             return Err(PaymentError::NoRevenue);
         }
@@ -590,8 +602,8 @@ impl PaymentsContract {
 
         match storage::get_event_status(&env, &event_id) {
             Some(EventStatus::Completed) => {
-                let unlock_ledger = config.event_end_ledger 
-                    + config.withdrawal_delay_ledgers 
+                let unlock_ledger = config.event_end_ledger
+                    + config.withdrawal_delay_ledgers
                     + config.admin_delay_extension_ledgers;
                 if current_ledger < unlock_ledger {
                     return Err(PaymentError::EscrowNotExpired); // EscrowNotExpired makes sense here
@@ -681,7 +693,7 @@ impl PaymentsContract {
                 &payout_token,
                 current_token_rev - total_to_withdraw,
             );
-            
+
             let current_rev = storage::get_event_revenue(&env, &event_id);
             storage::set_event_revenue(&env, &event_id, current_rev - total_to_withdraw);
         }
@@ -736,25 +748,36 @@ impl PaymentsContract {
     }
 
     /// Admin can extend the withdrawal delay.
-    pub fn extend_withdrawal_delay(env: Env, admin: Address, event_id: Symbol, additional_ledgers: u32) -> Result<(), PaymentError> {
+    pub fn extend_withdrawal_delay(
+        env: Env,
+        admin: Address,
+        event_id: Symbol,
+        additional_ledgers: u32,
+    ) -> Result<(), PaymentError> {
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
         }
         admin.require_auth();
 
-        let mut config = storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
         config.admin_delay_extension_ledgers += additional_ledgers;
         storage::set_event_config(&env, &event_id, &config);
         Ok(())
     }
 
     /// Handle event cancellation from the event contract.
-    pub fn cancel_event(env: Env, event_id: Symbol, organizer: Address) -> Result<(), PaymentError> {
+    pub fn cancel_event(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+    ) -> Result<(), PaymentError> {
         let event_contract = storage::get_event_contract(&env)?;
         event_contract.require_auth();
 
-        let mut config = storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
         if config.organizer != organizer {
             return Err(PaymentError::Unauthorized);
         }
@@ -799,7 +822,8 @@ impl PaymentsContract {
             return Err(PaymentError::EventNotActive); // Or appropriate error
         }
 
-        let config = storage::get_event_config(&env, &payment.event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let config = storage::get_event_config(&env, &payment.event_id)
+            .ok_or(PaymentError::InvalidOrganizer)?;
         let withdrawable_ratio_bps = config.withdrawable_ratio_bps.unwrap_or(0);
         let refund_ratio_bps = 10000 - withdrawable_ratio_bps;
         if refund_ratio_bps == 0 {
@@ -823,7 +847,8 @@ impl PaymentsContract {
         let revenue = storage::get_event_revenue(&env, &payment.event_id);
         storage::set_event_revenue(&env, &payment.event_id, revenue - remaining);
 
-        let token_revenue = storage::get_event_token_revenue(&env, &payment.event_id, &payment.token);
+        let token_revenue =
+            storage::get_event_token_revenue(&env, &payment.event_id, &payment.token);
         storage::set_event_token_revenue(
             &env,
             &payment.event_id,
