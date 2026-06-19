@@ -60,6 +60,9 @@ fn create_free_event(
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -94,6 +97,9 @@ fn create_paid_event(
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);

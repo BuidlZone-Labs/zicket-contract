@@ -258,6 +258,9 @@ fn bind_event(
         &false,
         &0,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
 }
 
@@ -694,6 +697,7 @@ fn test_withdraw_revenue_success() {
 
     // 2. Withdraw revenue
     let organizer = Address::generate(&env);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     // 3. Verify balances
@@ -767,6 +771,7 @@ fn test_refund_after_withdrawal() {
         &token,
         &PaymentPrivacy::Standard,
     );
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
@@ -782,6 +787,7 @@ fn test_refund_after_withdrawal() {
 
     // Set status to complete and withdraw
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
     let result = client.try_refund(&admin, &payment_id, &None);
@@ -831,6 +837,7 @@ fn test_withdraw_happy_path() {
     );
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
     assert_eq!(token_client.balance(&organizer), amount1 + amount2);
@@ -854,6 +861,7 @@ fn test_withdraw_no_revenue() {
 
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     let result = client.try_withdraw(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::NoRevenue)));
 }
@@ -917,6 +925,7 @@ fn test_mixed_refund_then_withdraw() {
 
     // Withdraw remaining
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
     assert_eq!(token_client.balance(&organizer), amount1 + amount3);
@@ -1634,6 +1643,9 @@ fn test_sync_event_config_invalid_payout_token_rejected() {
         &false,
         &0,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidPayoutToken)));
 
@@ -1668,8 +1680,10 @@ fn test_double_withdraw_rejected_after_revenue_cleared() {
         &PaymentPrivacy::Standard,
     );
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     let result = client.try_withdraw(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::NoRevenue)));
     assert_eq!(token_client.balance(&organizer), amount);
@@ -1723,6 +1737,7 @@ fn test_withdraw_before_completion_fails() {
         &PaymentPrivacy::Standard,
     );
 
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     let result = client.try_withdraw(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::EventNotCompleted)));
 }
@@ -1932,6 +1947,9 @@ fn test_max_tickets_per_user_enforcement() {
         &false,
         &2,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
 
     // Payer 1: First ticket -> Success
@@ -2012,6 +2030,9 @@ fn test_event_supply_enforcement() {
         &false,
         &0,
         &2,
+        &0,
+        &1000,
+        &17280,
     );
 
     client.pay_for_ticket(
@@ -2102,6 +2123,7 @@ fn test_withdraw_revenue_with_fee() {
 
     // Withdraw revenue — fee should be deducted
     let organizer = Address::generate(&env);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     // Fee = 100_000_000 * 250 / 10_000 = 2_500_000
@@ -2151,6 +2173,7 @@ fn test_withdraw_revenue_zero_fee() {
     );
 
     let organizer = Address::generate(&env);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     // Full amount to organizer, nothing retained
@@ -2185,6 +2208,7 @@ fn test_withdraw_platform_revenue() {
 
     // Withdraw revenue — fee accumulated
     let organizer = Address::generate(&env);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     // Fee = 200_000_000 * 500 / 10_000 = 10_000_000
@@ -2270,6 +2294,7 @@ fn test_organizer_withdraw_with_fee() {
 
     // Mark event as completed, then organizer withdraws via `withdraw` function
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
     // Fee = 100_000_000 * 1000 / 10_000 = 10_000_000
@@ -2307,6 +2332,7 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
         &token,
         &PaymentPrivacy::Standard,
     );
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     let fee_per_cycle = 5_000_000i128; // 100M * 500 / 10000
@@ -2324,6 +2350,7 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
         &token,
         &PaymentPrivacy::Standard,
     );
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw_revenue(&event_id, &organizer);
 
     // Platform revenue should accumulate
@@ -2530,6 +2557,9 @@ fn test_per_user_limit_within_limit_succeeds() {
         &false,
         &2,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
 
     // Counter starts at zero
@@ -2592,6 +2622,9 @@ fn test_per_user_limit_exceed_is_rejected() {
         &false,
         &1,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
 
     // First purchase succeeds
@@ -2661,7 +2694,10 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
             &false,
             &1,
             &0,
-        );
+        &0,
+        &1000,
+        &17280,
+    );
     }
 
     // payer_a buys one ticket for event_x

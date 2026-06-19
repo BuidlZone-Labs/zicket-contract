@@ -1,3 +1,4 @@
+use soroban_sdk::testutils::Ledger;
 use super::*;
 use mock_event_contract::MockEventContract;
 use soroban_sdk::testutils::Address as _;
@@ -199,6 +200,9 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
         &false,
         &0,
         &0,
+        &0,
+        &1000,
+        &17280,
     );
     client.pay_for_ticket(
         &1,
@@ -220,6 +224,7 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
     );
 
     client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| { li.sequence_number = 20000; });
     client.withdraw(&organizer, &event_id);
 
     let second_payment = client.get_payment(&second_payment_id);
