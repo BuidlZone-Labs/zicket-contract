@@ -2779,3 +2779,108 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
 }
+
+#[test]
+fn test_withdraw_cancelled_event_respects_dispute_window() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVENTCAN");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Set ledger to some position and cancel the event
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 1000;
+    });
+
+    client.cancel_event(&event_id, &organizer);
+
+    // Try to withdraw immediately after cancellation - should fail
+    let result = client.try_withdraw(&organizer, &event_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::EscrowNotExpired)));
+
+    // Move forward, but not past the dispute window (MIN_DISPUTE_WINDOW_LEDGERS = 100)
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 1050; // Only 50 ledgers after cancellation
+    });
+    let result = client.try_withdraw(&organizer, &event_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::EscrowNotExpired)));
+
+    // Move past the dispute window
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 1100; // Exactly 100 ledgers after cancellation
+    });
+    let result = client.try_withdraw(&organizer, &event_id);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVENTCN2");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    // Cancel at ledger 500
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 500;
+    });
+    client.cancel_event(&event_id, &organizer);
+
+    // Move to ledger 601 (well past the dispute window of 100 ledgers)
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 601;
+    });
+
+    let initial_organizer_balance = token_client.balance(&organizer);
+    client.withdraw(&organizer, &event_id);
+    let final_organizer_balance = token_client.balance(&organizer);
+
+    // Organizer should have received funds
+    assert!(final_organizer_balance > initial_organizer_balance);
+
+    // Verify the payment status is marked as withdrawn
+    let config = client.get_event_config(&event_id);
+    assert!(config.organizer_withdrawn);
+}

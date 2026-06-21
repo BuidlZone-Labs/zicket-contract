@@ -14,6 +14,9 @@ pub use events::*;
 pub use storage::*;
 pub use types::*;
 
+// Minimum dispute window (in ledgers) that must pass after cancellation before organizer can withdraw
+const MIN_DISPUTE_WINDOW_LEDGERS: u32 = 100;
+
 #[derive(Clone)]
 struct PaymentParams {
     nonce: u64,
@@ -610,6 +613,17 @@ impl PaymentsContract {
                 }
             }
             Some(EventStatus::Cancelled) => {
+                // Check dispute window: must wait at least MIN_DISPUTE_WINDOW_LEDGERS after cancellation
+                if let Some(cancel_ledger) = config.cancel_ledger {
+                    let min_dispute_unlock = cancel_ledger + MIN_DISPUTE_WINDOW_LEDGERS;
+                    if current_ledger < min_dispute_unlock {
+                        return Err(PaymentError::EscrowNotExpired);
+                    }
+                } else {
+                    // Should never happen if event is Cancelled, but be defensive
+                    return Err(PaymentError::EventNotCompleted);
+                }
+
                 if let Some(ratio) = config.withdrawable_ratio_bps {
                     if ratio == 0 {
                         return Err(PaymentError::NoRevenue);

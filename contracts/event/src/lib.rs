@@ -20,6 +20,9 @@ use events::{
     emit_registration, emit_status_changed,
 };
 
+// Minimum withdrawal delay (in ledgers) that must be enforced for events
+const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
+
 #[contract]
 pub struct EventContract;
 
@@ -61,6 +64,11 @@ impl EventContract {
         }
 
         if params.event_start_ledger > params.event_end_ledger {
+            return Err(EventError::InvalidInput);
+        }
+
+        // Enforce minimum withdrawal delay to prevent bypass at creation time
+        if params.withdrawal_delay_ledgers < MIN_WITHDRAWAL_DELAY_LEDGERS {
             return Err(EventError::InvalidInput);
         }
 
