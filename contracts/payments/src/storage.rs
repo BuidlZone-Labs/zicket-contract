@@ -63,6 +63,7 @@ pub enum DataKey {
     PostponeDeadline(Symbol),
     TicketDispute(u64),
     PaymentDisputed(u64),
+    DisputeOutcome(u64),    // payment_id -> bool, set when dispute is rejected or timed out
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -771,4 +772,22 @@ pub fn get_dispute_opt(env: &Env, ticket_id: u64) -> Option<TicketDispute> {
     env.storage()
         .persistent()
         .get(&DataKey::TicketDispute(ticket_id))
+}
+
+/// Mark a payment's dispute as permanently resolved in organizer's favor.
+/// Blocks re-disputes and admin refunds on this payment.
+pub fn set_dispute_outcome(env: &Env, payment_id: u64) {
+    let key = DataKey::DisputeOutcome(payment_id);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Returns true if a payment's dispute was resolved in organizer's favor (rejected or timed out).
+pub fn is_dispute_outcome_set(env: &Env, payment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .get::<DataKey, bool>(&DataKey::DisputeOutcome(payment_id))
+        .unwrap_or(false)
 }

@@ -3420,3 +3420,39 @@ fn test_timeout_dispute_nonexistent() {
     let result = client.try_timeout_dispute(&_ticket_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
 }
+
+#[test]
+fn test_reject_dispute_blocks_subsequent_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.reject_dispute(&admin, &ticket_id);
+
+    let result = client.try_refund(&admin, &payment_id, &None::<i128>);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyResolved)));
+}
+
+#[test]
+fn test_timeout_dispute_blocks_re_dispute() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    // Advance time past the 14-day dispute timeout
+    env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + DISPUTE_TIMEOUT_SECS + 1;
+    });
+
+    client.timeout_dispute(&ticket_id);
+
+    let result = client.try_raise_dispute(&ticket_id, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyResolved)));
+}

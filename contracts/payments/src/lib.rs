@@ -544,6 +544,11 @@ impl PaymentsContract {
 
         let mut payment = storage::get_payment(&env, payment_id)?;
 
+        // Block refund if this payment's dispute was already resolved in organizer's favor
+        if storage::is_dispute_outcome_set(&env, payment_id) {
+            return Err(PaymentError::DisputeAlreadyResolved);
+        }
+
         if payment.status == PaymentStatus::Refunded {
             return Err(PaymentError::PaymentAlreadyRefunded);
         }
@@ -1546,6 +1551,11 @@ impl PaymentsContract {
 
         let payment = storage::get_payment(&env, ticket.payment_id)?;
 
+        // Prevent re-disputing a ticket whose dispute was already resolved (rejected/timed out)
+        if storage::is_dispute_outcome_set(&env, ticket.payment_id) {
+            return Err(PaymentError::DisputeAlreadyResolved);
+        }
+
         let event_ended = match storage::get_event_status(&env, &ticket.event_id) {
             Some(EventStatus::Completed) | Some(EventStatus::Cancelled) => true,
             _ => {
@@ -1660,6 +1670,9 @@ impl PaymentsContract {
         storage::clear_payment_dispute(&env, ticket.payment_id);
         storage::remove_dispute(&env, ticket_id);
 
+        // Block re-disputes and admin refunds on this payment permanently
+        storage::set_dispute_outcome(&env, ticket.payment_id);
+
         events::emit_dispute_rejected(&env, ticket_id, ticket.event_id);
 
         Ok(())
@@ -1684,6 +1697,9 @@ impl PaymentsContract {
 
         storage::clear_payment_dispute(&env, ticket.payment_id);
         storage::remove_dispute(&env, ticket_id);
+
+        // Block re-disputes on this payment permanently
+        storage::set_dispute_outcome(&env, ticket.payment_id);
 
         events::emit_dispute_timed_out(&env, ticket_id, ticket.event_id);
 
