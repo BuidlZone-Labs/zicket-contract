@@ -39,4 +39,12 @@ pub enum PaymentError {
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
+    DisputeAlreadyOpen = 35,
+    DisputeNotFound = 36,
+    DisputeWindowClosed = 37,
+    DisputeWindowNotOpen = 38,
+    InvalidDisputeReason = 39,
+    DisputeAlreadyResolved = 40,
+    DisputeNotTimedOut = 41,
+    EventNotEnded = 42,
 }
