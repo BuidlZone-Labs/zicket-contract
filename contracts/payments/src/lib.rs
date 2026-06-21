@@ -544,6 +544,11 @@ impl PaymentsContract {
 
         let mut payment = storage::get_payment(&env, payment_id)?;
 
+        // Block refund while a dispute is actively open on this payment
+        if storage::is_payment_disputed(&env, payment_id) {
+            return Err(PaymentError::DisputeAlreadyOpen);
+        }
+
         // Block refund if this payment's dispute was already resolved in organizer's favor
         if storage::is_dispute_outcome_set(&env, payment_id) {
             return Err(PaymentError::DisputeAlreadyResolved);
@@ -1155,15 +1160,18 @@ impl PaymentsContract {
         validate_revenue_invariant(&env, &event_id)?;
 
         let token_address = storage::get_accepted_token(&env)?;
-        let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
-        if revenue <= 0 {
+
+        // Collect only non-disputed held payments so disputed funds are never swept
+        let (releasable, payments_to_release) =
+            collect_held_payments_for_token(&env, &event_id, &token_address)?;
+        if releasable <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
 
-        // Calculate platform fee
+        // Calculate platform fee on releasable amount only
         let fee_bps = storage::get_platform_fee_bps(&env) as i128;
-        let fee_amount = revenue * fee_bps / 10_000;
-        let organizer_amount = revenue - fee_amount;
+        let fee_amount = releasable * fee_bps / 10_000;
+        let organizer_amount = releasable - fee_amount;
 
         let token_client = token::Client::new(&env, &token_address);
 
@@ -1182,19 +1190,22 @@ impl PaymentsContract {
             );
         }
 
-        // Release payments
-        let payment_ids = storage::get_event_payments(&env, &event_id);
-        for i in 0..payment_ids.len() {
-            let pid = payment_ids.get(i).ok_or(PaymentError::PaymentNotFound)?;
-            let mut payment = storage::get_payment(&env, pid)?;
-            if payment.status == PaymentStatus::Held && payment.token == token_address {
-                payment.status = PaymentStatus::Released;
-                storage::update_payment(&env, &payment)?;
-            }
+        // Mark released payments and update per-token revenue for each one
+        for i in 0..payments_to_release.len() {
+            let mut payment = payments_to_release
+                .get(i)
+                .ok_or(PaymentError::PaymentNotFound)?;
+            payment.status = PaymentStatus::Released;
+            storage::update_payment(&env, &payment)?;
+            let current_token_rev =
+                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+            storage::set_event_token_revenue(
+                &env,
+                &event_id,
+                &payment.token,
+                current_token_rev - payment.amount,
+            );
         }
-
-        // Update revenue tracking
-        storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
 
         // Record withdrawal history
         let record = WithdrawalRecord {
