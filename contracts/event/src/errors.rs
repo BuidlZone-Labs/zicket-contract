@@ -30,4 +30,7 @@ pub enum EventError {
     PrivacyViolation = 24,
     ClaimLimitExceeded = 25,
     ClaimCooldownActive = 26,
+    AnonCommitmentReused = 27,
+    AnonClaimWindowFull = 28,
+    AnonymousClaimsNotEnabled = 29,
 }

@@ -100,3 +100,26 @@ pub struct ClaimSettings {
     pub max_free_claims: u32,
     pub cooldown_secs: u64,
 }
+
+/// Per-event rate-limit configuration for the truly anonymous (no-wallet) free-claim path.
+///
+/// - `max_anon_claims_per_window`: max anonymous claims allowed within one ledger window.
+///   0 means no window-based limit.
+/// - `anon_window_size`: size of the rate-limiting window in ledgers.
+///   0 means no window-based limit applies.
+///
+/// Both fields must be > 0 for the window rate limit to be enforced.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonClaimSettings {
+    pub max_anon_claims_per_window: u32,
+    pub anon_window_size: u32,
+}
+
+/// Tracks anonymous claim counts within the current ledger window for a single event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonWindowState {
+    pub window_index: u32,
+    pub count: u32,
+}
