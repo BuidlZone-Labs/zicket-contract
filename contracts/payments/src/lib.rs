@@ -1623,6 +1623,15 @@ impl PaymentsContract {
         let revenue = storage::get_event_revenue(&env, &ticket.event_id);
         storage::set_event_revenue(&env, &ticket.event_id, revenue - dispute.escrow_amount);
 
+        let token_revenue =
+            storage::get_event_token_revenue(&env, &ticket.event_id, &token_address);
+        storage::set_event_token_revenue(
+            &env,
+            &ticket.event_id,
+            &token_address,
+            token_revenue - dispute.escrow_amount,
+        );
+
         storage::clear_payment_dispute(&env, ticket.payment_id);
         storage::remove_dispute(&env, ticket_id);
 

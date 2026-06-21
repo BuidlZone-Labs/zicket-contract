@@ -3019,11 +3019,8 @@ fn test_approve_refund_happy_path() {
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.status, PaymentStatus::Refunded);
 
-    // Note: get_event_revenue sums EventTokenRevenue entries; approve_refund writes
-    // EventRevenue directly. The observable invariant is that payment is Refunded
-    // and the payer received the funds back.
-    // Verify revenue_before was non-zero (confirming payment was held)
-    assert_eq!(revenue_before, amount);
+    let revenue_after = client.get_event_revenue(&event_id);
+    assert_eq!(revenue_after, 0i128);
 
     // Dispute record removed
     let result = client.try_get_dispute(&ticket_id);
