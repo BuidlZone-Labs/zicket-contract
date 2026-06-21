@@ -1,6 +1,9 @@
 #![no_std]
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
 
+const DISPUTE_WINDOW_SECS: u64 = 7 * 24 * 60 * 60;
+const DISPUTE_TIMEOUT_SECS: u64 = 14 * 24 * 60 * 60;
+
 mod errors;
 mod events;
 mod storage;
@@ -274,6 +277,9 @@ fn collect_held_payments_for_token(
             .ok_or(PaymentError::PaymentNotFound)?;
         let payment = storage::get_payment(env, payment_id)?;
         if payment.status == PaymentStatus::Held && payment.token == *token_address {
+            if storage::is_payment_disputed(env, payment.payment_id) {
+                continue;
+            }
             total += payment.amount;
             payments.push_back(payment);
         }
@@ -1521,6 +1527,162 @@ impl PaymentsContract {
         }
 
         Ok(())
+    }
+
+    /// Raise a dispute for a ticket. No wallet ownership proof required — operable by ticket_id alone.
+    pub fn raise_dispute(env: Env, ticket_id: u64, reason_code: u32) -> Result<(), PaymentError> {
+        let reason = match reason_code {
+            0 => DisputeReason::EventNoShow,
+            1 => DisputeReason::TicketNotDelivered,
+            2 => DisputeReason::DescriptionMismatch,
+            _ => return Err(PaymentError::InvalidDisputeReason),
+        };
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if storage::has_active_dispute(&env, ticket_id) {
+            return Err(PaymentError::DisputeAlreadyOpen);
+        }
+
+        let payment = storage::get_payment(&env, ticket.payment_id)?;
+
+        let event_ended = match storage::get_event_status(&env, &ticket.event_id) {
+            Some(EventStatus::Completed) | Some(EventStatus::Cancelled) => true,
+            _ => {
+                if let Ok(meta) = storage::get_escrow_meta(&env, &ticket.event_id) {
+                    env.ledger().timestamp() >= meta.event_end_time
+                } else {
+                    false
+                }
+            }
+        };
+        if !event_ended {
+            return Err(PaymentError::EventNotEnded);
+        }
+
+        let event_end_time = if let Ok(meta) = storage::get_escrow_meta(&env, &ticket.event_id) {
+            meta.event_end_time
+        } else {
+            env.ledger().timestamp()
+        };
+
+        let now = env.ledger().timestamp();
+        if now > event_end_time + DISPUTE_WINDOW_SECS {
+            return Err(PaymentError::DisputeWindowClosed);
+        }
+
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        let dispute = TicketDispute {
+            ticket_id,
+            reason: reason.clone(),
+            opened_at: now,
+            status: DisputeStatus::Open,
+            escrow_amount: payment.amount,
+        };
+        storage::save_dispute(&env, &dispute);
+
+        storage::mark_payment_disputed(&env, ticket.payment_id);
+
+        events::emit_dispute_raised(&env, ticket_id, ticket.event_id, reason, now, payment.amount);
+
+        Ok(())
+    }
+
+    /// Approve a dispute and refund the attendee. Platform admin only.
+    pub fn approve_refund(env: Env, admin: Address, ticket_id: u64) -> Result<(), PaymentError> {
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        admin.require_auth();
+
+        let dispute = storage::get_dispute(&env, ticket_id)?;
+
+        match dispute.status {
+            DisputeStatus::Open | DisputeStatus::Reviewing => {}
+            _ => return Err(PaymentError::DisputeAlreadyResolved),
+        }
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+        let mut payment = storage::get_payment(&env, ticket.payment_id)?;
+
+        let token_address = storage::get_accepted_token(&env)?;
+        let token_client = token::Client::new(&env, &token_address);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &payment.payer,
+            &dispute.escrow_amount,
+        );
+
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+
+        let revenue = storage::get_event_revenue(&env, &ticket.event_id);
+        storage::set_event_revenue(&env, &ticket.event_id, revenue - dispute.escrow_amount);
+
+        storage::clear_payment_dispute(&env, ticket.payment_id);
+        storage::remove_dispute(&env, ticket_id);
+
+        events::emit_dispute_approved(&env, ticket_id, ticket.event_id, dispute.escrow_amount);
+
+        Ok(())
+    }
+
+    /// Reject a dispute — organizer keeps the escrow. Platform admin only.
+    pub fn reject_dispute(env: Env, admin: Address, ticket_id: u64) -> Result<(), PaymentError> {
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        admin.require_auth();
+
+        let dispute = storage::get_dispute(&env, ticket_id)?;
+
+        match dispute.status {
+            DisputeStatus::Open | DisputeStatus::Reviewing => {}
+            _ => return Err(PaymentError::DisputeAlreadyResolved),
+        }
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+
+        storage::clear_payment_dispute(&env, ticket.payment_id);
+        storage::remove_dispute(&env, ticket_id);
+
+        events::emit_dispute_rejected(&env, ticket_id, ticket.event_id);
+
+        Ok(())
+    }
+
+    /// Release a stale dispute to organizer if 14 days have passed without resolution.
+    /// Permissionless and deterministic — anyone can call.
+    pub fn timeout_dispute(env: Env, ticket_id: u64) -> Result<(), PaymentError> {
+        let dispute = storage::get_dispute(&env, ticket_id)?;
+
+        match dispute.status {
+            DisputeStatus::Open | DisputeStatus::Reviewing => {}
+            _ => return Err(PaymentError::DisputeAlreadyResolved),
+        }
+
+        let now = env.ledger().timestamp();
+        if now < dispute.opened_at + DISPUTE_TIMEOUT_SECS {
+            return Err(PaymentError::DisputeNotTimedOut);
+        }
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+
+        storage::clear_payment_dispute(&env, ticket.payment_id);
+        storage::remove_dispute(&env, ticket_id);
+
+        events::emit_dispute_timed_out(&env, ticket_id, ticket.event_id);
+
+        Ok(())
+    }
+
+    pub fn get_dispute(env: Env, ticket_id: u64) -> Result<TicketDispute, PaymentError> {
+        storage::get_dispute(&env, ticket_id)
     }
 }
 

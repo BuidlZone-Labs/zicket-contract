@@ -1,3 +1,4 @@
+use crate::types::DisputeReason;
 use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
 use soroban_sdk::{contractevent, Address, BytesN, Env, Symbol};
 
@@ -251,4 +252,59 @@ pub fn emit_platform_revenue_withdrawn(
         withdrawn_at: env.ledger().timestamp(),
     }
     .publish(env);
+}
+
+#[contractevent(data_format = "vec", topics = ["dsp_raised"])]
+pub struct DisputeRaised {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub reason: DisputeReason,
+    pub opened_at: u64,
+    pub escrow_amount: i128,
+}
+
+#[contractevent(data_format = "vec", topics = ["dsp_approved"])]
+pub struct DisputeApproved {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub refund_amount: i128,
+    pub resolved_at: u64,
+}
+
+#[contractevent(data_format = "vec", topics = ["dsp_rejected"])]
+pub struct DisputeRejected {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub resolved_at: u64,
+}
+
+#[contractevent(data_format = "vec", topics = ["dsp_timeout"])]
+pub struct DisputeTimedOut {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub released_at: u64,
+}
+
+pub fn emit_dispute_raised(
+    env: &Env,
+    ticket_id: u64,
+    event_id: Symbol,
+    reason: DisputeReason,
+    opened_at: u64,
+    escrow_amount: i128,
+) {
+    DisputeRaised { ticket_id, event_id, reason, opened_at, escrow_amount }.publish(env);
+}
+
+pub fn emit_dispute_approved(env: &Env, ticket_id: u64, event_id: Symbol, refund_amount: i128) {
+    DisputeApproved { ticket_id, event_id, refund_amount, resolved_at: env.ledger().timestamp() }
+        .publish(env);
+}
+
+pub fn emit_dispute_rejected(env: &Env, ticket_id: u64, event_id: Symbol) {
+    DisputeRejected { ticket_id, event_id, resolved_at: env.ledger().timestamp() }.publish(env);
+}
+
+pub fn emit_dispute_timed_out(env: &Env, ticket_id: u64, event_id: Symbol) {
+    DisputeTimedOut { ticket_id, event_id, released_at: env.ledger().timestamp() }.publish(env);
 }
