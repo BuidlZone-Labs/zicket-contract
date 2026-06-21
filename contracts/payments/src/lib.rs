@@ -1593,11 +1593,11 @@ impl PaymentsContract {
 
     /// Approve a dispute and refund the attendee. Platform admin only.
     pub fn approve_refund(env: Env, admin: Address, ticket_id: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
         }
-        admin.require_auth();
 
         let dispute = storage::get_dispute(&env, ticket_id)?;
 
@@ -1633,11 +1633,11 @@ impl PaymentsContract {
 
     /// Reject a dispute — organizer keeps the escrow. Platform admin only.
     pub fn reject_dispute(env: Env, admin: Address, ticket_id: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
         }
-        admin.require_auth();
 
         let dispute = storage::get_dispute(&env, ticket_id)?;
 
