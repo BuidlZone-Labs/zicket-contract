@@ -956,6 +956,8 @@ impl EventContract {
                 &_email_hash,
                 &token,
                 &PaymentPrivacy::Standard,
+                &None,
+                &None,
             );
         }
 

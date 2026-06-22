@@ -115,7 +115,7 @@ fn test_registration_cross_contract_happy_path() {
     assert_eq!(payment_owner_tickets.len(), 1);
     let payment_ticket_id = payment_owner_tickets.get(0).unwrap();
     let payment_ticket = payments_client.get_ticket(&payment_ticket_id);
-    assert_eq!(payment_ticket.owner, attendee);
+    assert_eq!(payment_ticket.owner, Some(attendee.clone()));
     assert_eq!(payment_ticket.event_id, event_id);
 
     let registered = event_client.is_registered(&event_id, &attendee);

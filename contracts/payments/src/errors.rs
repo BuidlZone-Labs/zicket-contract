@@ -39,4 +39,10 @@ pub enum PaymentError {
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
+    /// Anonymous payment is missing its required nullifier commitment
+    MissingNullifierCommitment = 35,
+    /// Private payment is missing its required stealth delivery key
+    MissingStealthDeliveryKey = 36,
+    /// The supplied privacy data does not match the declared privacy level
+    PrivacyLevelMismatch = 37,
 }
