@@ -165,8 +165,12 @@ fn test_private_stores_hashed_wallet() {
 
     let p = client.get_payment(&pid);
     assert!(p.hashed_wallet.is_some());
-    // The hash must be deterministic SHA-256 of the payer XDR.
-    let expected = env.crypto().sha256(&payer.clone().to_xdr(&env));
+    // The hash is a salted SHA-256 of the payer XDR concatenated with the stealth
+    // delivery key, preventing brute-force enumeration of the payer address.
+    let mut preimage = payer.clone().to_xdr(&env);
+    let key = stealth_key(&env);
+    preimage.append(&soroban_sdk::Bytes::from_slice(&env, key.to_array().as_ref()));
+    let expected = env.crypto().sha256(&preimage);
     assert_eq!(p.hashed_wallet, Some(expected.into()));
 }
 
@@ -431,8 +435,8 @@ fn test_no_privacy_level_mutation_path_exists() {
         &amount,
         &None,
         &token,
-        &PaymentPrivacy::Anonymous,
-        &Some(commitment(&env)),
+        &PaymentPrivacy::Standard,
+        &None,
         &None,
     );
 
@@ -442,13 +446,15 @@ fn test_no_privacy_level_mutation_path_exists() {
     client.refund(&admin, &pid, &None);
     let after = client.get_payment(&pid).privacy_level;
     assert_eq!(before, after);
-    assert_eq!(after, PaymentPrivacy::Anonymous);
+    assert_eq!(after, PaymentPrivacy::Standard);
 }
 
 // ===================== Refund preserves privacy =====================
 
 #[test]
-fn test_anonymous_refund_preserves_privacy() {
+fn test_anonymous_refund_returns_error() {
+    // Anonymous payments store no payer address, so an on-chain refund would
+    // strand the escrowed tokens. The contract rejects the refund outright.
     let env = Env::default();
     env.mock_all_auths();
     let (admin, token, client, _cid, _tc) = setup(&env);
@@ -468,17 +474,19 @@ fn test_anonymous_refund_preserves_privacy() {
         &Some(commitment(&env)),
         &None,
     );
-    client.refund(&admin, &pid, &None);
+    let result = client.try_refund(&admin, &pid, &None);
+    assert_eq!(result.err(), Some(Ok(PaymentError::RefundNotAllowed)));
 
+    // Payment remains Held and unchanged.
     let p = client.get_payment(&pid);
-    assert_eq!(p.status, PaymentStatus::Refunded);
+    assert_eq!(p.status, PaymentStatus::Held);
     assert_eq!(p.privacy_level, PaymentPrivacy::Anonymous);
-    assert_eq!(p.payer, None);
-    assert!(p.nullifier_commitment.is_some());
 }
 
 #[test]
-fn test_private_refund_preserves_privacy() {
+fn test_private_refund_returns_error() {
+    // Private payments store only a hashed wallet, so an on-chain refund would
+    // strand the escrowed tokens. The contract rejects the refund outright.
     let env = Env::default();
     env.mock_all_auths();
     let (admin, token, client, _cid, _tc) = setup(&env);
@@ -498,13 +506,51 @@ fn test_private_refund_preserves_privacy() {
         &None,
         &Some(stealth_key(&env)),
     );
-    client.refund(&admin, &pid, &None);
+    let result = client.try_refund(&admin, &pid, &None);
+    assert_eq!(result.err(), Some(Ok(PaymentError::RefundNotAllowed)));
 
+    // Payment remains Held and unchanged.
     let p = client.get_payment(&pid);
-    assert_eq!(p.status, PaymentStatus::Refunded);
+    assert_eq!(p.status, PaymentStatus::Held);
     assert_eq!(p.privacy_level, PaymentPrivacy::Private);
-    assert_eq!(p.payer, None);
-    assert!(p.hashed_wallet.is_some());
+}
+
+#[test]
+fn test_nullifier_reuse_rejected() {
+    // The same nullifier commitment cannot be spent by two Anonymous payments.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, _cid, _tc) = setup(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("EV");
+    let amount = 1_000i128;
+    fund(&env, &admin, &payer, &token, amount * 2);
+
+    let c = commitment(&env);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Anonymous,
+        &Some(c.clone()),
+        &None,
+    );
+
+    let result = client.try_pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Anonymous,
+        &Some(c),
+        &None,
+    );
+    assert_eq!(result.err(), Some(Ok(PaymentError::DuplicateRequest)));
 }
 
 #[test]

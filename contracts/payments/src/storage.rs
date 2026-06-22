@@ -1,6 +1,6 @@
 use crate::errors::PaymentError;
 use crate::types::{EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket};
-use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
 const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
@@ -61,6 +61,9 @@ pub enum DataKey {
     UserEventTickets(Symbol, Address),
     Paused,
     PostponeDeadline(Symbol),
+    ProcessedNonceHash(BytesN<32>, u64),
+    UserEventTicketsHash(Symbol, BytesN<32>),
+    SpentNullifier(BytesN<32>),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -571,6 +574,36 @@ pub fn set_nonce(env: &Env, address: &Address, nonce: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
 }
 
+pub fn has_nonce_hash(env: &Env, hash: &BytesN<32>, nonce: u64) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ProcessedNonceHash(hash.clone(), nonce))
+        .unwrap_or(false)
+}
+
+pub fn set_nonce_hash(env: &Env, hash: &BytesN<32>, nonce: u64) {
+    let key = DataKey::ProcessedNonceHash(hash.clone(), nonce);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
+}
+
+pub fn has_nullifier(env: &Env, commitment: &BytesN<32>) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SpentNullifier(commitment.clone()))
+        .unwrap_or(false)
+}
+
+pub fn mark_nullifier_spent(env: &Env, commitment: &BytesN<32>) {
+    let key = DataKey::SpentNullifier(commitment.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 365, 60 * 60 * 24 * 365 * 2);
+}
+
 /// Get the current contract version from storage.
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
@@ -680,6 +713,20 @@ pub fn get_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address) -> u
 pub fn increment_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address) {
     let current = get_user_event_tickets(env, event_id, user);
     let key = DataKey::UserEventTickets(event_id.clone(), user.clone());
+    env.storage().persistent().set(&key, &(current + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+pub fn get_user_event_tickets_hash(env: &Env, event_id: &Symbol, user_hash: &BytesN<32>) -> u32 {
+    let key = DataKey::UserEventTicketsHash(event_id.clone(), user_hash.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+pub fn increment_user_event_tickets_hash(env: &Env, event_id: &Symbol, user_hash: &BytesN<32>) {
+    let current = get_user_event_tickets_hash(env, event_id, user_hash);
+    let key = DataKey::UserEventTicketsHash(event_id.clone(), user_hash.clone());
     env.storage().persistent().set(&key, &(current + 1));
     env.storage()
         .persistent()

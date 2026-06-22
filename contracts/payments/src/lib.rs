@@ -1,5 +1,5 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol};
 
 mod errors;
 mod events;
@@ -69,13 +69,18 @@ fn build_payment_record(
                 .stealth_delivery_key
                 .clone()
                 .ok_or(PaymentError::MissingStealthDeliveryKey)?;
-            let xdr = params.payer.clone().to_xdr(env);
-            let hashed = env.crypto().sha256(&xdr);
+            // Salt the wallet hash with the stealth key to prevent brute-force
+            // enumeration of the payer address from the stored hash.
+            let mut preimage = params.payer.clone().to_xdr(env);
+            let stealth_array = stealth_key.to_array();
+            let stealth_bytes = Bytes::from_slice(env, stealth_array.as_ref());
+            preimage.append(&stealth_bytes);
+            let hashed: BytesN<32> = env.crypto().sha256(&preimage).into();
             Ok(PaymentRecord {
                 payment_id,
                 event_id: params.event_id.clone(),
                 payer: None,
-                hashed_wallet: Some(hashed.into()),
+                hashed_wallet: Some(hashed),
                 stealth_delivery_key: Some(stealth_key),
                 nullifier_commitment: None,
                 amount: params.amount,
@@ -221,6 +226,12 @@ fn require_not_paused(env: &Env) -> Result<(), PaymentError> {
 
 #[allow(clippy::too_many_arguments)]
 fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> {
+    // Privacy note: `require_auth()` runs for all privacy levels because the payer
+    // must authorize the token transfer. This means the submitting wallet address
+    // is visible in the transaction envelope regardless of the selected privacy level.
+    // Anonymous/Private privacy applies at the contract storage and event layer only
+    // (what the contract records on-chain), not at the transaction-submission layer.
+    // True transaction-level anonymity requires a relayer/meta-transaction model.
     params.payer.require_auth();
     require_not_paused(&env)?;
 
@@ -228,7 +239,18 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         return Err(PaymentError::NonceRequired);
     }
 
-    if storage::has_nonce(&env, &params.payer, params.nonce) {
+    // Nonce uniqueness is tracked by raw address only for Standard payments.
+    // Anonymous/Private payments key the nonce by a hash of the payer so the raw
+    // wallet address is never embedded in a ledger key.
+    let already_used = match params.privacy_level {
+        PaymentPrivacy::Standard => storage::has_nonce(&env, &params.payer, params.nonce),
+        PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+            let payer_xdr = params.payer.clone().to_xdr(&env);
+            let payer_hash: BytesN<32> = env.crypto().sha256(&payer_xdr).into();
+            storage::has_nonce_hash(&env, &payer_hash, params.nonce)
+        }
+    };
+    if already_used {
         return Err(PaymentError::DuplicateRequest);
     }
 
@@ -249,8 +271,16 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         }
 
         if config.max_tickets_per_user > 0 {
-            let current_tickets =
-                storage::get_user_event_tickets(&env, &params.event_id, &params.payer);
+            let current_tickets = match params.privacy_level {
+                PaymentPrivacy::Standard => {
+                    storage::get_user_event_tickets(&env, &params.event_id, &params.payer)
+                }
+                PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+                    let payer_xdr = params.payer.clone().to_xdr(&env);
+                    let payer_hash: BytesN<32> = env.crypto().sha256(&payer_xdr).into();
+                    storage::get_user_event_tickets_hash(&env, &params.event_id, &payer_hash)
+                }
+            };
             if current_tickets >= config.max_tickets_per_user {
                 return Err(PaymentError::MaxTicketsReached);
             }
@@ -279,6 +309,15 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
 
     let payment = build_payment_record(&env, &params, payment_id, paid_at)?;
 
+    // Enforce nullifier uniqueness for Anonymous payments so the same commitment
+    // cannot be spent twice.
+    if let Some(commitment) = &payment.nullifier_commitment {
+        if storage::has_nullifier(&env, commitment) {
+            return Err(PaymentError::DuplicateRequest);
+        }
+        storage::mark_nullifier_spent(&env, commitment);
+    }
+
     storage::save_payment(&env, &payment)?;
     storage::add_event_payment(&env, &params.event_id, payment_id);
     // Only Standard payments are indexed by raw address. Indexing Private or
@@ -286,7 +325,16 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     if payment.privacy_level == PaymentPrivacy::Standard {
         storage::add_payer_payment(&env, &params.payer, payment_id);
     }
-    storage::set_nonce(&env, &params.payer, params.nonce);
+    match params.privacy_level {
+        PaymentPrivacy::Standard => {
+            storage::set_nonce(&env, &params.payer, params.nonce);
+        }
+        PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+            let payer_xdr = params.payer.clone().to_xdr(&env);
+            let payer_hash: BytesN<32> = env.crypto().sha256(&payer_xdr).into();
+            storage::set_nonce_hash(&env, &payer_hash, params.nonce);
+        }
+    }
     storage::add_event_revenue(&env, &params.event_id, params.amount);
 
     // Track token-specific revenue
@@ -312,7 +360,16 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     if payment.privacy_level == PaymentPrivacy::Standard {
         storage::add_owner_ticket(&env, &params.payer, ticket_id);
     }
-    storage::increment_user_event_tickets(&env, &params.event_id, &params.payer);
+    match params.privacy_level {
+        PaymentPrivacy::Standard => {
+            storage::increment_user_event_tickets(&env, &params.event_id, &params.payer);
+        }
+        PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+            let payer_xdr = params.payer.clone().to_xdr(&env);
+            let payer_hash: BytesN<32> = env.crypto().sha256(&payer_xdr).into();
+            storage::increment_user_event_tickets_hash(&env, &params.event_id, &payer_hash);
+        }
+    }
     if storage::get_event_config(&env, &params.event_id).is_some() {
         storage::increment_event_sold_count(&env, &params.event_id)?;
     }
@@ -605,6 +662,15 @@ impl PaymentsContract {
         admin.require_auth();
 
         let mut payment = storage::get_payment(&env, payment_id)?;
+
+        // Anonymous/Private payments cannot be refunded on-chain (no address stored).
+        // Off-chain settlement via stealth key or nullifier commitment is required.
+        match payment.privacy_level {
+            PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+                return Err(PaymentError::RefundNotAllowed);
+            }
+            PaymentPrivacy::Standard => {}
+        }
 
         if payment.status == PaymentStatus::Refunded {
             return Err(PaymentError::PaymentAlreadyRefunded);
