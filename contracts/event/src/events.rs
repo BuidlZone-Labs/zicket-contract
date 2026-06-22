@@ -41,7 +41,7 @@ pub struct EventCancelled {
 }
 
 #[contractevent(data_format = "vec", topics = ["refs_prc"])]
-pub struct RefundsProcessed {
+pub struct _RefundsProcessed {
     pub event_id: Symbol,
     pub refund_count: u32,
     pub processed_at: u64,
@@ -116,14 +116,14 @@ pub fn emit_event_cancelled(
     .publish(env);
 }
 
-pub fn emit_refunds_processed(env: &Env, event_id: &Symbol, refund_count: u32) {
-    RefundsProcessed {
-        event_id: event_id.clone(),
-        refund_count,
-        processed_at: env.ledger().timestamp(),
-    }
-    .publish(env);
-}
+// pub fn emit_refunds_processed(env: &Env, event_id: &Symbol, refund_count: u32) {
+//     RefundsProcessed {
+//         event_id: event_id.clone(),
+//         refund_count,
+//         processed_at: env.ledger().timestamp(),
+//     }
+//     .publish(env);
+// }
 
 /// Publish a Soroban event when an attendee registers.
 /// The attendee address is masked according to the event's privacy level.

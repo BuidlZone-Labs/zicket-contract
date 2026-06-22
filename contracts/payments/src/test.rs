@@ -2839,7 +2839,7 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (admin, token, client, contract_id, token_contract, event_contract) =
+    let (admin, token, client, _contract_id, token_contract, event_contract) =
         setup_contract_with_token_and_event(&env);
     let payer = Address::generate(&env);
     let organizer = Address::generate(&env);
