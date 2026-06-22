@@ -8,6 +8,7 @@ pub enum EventStatus {
     Active = 1,
     Completed = 2,
     Cancelled = 3,
+    Postponed = 4,
 }
 
 #[contracttype]
@@ -92,6 +93,26 @@ pub struct UpdateEventParams {
 pub struct Reservation {
     pub tier_id: u32,
     pub expires_at: u64,
+}
+
+/// Data backing the [`EventStatus::Postponed`] state.
+///
+/// Stored under its own persistent key per event (see `storage::set_postponement`).
+/// `new_date_ledger` and `choice_deadline_ledger` are the two fields named in the
+/// issue's `Postponed { new_date_ledger, choice_deadline_ledger }` specification;
+/// `postpone_count` is an additional anti-abuse counter (see `MAX_POSTPONEMENTS`)
+/// that bounds how many times a single event may be postponed, closing the
+/// "postpone indefinitely to dodge refunds" loophole.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PostponementInfo {
+    /// Ledger sequence at which the rescheduled event is set to start.
+    pub new_date_ledger: u64,
+    /// Ledger sequence after which the refund-choice window closes and the event
+    /// can be finalized back to `Active`.
+    pub choice_deadline_ledger: u64,
+    /// Number of times this event has been postponed, including the current one.
+    pub postpone_count: u32,
 }
 
 /// Per-event configuration controlling free-ticket claim abuse prevention.

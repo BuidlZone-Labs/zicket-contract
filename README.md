@@ -81,13 +81,17 @@ The `event` contract is the most developed and supports:
 - **Get Event / Status** — query event details or status by ID
 - **Update Status** — organizer-controlled transitions: `Upcoming → Active → Completed`
 - **Cancel Event** — organizer can cancel any non-completed event
+- **Postpone Event** — organizer can reschedule an `Active` event instead of cancelling it. Postponement opens a refund-choice window (≥72h) in which holders may opt out for a **full** refund via `request_postponement_refund`; holders who do nothing keep their ticket for the new date. Revenue withdrawal is frozen while `Postponed`. After the window closes, anyone may call `finalize_postponement` to return the event to `Active` on its new schedule. Bounded by `MAX_POSTPONEMENTS` to prevent indefinite postponement.
 
 ### Event Lifecycle
 
 ```
-Upcoming ──→ Active ──→ Completed
-    │           │
-    └───────────┴──→ Cancelled
+Upcoming ──→ Active ──────────→ Completed
+    │          │  ▲
+    │          ▼  │ finalize (after choice window)
+    │       Postponed
+    │          │
+    └──────────┴──→ Cancelled
 ```
 
 ## Ticket Contract — Current Features

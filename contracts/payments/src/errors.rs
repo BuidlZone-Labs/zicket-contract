@@ -37,4 +37,6 @@ pub enum PaymentError {
     ContractPaused = 31,
     /// Token transfer failed; no state has been modified
     TransferFailed = 32,
+    PostponementWindowClosed = 33,
+    EventNotPostponed = 34,
 }

@@ -1,5 +1,5 @@
 use crate::errors::EventError;
-use crate::types::{ClaimSettings, Event, PrivacyLevel};
+use crate::types::{ClaimSettings, Event, PostponementInfo, PrivacyLevel};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const CURRENT_VERSION: u32 = 1;
@@ -23,6 +23,8 @@ pub enum DataKey {
     LastFreeClaim(Symbol, Address),
     /// Organizer-configured sybil-protection settings for a specific event.
     EventClaimSettings(Symbol),
+    /// Postponement data (new date, choice deadline, postpone count) for a specific event.
+    Postponement(Symbol),
 }
 
 /// Check if an event exists in storage.
@@ -215,6 +217,33 @@ pub fn get_event_privacy(env: &Env, event_id: &Symbol) -> PrivacyLevel {
 pub fn has_reservation(env: &Env, event_id: &Symbol, attendee: &Address) -> bool {
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
     env.storage().persistent().has(&key)
+}
+
+// ── Postponement helpers ──────────────────────────────────────────────────────
+
+/// Persist the postponement record for an event. The record is retained after the
+/// event is finalized back to `Active` so that `postpone_count` survives across
+/// successive postponements (enforcing `MAX_POSTPONEMENTS`).
+pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
+    let key = DataKey::Postponement(event_id.clone());
+    env.storage().persistent().set(&key, info);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Read the postponement record for an event, or `None` if it has never been postponed.
+pub fn get_postponement(env: &Env, event_id: &Symbol) -> Option<PostponementInfo> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Postponement(event_id.clone()))
+}
+
+/// Number of times an event has been postponed (0 if never).
+pub fn get_postpone_count(env: &Env, event_id: &Symbol) -> u32 {
+    get_postponement(env, event_id)
+        .map(|info| info.postpone_count)
+        .unwrap_or(0)
 }
 
 // ── Sybil-resistance helpers ──────────────────────────────────────────────────

@@ -30,4 +30,9 @@ pub enum EventError {
     PrivacyViolation = 24,
     ClaimLimitExceeded = 25,
     ClaimCooldownActive = 26,
+    PostponementWindowTooShort = 27,
+    InvalidPostponementDate = 28,
+    MaxPostponementsReached = 29,
+    PostponementWindowOpen = 30,
+    EventNotPostponed = 31,
 }

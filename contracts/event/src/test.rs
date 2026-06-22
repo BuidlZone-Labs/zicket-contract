@@ -1253,3 +1253,221 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
     let result = client.try_create_event(&params_200);
     assert!(result.is_ok());
 }
+
+// Minimum choice window in ledgers (~72h at 5s/ledger), mirrors the contract constant.
+const MIN_WINDOW: u32 = 51_840;
+
+/// Create an event and move it to `Active`, returning its id.
+fn setup_active_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
+    let event_id = setup_event(env, client, organizer);
+    client.update_event_status(organizer, &event_id, &EventStatus::Active);
+    event_id
+}
+
+fn at_sequence(env: &Env, sequence: u32) {
+    env.ledger().with_mut(|li| li.sequence_number = sequence);
+}
+
+#[test]
+fn test_postpone_active_event_opens_window() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+
+    assert_eq!(client.get_event_status(&event_id), EventStatus::Postponed);
+    let info = client.get_postponement(&event_id);
+    assert_eq!(info.new_date_ledger, 60_000);
+    // deadline = current ledger (100) + window
+    assert_eq!(info.choice_deadline_ledger, 100 + MIN_WINDOW as u64);
+    assert_eq!(info.postpone_count, 1);
+}
+
+#[test]
+fn test_postpone_rejects_non_active_states() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    // Upcoming -> Postponed rejected
+    let event_id = setup_event(&env, &client, &organizer);
+    let res = client.try_postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidStatusTransition)));
+
+    // Completed -> Postponed rejected
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Completed);
+    let res = client.try_postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidStatusTransition)));
+}
+
+#[test]
+fn test_postpone_rejects_cancelled() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.cancel_event(&organizer, &event_id);
+    let res = client.try_postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidStatusTransition)));
+}
+
+#[test]
+fn test_postpone_rejects_short_window() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    let res = client.try_postpone_event(&organizer, &event_id, &60_000, &(MIN_WINDOW - 1));
+    assert_eq!(res.err(), Some(Ok(EventError::PostponementWindowTooShort)));
+}
+
+#[test]
+fn test_postpone_rejects_new_date_inside_window() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    // deadline = 100 + MIN_WINDOW; a new date equal to the deadline is rejected.
+    let deadline = 100 + MIN_WINDOW as u64;
+    let res = client.try_postpone_event(&organizer, &event_id, &deadline, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
+}
+
+#[test]
+fn test_postpone_requires_organizer() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    let res = client.try_postpone_event(&attacker, &event_id, &60_000, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::Unauthorized)));
+}
+
+#[test]
+fn test_finalize_before_window_closes_fails() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    // Still inside the window.
+    let res = client.try_finalize_postponement(&event_id);
+    assert_eq!(res.err(), Some(Ok(EventError::PostponementWindowOpen)));
+}
+
+#[test]
+fn test_finalize_requires_postponed_state() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    let res = client.try_finalize_postponement(&event_id);
+    assert_eq!(res.err(), Some(Ok(EventError::EventNotPostponed)));
+}
+
+#[test]
+fn test_finalize_resumes_active_and_shifts_schedule() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    // Original schedule: start 0, end 1000 (duration 1000) from setup_event.
+    let before = client.get_event(&event_id);
+    let duration = before.event_end_ledger - before.event_start_ledger;
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    at_sequence(&env, 100 + MIN_WINDOW + 1);
+    client.finalize_postponement(&event_id);
+
+    assert_eq!(client.get_event_status(&event_id), EventStatus::Active);
+    let after = client.get_event(&event_id);
+    assert_eq!(after.event_start_ledger, 60_000);
+    assert_eq!(after.event_end_ledger, 60_000 + duration);
+}
+
+#[test]
+fn test_postpone_count_capped() {
+    let env = setup_env();
+    at_sequence(&env, 10);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    // First postponement + finalize.
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    at_sequence(&env, 10 + MIN_WINDOW + 1);
+    client.finalize_postponement(&event_id);
+
+    // Second postponement + finalize.
+    let seq2 = 10 + MIN_WINDOW + 1;
+    let new_date2 = (seq2 + MIN_WINDOW) as u64 + 10_000;
+    client.postpone_event(&organizer, &event_id, &new_date2, &MIN_WINDOW);
+    at_sequence(&env, seq2 + MIN_WINDOW + 1);
+    client.finalize_postponement(&event_id);
+
+    // Third postponement exceeds MAX_POSTPONEMENTS (2).
+    let seq3 = seq2 + MIN_WINDOW + 1;
+    let new_date3 = (seq3 + MIN_WINDOW) as u64 + 10_000;
+    let res = client.try_postpone_event(&organizer, &event_id, &new_date3, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::MaxPostponementsReached)));
+}
+
+#[test]
+fn test_cancel_allowed_from_postponed() {
+    // The organizer can always escape a postponement by cancelling outright,
+    // which routes through the full-refund cancellation path.
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    client.cancel_event(&organizer, &event_id);
+    assert_eq!(client.get_event_status(&event_id), EventStatus::Cancelled);
+}
+
+#[test]
+fn test_withdraw_revenue_blocked_while_postponed() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    let res = client.try_withdraw_revenue(&organizer, &event_id);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidStatusTransition)));
+}
