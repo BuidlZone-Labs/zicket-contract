@@ -40,6 +40,9 @@ fn create_event_with_privacy(
         requires_verification: false,
         privacy_level: privacy,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
 }

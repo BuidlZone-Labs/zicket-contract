@@ -14,6 +14,9 @@ pub use events::*;
 pub use storage::*;
 pub use types::*;
 
+// Minimum dispute window (in ledgers) that must pass after cancellation before organizer can withdraw
+const MIN_DISPUTE_WINDOW_LEDGERS: u32 = 100;
+
 #[derive(Clone)]
 struct PaymentParams {
     nonce: u64,
@@ -50,6 +53,10 @@ fn validate_payment_privacy(
 }
 
 fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
+    if let Some(EventStatus::Cancelled) = storage::get_event_status(env, event_id) {
+        return Ok(());
+    }
+
     let payment_ids = storage::get_event_payments(env, event_id);
     let mut total_payments: i128 = 0;
     let mut total_refunds: i128 = 0;
@@ -450,6 +457,9 @@ impl PaymentsContract {
         requires_verification: bool,
         max_tickets_per_user: u32,
         max_supply: u32,
+        event_start_ledger: u32,
+        event_end_ledger: u32,
+        withdrawal_delay_ledgers: u32,
     ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         if event_contract != storage::get_event_contract(&env)? {
@@ -462,18 +472,29 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidPayoutToken);
         }
 
-        let existing_sold_count =
-            if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
-                if existing_config.organizer != organizer {
-                    return Err(PaymentError::InvalidOrganizer);
-                }
-                if existing_config.payout_token != payout_token {
-                    return Err(PaymentError::InvalidPayoutToken);
-                }
-                existing_config.sold_count
-            } else {
-                0
-            };
+        let (
+            existing_sold,
+            existing_admin_delay,
+            existing_cancel,
+            existing_ratio,
+            existing_withdrawn,
+        ) = if let Some(existing_config) = storage::get_event_config(&env, &event_id) {
+            if existing_config.organizer != organizer {
+                return Err(PaymentError::InvalidOrganizer);
+            }
+            if existing_config.payout_token != payout_token {
+                return Err(PaymentError::InvalidPayoutToken);
+            }
+            (
+                existing_config.sold_count,
+                existing_config.admin_delay_extension_ledgers,
+                existing_config.cancel_ledger,
+                existing_config.withdrawable_ratio_bps,
+                existing_config.organizer_withdrawn,
+            )
+        } else {
+            (0, 0, None, None, false)
+        };
 
         storage::set_event_config(
             &env,
@@ -485,7 +506,14 @@ impl PaymentsContract {
                 requires_verification,
                 max_tickets_per_user,
                 max_supply,
-                sold_count: existing_sold_count,
+                sold_count: existing_sold,
+                event_start_ledger,
+                event_end_ledger,
+                withdrawal_delay_ledgers,
+                admin_delay_extension_ledgers: existing_admin_delay,
+                cancel_ledger: existing_cancel,
+                withdrawable_ratio_bps: existing_ratio,
+                organizer_withdrawn: existing_withdrawn,
             },
         );
 
@@ -566,8 +594,45 @@ impl PaymentsContract {
             return Err(PaymentError::UnauthorizedWithdrawal);
         }
 
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        if config.organizer_withdrawn {
+            return Err(PaymentError::NoRevenue);
+        }
+
+        let mut withdrawable_ratio_bps = 10000u32;
+        let current_ledger = env.ledger().sequence();
+
         match storage::get_event_status(&env, &event_id) {
-            Some(EventStatus::Completed) => {}
+            Some(EventStatus::Completed) => {
+                let unlock_ledger = config.event_end_ledger
+                    + config.withdrawal_delay_ledgers
+                    + config.admin_delay_extension_ledgers;
+                if current_ledger < unlock_ledger {
+                    return Err(PaymentError::EscrowNotExpired); // EscrowNotExpired makes sense here
+                }
+            }
+            Some(EventStatus::Cancelled) => {
+                // Check dispute window: must wait at least MIN_DISPUTE_WINDOW_LEDGERS after cancellation
+                if let Some(cancel_ledger) = config.cancel_ledger {
+                    let min_dispute_unlock = cancel_ledger + MIN_DISPUTE_WINDOW_LEDGERS;
+                    if current_ledger < min_dispute_unlock {
+                        return Err(PaymentError::EscrowNotExpired);
+                    }
+                } else {
+                    // Should never happen if event is Cancelled, but be defensive
+                    return Err(PaymentError::EventNotCompleted);
+                }
+
+                if let Some(ratio) = config.withdrawable_ratio_bps {
+                    if ratio == 0 {
+                        return Err(PaymentError::NoRevenue);
+                    }
+                    withdrawable_ratio_bps = ratio;
+                } else {
+                    return Err(PaymentError::EventNotCompleted);
+                }
+            }
             _ => return Err(PaymentError::EventNotCompleted),
         }
 
@@ -586,12 +651,16 @@ impl PaymentsContract {
             return Err(PaymentError::NoRevenue);
         }
 
+        let total_to_withdraw = total * (withdrawable_ratio_bps as i128) / 10000;
+        if total_to_withdraw <= 0 {
+            return Err(PaymentError::NoRevenue);
+        }
+
         let token_client = token::Client::new(&env, &payout_token);
 
-        // Calculate platform fee
         let fee_bps = storage::get_platform_fee_bps(&env) as i128;
-        let fee_amount = total * fee_bps / 10_000;
-        let organizer_amount = total - fee_amount;
+        let fee_amount = total_to_withdraw * fee_bps / 10_000;
+        let organizer_amount = total_to_withdraw - fee_amount;
 
         // Transfer organizer share
         token_client.transfer(
@@ -612,23 +681,39 @@ impl PaymentsContract {
             );
         }
 
-        for i in 0..payments_to_release.len() {
-            let mut payment = payments_to_release
-                .get(i)
-                .ok_or(PaymentError::PaymentNotFound)?;
-            payment.status = PaymentStatus::Released;
-            storage::update_payment(&env, &payment)?;
+        if withdrawable_ratio_bps == 10000 {
+            for i in 0..payments_to_release.len() {
+                let mut payment = payments_to_release
+                    .get(i)
+                    .ok_or(PaymentError::PaymentNotFound)?;
+                payment.status = PaymentStatus::Released;
+                storage::update_payment(&env, &payment)?;
+                let current_token_rev =
+                    storage::get_event_token_revenue(&env, &event_id, &payment.token);
+                storage::set_event_token_revenue(
+                    &env,
+                    &event_id,
+                    &payment.token,
+                    current_token_rev - payment.amount,
+                );
+            }
+            storage::set_event_token_revenue(&env, &event_id, &payout_token, 0);
+        } else {
             let current_token_rev =
-                storage::get_event_token_revenue(&env, &event_id, &payment.token);
+                storage::get_event_token_revenue(&env, &event_id, &payout_token);
             storage::set_event_token_revenue(
                 &env,
                 &event_id,
-                &payment.token,
-                current_token_rev - payment.amount,
+                &payout_token,
+                current_token_rev - total_to_withdraw,
             );
+
+            let current_rev = storage::get_event_revenue(&env, &event_id);
+            storage::set_event_revenue(&env, &event_id, current_rev - total_to_withdraw);
         }
 
-        storage::set_event_token_revenue(&env, &event_id, &payout_token, 0);
+        config.organizer_withdrawn = true;
+        storage::set_event_config(&env, &event_id, &config);
 
         let record = WithdrawalRecord {
             amount: total,
@@ -674,6 +759,128 @@ impl PaymentsContract {
             }
         }
         payments
+    }
+
+    /// Admin can extend the withdrawal delay.
+    pub fn extend_withdrawal_delay(
+        env: Env,
+        admin: Address,
+        event_id: Symbol,
+        additional_ledgers: u32,
+    ) -> Result<(), PaymentError> {
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        admin.require_auth();
+
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        config.admin_delay_extension_ledgers += additional_ledgers;
+        storage::set_event_config(&env, &event_id, &config);
+        Ok(())
+    }
+
+    /// Handle event cancellation from the event contract.
+    pub fn cancel_event(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+    ) -> Result<(), PaymentError> {
+        let event_contract = storage::get_event_contract(&env)?;
+        event_contract.require_auth();
+
+        let mut config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        if config.organizer != organizer {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let current_ledger = env.ledger().sequence();
+        config.cancel_ledger = Some(current_ledger);
+
+        if current_ledger < config.event_start_ledger {
+            config.withdrawable_ratio_bps = Some(0);
+        } else if current_ledger >= config.event_end_ledger {
+            config.withdrawable_ratio_bps = Some(10000);
+        } else {
+            let elapsed = current_ledger - config.event_start_ledger;
+            let total = config.event_end_ledger - config.event_start_ledger;
+            if total == 0 {
+                config.withdrawable_ratio_bps = Some(10000);
+            } else {
+                let ratio = (elapsed as u64 * 10000 / total as u64) as u32;
+                config.withdrawable_ratio_bps = Some(ratio);
+            }
+        }
+
+        storage::set_event_config(&env, &event_id, &config);
+        storage::set_event_status(&env, &event_id, &EventStatus::Cancelled);
+        Ok(())
+    }
+
+    /// Claim refund for a cancelled event.
+    pub fn claim_refund(env: Env, payer: Address, payment_id: u64) -> Result<(), PaymentError> {
+        payer.require_auth();
+
+        let mut payment = storage::get_payment(&env, payment_id)?;
+        if payment.payer != payer {
+            return Err(PaymentError::Unauthorized);
+        }
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        let status = storage::get_event_status(&env, &payment.event_id);
+        if status != Some(EventStatus::Cancelled) {
+            return Err(PaymentError::EventNotActive); // Or appropriate error
+        }
+
+        let config = storage::get_event_config(&env, &payment.event_id)
+            .ok_or(PaymentError::InvalidOrganizer)?;
+        let withdrawable_ratio_bps = config.withdrawable_ratio_bps.unwrap_or(0);
+        let refund_ratio_bps = 10000 - withdrawable_ratio_bps;
+        if refund_ratio_bps == 0 {
+            return Err(PaymentError::NoRevenue);
+        }
+
+        let max_refund = payment.amount * (refund_ratio_bps as i128) / 10000;
+        let remaining = max_refund - payment.refunded_amount;
+
+        if remaining <= 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        let token_client = token::Client::new(&env, &payment.token);
+        token_client.transfer(&env.current_contract_address(), &payment.payer, &remaining);
+
+        payment.refunded_amount += remaining;
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+
+        let revenue = storage::get_event_revenue(&env, &payment.event_id);
+        storage::set_event_revenue(&env, &payment.event_id, revenue - remaining);
+
+        let token_revenue =
+            storage::get_event_token_revenue(&env, &payment.event_id, &payment.token);
+        storage::set_event_token_revenue(
+            &env,
+            &payment.event_id,
+            &payment.token,
+            token_revenue - remaining,
+        );
+
+        events::emit_payment_refunded(
+            &env,
+            payment_id,
+            payment.event_id.clone(),
+            payment.payer,
+            remaining,
+            payment.token.clone(),
+            &storage::get_emission_privacy(&env, &payment.event_id),
+        );
+
+        Ok(())
     }
 
     /// Register escrow metadata for an event. Admin only.

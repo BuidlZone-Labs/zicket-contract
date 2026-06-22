@@ -80,6 +80,9 @@ fn test_create_event_duplicate_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     // First creation succeeds
@@ -99,6 +102,9 @@ fn test_create_event_duplicate_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     let result = client.try_create_event(&params_dup);
     assert_eq!(result.err(), Some(Ok(EventError::EventAlreadyExists)));
@@ -131,6 +137,9 @@ fn test_create_event_invalid_tickets_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -164,6 +173,9 @@ fn test_create_event_too_many_tickets_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -197,6 +209,9 @@ fn test_create_event_past_date_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -230,6 +245,9 @@ fn test_create_event_date_less_than_24h_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -263,6 +281,9 @@ fn test_create_event_negative_price_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -296,6 +317,9 @@ fn test_create_event_empty_name_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -329,6 +353,9 @@ fn test_create_event_empty_venue_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     let result = client.try_create_event(&params);
@@ -738,6 +765,9 @@ fn test_register_for_event_sold_out_fails() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -854,6 +884,9 @@ fn setup_event_with_payout_token(
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     client.create_event(&params);
@@ -982,6 +1015,9 @@ fn test_reserve_expire_and_available_again() {
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -1147,4 +1183,73 @@ fn test_mask_address_anonymous_returns_hashed() {
     let addr = Address::generate(&env);
     let result = mask_address(&env, &addr, PrivacyLevel::Anonymous);
     assert!(matches!(result, MaskedAddress::Hashed(_)));
+}
+
+#[test]
+fn test_create_event_minimum_withdrawal_delay_enforced() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+
+    let event_id = Symbol::new(&env, "TESTEVENT");
+    let payout_token = test_payout_token(&env);
+
+    // Try to create event with withdrawal_delay_ledgers = 0 (below minimum of 100)
+    let params = CreateEventParams {
+        event_id: event_id.clone(),
+        organizer: organizer.clone(),
+        payout_token: payout_token.clone(),
+        name: String::from_str(&env, "Test Event"),
+        description: String::from_str(&env, "A test event"),
+        venue: String::from_str(&env, "Test Venue"),
+        event_date: env.ledger().timestamp() + 100_000,
+        allow_anonymous: false,
+        requires_verification: false,
+        privacy_level: PrivacyLevel::Standard,
+        initial_tiers: {
+            let mut tiers = soroban_sdk::Vec::new(&env);
+            tiers.push_back(TicketTierParams {
+                name: String::from_str(&env, "VIP"),
+                price: 1000,
+                capacity: 100,
+            });
+            tiers
+        },
+        max_tickets_per_user: 0,
+        event_start_ledger: 100,
+        event_end_ledger: 200,
+        withdrawal_delay_ledgers: 0, // Below minimum!
+    };
+
+    let result = client.try_create_event(&params);
+    assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
+
+    // Try with withdrawal_delay_ledgers = 99 (still below minimum)
+    let params_99 = CreateEventParams {
+        withdrawal_delay_ledgers: 99,
+        ..params.clone()
+    };
+
+    let result = client.try_create_event(&params_99);
+    assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
+
+    // Try with withdrawal_delay_ledgers = 100 (exactly at minimum) - should succeed
+    let params_100 = CreateEventParams {
+        withdrawal_delay_ledgers: 100,
+        ..params.clone()
+    };
+
+    let result = client.try_create_event(&params_100);
+    assert!(result.is_ok());
+
+    // Try with withdrawal_delay_ledgers = 200 (above minimum) - should succeed
+    let params_200 = CreateEventParams {
+        event_id: Symbol::new(&env, "TSTEVENT2"),
+        withdrawal_delay_ledgers: 200,
+        ..params.clone()
+    };
+
+    let result = client.try_create_event(&params_200);
+    assert!(result.is_ok());
 }
