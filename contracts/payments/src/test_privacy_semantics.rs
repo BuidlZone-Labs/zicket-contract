@@ -169,7 +169,10 @@ fn test_private_stores_hashed_wallet() {
     // delivery key, preventing brute-force enumeration of the payer address.
     let mut preimage = payer.clone().to_xdr(&env);
     let key = stealth_key(&env);
-    preimage.append(&soroban_sdk::Bytes::from_slice(&env, key.to_array().as_ref()));
+    preimage.append(&soroban_sdk::Bytes::from_slice(
+        &env,
+        key.to_array().as_ref(),
+    ));
     let expected = env.crypto().sha256(&preimage);
     assert_eq!(p.hashed_wallet, Some(expected.into()));
 }

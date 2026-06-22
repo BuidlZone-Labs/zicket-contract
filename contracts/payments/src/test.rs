@@ -1559,7 +1559,7 @@ fn test_anonymous_event_does_not_expose_payer() {
     // Anonymous payments store NO raw address on-chain; only the nullifier
     // commitment is persisted.
     assert_eq!(payment.payer, None);
-    assert_eq!(payment.nullifier_commitment.is_some(), true);
+    assert!(payment.nullifier_commitment.is_some());
     assert!(payment_id > 0);
 }
 
