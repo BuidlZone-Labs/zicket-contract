@@ -293,18 +293,40 @@ pub fn emit_dispute_raised(
     opened_at: u64,
     escrow_amount: i128,
 ) {
-    DisputeRaised { ticket_id, event_id, reason, opened_at, escrow_amount }.publish(env);
+    DisputeRaised {
+        ticket_id,
+        event_id,
+        reason,
+        opened_at,
+        escrow_amount,
+    }
+    .publish(env);
 }
 
 pub fn emit_dispute_approved(env: &Env, ticket_id: u64, event_id: Symbol, refund_amount: i128) {
-    DisputeApproved { ticket_id, event_id, refund_amount, resolved_at: env.ledger().timestamp() }
-        .publish(env);
+    DisputeApproved {
+        ticket_id,
+        event_id,
+        refund_amount,
+        resolved_at: env.ledger().timestamp(),
+    }
+    .publish(env);
 }
 
 pub fn emit_dispute_rejected(env: &Env, ticket_id: u64, event_id: Symbol) {
-    DisputeRejected { ticket_id, event_id, resolved_at: env.ledger().timestamp() }.publish(env);
+    DisputeRejected {
+        ticket_id,
+        event_id,
+        resolved_at: env.ledger().timestamp(),
+    }
+    .publish(env);
 }
 
 pub fn emit_dispute_timed_out(env: &Env, ticket_id: u64, event_id: Symbol) {
-    DisputeTimedOut { ticket_id, event_id, released_at: env.ledger().timestamp() }.publish(env);
+    DisputeTimedOut {
+        ticket_id,
+        event_id,
+        released_at: env.ledger().timestamp(),
+    }
+    .publish(env);
 }

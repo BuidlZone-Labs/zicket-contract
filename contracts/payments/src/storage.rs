@@ -1,5 +1,7 @@
 use crate::errors::PaymentError;
-use crate::types::{EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket, TicketDispute};
+use crate::types::{
+    EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket, TicketDispute,
+};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
@@ -63,7 +65,7 @@ pub enum DataKey {
     PostponeDeadline(Symbol),
     TicketDispute(u64),
     PaymentDisputed(u64),
-    DisputeOutcome(u64),    // payment_id -> bool, set when dispute is rejected or timed out
+    DisputeOutcome(u64), // payment_id -> bool, set when dispute is rejected or timed out
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {

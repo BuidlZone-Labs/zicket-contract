@@ -1607,7 +1607,14 @@ impl PaymentsContract {
 
         storage::mark_payment_disputed(&env, ticket.payment_id);
 
-        events::emit_dispute_raised(&env, ticket_id, ticket.event_id, reason, now, payment.amount);
+        events::emit_dispute_raised(
+            &env,
+            ticket_id,
+            ticket.event_id,
+            reason,
+            now,
+            payment.amount,
+        );
 
         Ok(())
     }
