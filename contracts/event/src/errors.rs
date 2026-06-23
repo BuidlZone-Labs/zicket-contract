@@ -30,9 +30,20 @@ pub enum EventError {
     PrivacyViolation = 24,
     ClaimLimitExceeded = 25,
     ClaimCooldownActive = 26,
-    PostponementWindowTooShort = 27,
-    InvalidPostponementDate = 28,
-    MaxPostponementsReached = 29,
-    PostponementWindowOpen = 30,
-    EventNotPostponed = 31,
+    AnonCommitmentReused = 27,
+    AnonClaimWindowFull = 28,
+    AnonymousClaimsNotEnabled = 29,
+    /// The requested refund-choice window is shorter than the mandatory minimum
+    /// (`MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS`).
+    PostponementWindowTooShort = 30,
+    /// The proposed new event date is not strictly after the close of the
+    /// refund-choice window, or is in the past.
+    InvalidPostponementDate = 31,
+    /// The event has already been postponed the maximum number of times
+    /// (`MAX_POSTPONEMENTS`); the organizer must run or cancel it instead.
+    MaxPostponementsReached = 32,
+    /// `finalize_postponement` was called while the refund-choice window is still open.
+    PostponementWindowOpen = 33,
+    /// The operation requires the event to be in the `Postponed` state.
+    EventNotPostponed = 34,
 }

@@ -198,3 +198,23 @@ pub fn emit_registration(
     }
     .publish(env);
 }
+
+#[contractevent(data_format = "vec", topics = ["anon_reg"])]
+pub struct AnonEventRegistration {
+    pub event_id: Symbol,
+    pub tier_id: u32,
+    pub tickets_sold: u32,
+    pub registered_at: u64,
+}
+
+/// Publish a Soroban event for an anonymous (no-wallet) free ticket claim.
+/// No attendee identifier is emitted — the commitment is kept off-chain.
+pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, tickets_sold: u32) {
+    AnonEventRegistration {
+        event_id: event_id.clone(),
+        tier_id,
+        tickets_sold,
+        registered_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}

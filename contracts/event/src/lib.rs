@@ -16,8 +16,8 @@ pub use storage::*;
 pub use types::*;
 
 use events::{
-    emit_event_cancelled, emit_event_created, emit_event_postponed, emit_event_resumed,
-    emit_event_updated, emit_registration, emit_status_changed,
+    emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_postponed,
+    emit_event_resumed, emit_event_updated, emit_registration, emit_status_changed,
 };
 
 // Minimum withdrawal delay (in ledgers) that must be enforced for events
@@ -1018,6 +1018,125 @@ impl EventContract {
         storage::get_claim_settings(&env, &event_id)
     }
 
+    /// Claim a free ticket anonymously — no wallet or account required.
+    ///
+    /// The caller submits a `commitment` (e.g. SHA-256 of user_secret ‖ event_id ‖ nonce).
+    /// The contract rejects duplicate commitments and enforces an organizer-configured
+    /// per-ledger-window rate limit so a single source cannot drain capacity in one batch.
+    ///
+    /// Capacity (event and tier) is decremented on success; no ticket NFT is minted.
+    /// The stored commitment is the on-chain attendance proof.
+    pub fn claim_anonymous_ticket(
+        env: Env,
+        event_id: Symbol,
+        tier_id: u32,
+        commitment: BytesN<32>,
+    ) -> Result<(), EventError> {
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.status != EventStatus::Active {
+            return Err(EventError::EventNotActive);
+        }
+
+        if !event.allow_anonymous {
+            return Err(EventError::AnonymousClaimsNotEnabled);
+        }
+
+        // Locate the tier and enforce the free-only constraint.
+        let mut tier_index = None;
+        for i in 0..event.tiers.len() {
+            let t = event.tiers.get(i).ok_or(EventError::TierNotFound)?;
+            if t.tier_id == tier_id {
+                if t.price != 0 {
+                    return Err(EventError::InvalidInput);
+                }
+                tier_index = Some(i);
+                break;
+            }
+        }
+        let index = tier_index.ok_or(EventError::TierNotFound)?;
+
+        // Reject duplicate commitments (prevents trivial sybil via commitment reuse).
+        if storage::has_anon_commitment(&env, &event_id, &commitment) {
+            return Err(EventError::AnonCommitmentReused);
+        }
+
+        // Per-ledger-window rate limit: prevents draining capacity in a single batch.
+        let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
+        if anon_settings.max_anon_claims_per_window > 0 && anon_settings.anon_window_size > 0 {
+            let current_window = env.ledger().sequence() / anon_settings.anon_window_size;
+            let mut state = storage::get_anon_window_state(&env, &event_id);
+            if state.window_index != current_window {
+                state.window_index = current_window;
+                state.count = 0;
+            }
+            if state.count >= anon_settings.max_anon_claims_per_window {
+                return Err(EventError::AnonClaimWindowFull);
+            }
+            state.count += 1;
+            storage::set_anon_window_state(&env, &event_id, &state);
+        }
+
+        // Capacity checks.
+        let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
+
+        if event.sold_count >= event.max_supply {
+            return Err(EventError::EventSoldOut);
+        }
+        if tier.sold + tier.reserved >= tier.capacity {
+            return Err(EventError::TierSoldOut);
+        }
+
+        // Commit: record the commitment and update sold counts.
+        storage::save_anon_commitment(&env, &event_id, &commitment);
+
+        tier.sold += 1;
+        event.sold_count += 1;
+        event.tiers.set(index, tier.clone());
+        storage::update_event(&env, &event_id, &event)?;
+
+        emit_anon_registration(&env, &event_id, tier_id, tier.sold);
+
+        Ok(())
+    }
+
+    /// Configure the per-ledger-window rate limit for anonymous free claims on an event.
+    ///
+    /// - `max_anon_claims_per_window`: max anonymous tickets claimable per window. 0 = unlimited.
+    /// - `anon_window_size`: window size in ledgers (e.g. 100). 0 = no window limit.
+    ///
+    /// Only the event organizer may call this.
+    ///
+    /// ⚠️ These settings can be changed at any time by the organizer. Setting either to 0
+    /// disables rate limiting. Consider locking these after event launch.
+    pub fn set_anon_claim_settings(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        max_anon_claims_per_window: u32,
+        anon_window_size: u32,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+        let event = storage::get_event(&env, &event_id)?;
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+        storage::set_anon_claim_settings(
+            &env,
+            &event_id,
+            &AnonClaimSettings {
+                max_anon_claims_per_window,
+                anon_window_size,
+            },
+        );
+        Ok(())
+    }
+
+    /// Get the current anonymous claim rate-limit settings for an event.
+    pub fn get_anon_claim_settings(env: Env, event_id: Symbol) -> AnonClaimSettings {
+        storage::get_anon_claim_settings(&env, &event_id)
+    }
+
     /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
@@ -1069,3 +1188,6 @@ mod test_privacy;
 
 #[cfg(test)]
 mod test_claims;
+
+#[cfg(test)]
+mod test_anon_claims;
