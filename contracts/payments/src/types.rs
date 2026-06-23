@@ -1,5 +1,5 @@
 pub use privacy_utils::PrivacyLevel;
-use soroban_sdk::{contracttype, Address, Symbol};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +46,11 @@ pub struct PaymentRecord {
     pub paid_at: u64,
     pub privacy_level: PaymentPrivacy,
     pub refunded_amount: i128,
+    /// Optional zkEmail receipt commitment binding this payment to an off-chain
+    /// email delivery target. It is a salted hash (e.g. `H(email || ticket_id)`)
+    /// computed off-chain — the raw email is never stored or emitted. `None`
+    /// means the payer opted out (e.g. fully anonymous attendees).
+    pub zk_email_commitment: Option<BytesN<32>>,
 }
 
 #[contracttype]
