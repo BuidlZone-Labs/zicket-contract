@@ -1,6 +1,6 @@
 use crate::errors::EventError;
-use crate::types::{ClaimSettings, Event, PrivacyLevel};
-use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
+use crate::types::{AnonClaimSettings, AnonWindowState, ClaimSettings, Event, PrivacyLevel};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 const CURRENT_VERSION: u32 = 1;
 const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
@@ -23,6 +23,12 @@ pub enum DataKey {
     LastFreeClaim(Symbol, Address),
     /// Organizer-configured sybil-protection settings for a specific event.
     EventClaimSettings(Symbol),
+    /// Marks a commitment as used for the anonymous free-claim path.
+    AnonCommitment(Symbol, BytesN<32>),
+    /// Rolling window state (index + count) for the anonymous rate limiter.
+    EventAnonWindow(Symbol),
+    /// Organizer-configured rate-limit settings for the anonymous free-claim path.
+    EventAnonSettings(Symbol),
 }
 
 /// Check if an event exists in storage.
@@ -263,6 +269,77 @@ pub fn get_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address) -> 
 pub fn set_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address, timestamp: u64) {
     let key = DataKey::LastFreeClaim(event_id.clone(), attendee.clone());
     env.storage().persistent().set(&key, &timestamp);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+// ── Anonymous free-claim helpers ──────────────────────────────────────────────
+
+pub fn has_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) -> bool {
+    let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
+    let exists = env.storage().persistent().has(&key);
+    if exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    exists
+}
+
+pub fn save_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) {
+    let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_anon_claim_settings(env: &Env, event_id: &Symbol) -> AnonClaimSettings {
+    let key = DataKey::EventAnonSettings(event_id.clone());
+    let settings: Option<AnonClaimSettings> = env.storage().persistent().get(&key);
+    match settings {
+        Some(s) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            s
+        }
+        None => AnonClaimSettings {
+            max_anon_claims_per_window: 0,
+            anon_window_size: 0,
+        },
+    }
+}
+
+pub fn set_anon_claim_settings(env: &Env, event_id: &Symbol, settings: &AnonClaimSettings) {
+    let key = DataKey::EventAnonSettings(event_id.clone());
+    env.storage().persistent().set(&key, settings);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_anon_window_state(env: &Env, event_id: &Symbol) -> AnonWindowState {
+    let key = DataKey::EventAnonWindow(event_id.clone());
+    let state: Option<AnonWindowState> = env.storage().persistent().get(&key);
+    match state {
+        Some(s) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            s
+        }
+        None => AnonWindowState {
+            window_index: 0,
+            count: 0,
+        },
+    }
+}
+
+pub fn set_anon_window_state(env: &Env, event_id: &Symbol, state: &AnonWindowState) {
+    let key = DataKey::EventAnonWindow(event_id.clone());
+    env.storage().persistent().set(&key, state);
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
