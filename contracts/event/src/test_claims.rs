@@ -63,6 +63,7 @@ fn create_free_event(
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -100,6 +101,7 @@ fn create_paid_event(
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);

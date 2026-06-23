@@ -1,5 +1,7 @@
 use crate::errors::PaymentError;
-use crate::types::{EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket};
+use crate::types::{
+    EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, RevenueSplit, SplitSettlement, Ticket,
+};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
@@ -60,6 +62,14 @@ pub enum DataKey {
     ContractVersion,
     UserEventTickets(Symbol, Address),
     Paused,
+    /// Configured revenue split recipients for an event (immutable once set).
+    EventSplits(Symbol),
+    /// Frozen net-distributable snapshot taken at first split settlement.
+    SplitSettlement(Symbol),
+    /// Amount already paid out to a given split recipient for an event.
+    SplitWithdrawn(Symbol, Address),
+    /// Whether a split recipient's share is frozen pending dispute resolution.
+    SplitFlagged(Symbol, Address),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -661,4 +671,75 @@ pub fn increment_event_sold_count(env: &Env, event_id: &Symbol) -> Result<(), Pa
         .ok_or(PaymentError::EventSoldOut)?;
     set_event_config(env, event_id, &config);
     Ok(())
+}
+
+// ── Revenue split helpers ─────────────────────────────────────────────────────
+
+/// Whether the event has any revenue split configured (more than zero recipients).
+pub fn has_splits(env: &Env, event_id: &Symbol) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventSplits(event_id.clone()))
+}
+
+pub fn get_splits(env: &Env, event_id: &Symbol) -> Vec<RevenueSplit> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventSplits(event_id.clone()))
+        .unwrap_or_else(|| Vec::new(env))
+}
+
+pub fn set_splits(env: &Env, event_id: &Symbol, splits: &Vec<RevenueSplit>) {
+    let key = DataKey::EventSplits(event_id.clone());
+    env.storage().persistent().set(&key, splits);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_split_settlement(env: &Env, event_id: &Symbol) -> Option<SplitSettlement> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SplitSettlement(event_id.clone()))
+}
+
+pub fn set_split_settlement(env: &Env, event_id: &Symbol, settlement: &SplitSettlement) {
+    let key = DataKey::SplitSettlement(event_id.clone());
+    env.storage().persistent().set(&key, settlement);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_split_withdrawn(env: &Env, event_id: &Symbol, recipient: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SplitWithdrawn(
+            event_id.clone(),
+            recipient.clone(),
+        ))
+        .unwrap_or(0)
+}
+
+pub fn set_split_withdrawn(env: &Env, event_id: &Symbol, recipient: &Address, amount: i128) {
+    let key = DataKey::SplitWithdrawn(event_id.clone(), recipient.clone());
+    env.storage().persistent().set(&key, &amount);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn is_split_flagged(env: &Env, event_id: &Symbol, recipient: &Address) -> bool {
+    env.storage()
+        .persistent()
+        .get(&DataKey::SplitFlagged(event_id.clone(), recipient.clone()))
+        .unwrap_or(false)
+}
+
+pub fn set_split_flagged(env: &Env, event_id: &Symbol, recipient: &Address, flagged: bool) {
+    let key = DataKey::SplitFlagged(event_id.clone(), recipient.clone());
+    env.storage().persistent().set(&key, &flagged);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }

@@ -30,4 +30,7 @@ pub enum EventError {
     PrivacyViolation = 24,
     ClaimLimitExceeded = 25,
     ClaimCooldownActive = 26,
+    /// Revenue split is malformed: wrong basis-point sum, too many recipients,
+    /// a zero/duplicate recipient, or index 0 is not the primary organizer.
+    InvalidRevenueSplit = 27,
 }

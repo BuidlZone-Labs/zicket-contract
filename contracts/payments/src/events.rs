@@ -252,3 +252,52 @@ pub fn emit_platform_revenue_withdrawn(
     }
     .publish(env);
 }
+
+#[contractevent(data_format = "vec", topics = ["cohost_flagged"])]
+pub struct CohostFlagged {
+    pub event_type: Symbol,
+    pub event_id: Symbol,
+    pub recipient: Address,
+    pub flagged_by: Address,
+    pub flagged_at: u64,
+}
+
+pub fn emit_cohost_flagged(env: &Env, event_id: Symbol, recipient: Address, flagged_by: Address) {
+    CohostFlagged {
+        event_type: event_type(env, "cohost_flagged"),
+        event_id,
+        recipient,
+        flagged_by,
+        flagged_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+#[contractevent(data_format = "vec", topics = ["flag_resolved"])]
+pub struct FlaggedShareResolved {
+    pub event_type: Symbol,
+    pub event_id: Symbol,
+    pub recipient: Address,
+    /// true => released to recipient, false => reassigned to primary organizer
+    pub released_to_recipient: bool,
+    pub amount: i128,
+    pub resolved_at: u64,
+}
+
+pub fn emit_flagged_share_resolved(
+    env: &Env,
+    event_id: Symbol,
+    recipient: Address,
+    released_to_recipient: bool,
+    amount: i128,
+) {
+    FlaggedShareResolved {
+        event_type: event_type(env, "flagged_share_resolved"),
+        event_id,
+        recipient,
+        released_to_recipient,
+        amount,
+        resolved_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}

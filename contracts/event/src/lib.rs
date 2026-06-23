@@ -77,6 +77,10 @@ impl EventContract {
             return Err(EventError::InvalidInput);
         }
 
+        // Validate the revenue split if one was provided. An empty split keeps the
+        // legacy single-organizer payout behaviour.
+        validate_revenue_splits(&params.revenue_splits, &params.organizer)?;
+
         let mut tiers = soroban_sdk::Vec::new(&env);
         let mut max_supply = 0u32;
         for (current_tier_id, tier_param) in params.initial_tiers.iter().enumerate() {
@@ -138,6 +142,7 @@ impl EventContract {
             event_start_ledger: params.event_start_ledger,
             event_end_ledger: params.event_end_ledger,
             withdrawal_delay_ledgers: params.withdrawal_delay_ledgers,
+            revenue_splits: params.revenue_splits.clone(),
         };
 
         save_event(&env, &params.event_id, &event);
@@ -160,6 +165,15 @@ impl EventContract {
                 &event.event_end_ledger,
                 &event.withdrawal_delay_ledgers,
             );
+            // Register the (immutable) revenue split alongside the event config so
+            // the payments contract can pay each recipient independently.
+            if !params.revenue_splits.is_empty() {
+                payments_client.sync_revenue_splits(
+                    &env.current_contract_address(),
+                    &params.event_id,
+                    &params.revenue_splits,
+                );
+            }
         }
         let privacy = storage::get_event_privacy(&env, &params.event_id);
         emit_event_created(&env, &params, &privacy);
@@ -890,6 +904,104 @@ impl EventContract {
 
         Ok(new_version)
     }
+
+    /// Get the configured revenue split for an event as `(Address, basis_points)`.
+    /// An empty result means the event uses the legacy single-organizer payout.
+    pub fn get_revenue_splits(
+        env: Env,
+        event_id: Symbol,
+    ) -> Result<soroban_sdk::Vec<(Address, u32)>, EventError> {
+        let event = storage::get_event(&env, &event_id)?;
+        Ok(event.revenue_splits)
+    }
+
+    /// Withdraw the caller's allocated share of a split event's revenue.
+    /// Proxies to the payments contract, which performs the actual settlement and
+    /// transfer. Any configured recipient may call this independently.
+    pub fn withdraw_split(
+        env: Env,
+        recipient: Address,
+        event_id: Symbol,
+    ) -> Result<(), EventError> {
+        recipient.require_auth();
+        storage::get_event(&env, &event_id)?;
+
+        let payments_contract = storage::get_payments_contract(&env)?;
+        let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+        payments_client.withdraw_split(&recipient, &event_id);
+
+        Ok(())
+    }
+
+    /// Flag a co-host wallet as compromised. Only the primary organizer (the
+    /// event organizer / split index 0) may call this. Proxies to the payments
+    /// contract, which freezes the flagged recipient's share in escrow.
+    pub fn flag_cohost(
+        env: Env,
+        primary_organizer: Address,
+        event_id: Symbol,
+        recipient: Address,
+    ) -> Result<(), EventError> {
+        primary_organizer.require_auth();
+
+        let event = storage::get_event(&env, &event_id)?;
+        // The primary organizer always retains admin rights regardless of split
+        // percentage: the event's organizer is the split's index-0 recipient.
+        if event.organizer != primary_organizer {
+            return Err(EventError::Unauthorized);
+        }
+
+        let payments_contract = storage::get_payments_contract(&env)?;
+        let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+        payments_client.flag_cohost(&primary_organizer, &event_id, &recipient);
+
+        Ok(())
+    }
+}
+
+/// Validate a revenue split. An empty split is allowed (legacy single-organizer
+/// payout). When non-empty: 1–5 recipients, basis points summing to exactly
+/// 10000, no zero allocations, no duplicate recipients, and index 0 must be the
+/// primary organizer.
+fn validate_revenue_splits(
+    splits: &soroban_sdk::Vec<(Address, u32)>,
+    organizer: &Address,
+) -> Result<(), EventError> {
+    let len = splits.len();
+    if len == 0 {
+        return Ok(());
+    }
+    if len > 5 {
+        return Err(EventError::InvalidRevenueSplit);
+    }
+
+    let (first, _) = splits.get(0).ok_or(EventError::InvalidRevenueSplit)?;
+    if first != *organizer {
+        return Err(EventError::InvalidRevenueSplit);
+    }
+
+    let mut total: u32 = 0;
+    for i in 0..len {
+        let (recipient, bps) = splits.get(i).ok_or(EventError::InvalidRevenueSplit)?;
+        if bps == 0 {
+            return Err(EventError::InvalidRevenueSplit);
+        }
+        total = total
+            .checked_add(bps)
+            .ok_or(EventError::InvalidRevenueSplit)?;
+        for j in 0..i {
+            let (other, _) = splits.get(j).ok_or(EventError::InvalidRevenueSplit)?;
+            if other == recipient {
+                return Err(EventError::InvalidRevenueSplit);
+            }
+        }
+    }
+
+    if total != 10_000 {
+        return Err(EventError::InvalidRevenueSplit);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

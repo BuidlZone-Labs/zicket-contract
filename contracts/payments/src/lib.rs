@@ -279,6 +279,162 @@ fn collect_held_payments_for_token(
     Ok((total, payments))
 }
 
+/// Reject legacy single-organizer withdrawal paths for events that carry a
+/// revenue split. Split events must settle through `withdraw_split` so that the
+/// platform fee is deducted once and each recipient is paid exactly their share.
+fn ensure_no_splits(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
+    if storage::has_splits(env, event_id) {
+        return Err(PaymentError::InvalidSplitConfig);
+    }
+    Ok(())
+}
+
+/// Look up a recipient's basis-point allocation within a split configuration.
+fn find_split_bps(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address) -> Option<u32> {
+    for i in 0..splits.len() {
+        if let Some(split) = splits.get(i) {
+            if split.recipient == *who {
+                return Some(split.basis_points);
+            }
+        }
+    }
+    None
+}
+
+/// Compute a recipient's payout from the frozen net-distributable amount.
+///
+/// Non-primary recipients receive `floor(net * bps / 10000)`. The primary
+/// organizer (index 0) receives the remainder, so integer-division dust is never
+/// stranded and the sum of all shares always equals `net`.
+fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: i128) -> i128 {
+    let primary = match splits.get(0) {
+        Some(s) => s.recipient,
+        None => return 0,
+    };
+
+    if *who == primary {
+        let mut others_total: i128 = 0;
+        for i in 1..splits.len() {
+            if let Some(split) = splits.get(i) {
+                others_total += net * (split.basis_points as i128) / 10_000;
+            }
+        }
+        net - others_total
+    } else {
+        match find_split_bps(splits, who) {
+            Some(bps) => net * (bps as i128) / 10_000,
+            None => 0,
+        }
+    }
+}
+
+/// Settle a split event exactly once, returning the frozen net-distributable
+/// snapshot. Mirrors the status/timing rules of [`PaymentsContract::withdraw`]:
+/// completed events honour the withdrawal delay, cancelled events honour the
+/// dispute window and the time-based withdrawable ratio. The platform fee is
+/// deducted here, before any recipient share is computed.
+fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement, PaymentError> {
+    if let Some(settlement) = storage::get_split_settlement(env, event_id) {
+        return Ok(settlement);
+    }
+
+    let config = storage::get_event_config(env, event_id).ok_or(PaymentError::InvalidOrganizer)?;
+    let mut withdrawable_ratio_bps = 10_000u32;
+    let current_ledger = env.ledger().sequence();
+
+    match storage::get_event_status(env, event_id) {
+        Some(EventStatus::Completed) => {
+            let unlock_ledger = config.event_end_ledger
+                + config.withdrawal_delay_ledgers
+                + config.admin_delay_extension_ledgers;
+            if current_ledger < unlock_ledger {
+                return Err(PaymentError::EscrowNotExpired);
+            }
+        }
+        Some(EventStatus::Cancelled) => {
+            if let Some(cancel_ledger) = config.cancel_ledger {
+                if current_ledger < cancel_ledger + MIN_DISPUTE_WINDOW_LEDGERS {
+                    return Err(PaymentError::EscrowNotExpired);
+                }
+            } else {
+                return Err(PaymentError::EventNotCompleted);
+            }
+
+            match config.withdrawable_ratio_bps {
+                Some(0) => return Err(PaymentError::NoRevenue),
+                Some(ratio) => withdrawable_ratio_bps = ratio,
+                None => return Err(PaymentError::EventNotCompleted),
+            }
+        }
+        _ => return Err(PaymentError::EventNotCompleted),
+    }
+
+    validate_revenue_invariant(env, event_id)?;
+
+    let payout_token = storage::get_event_payout_token(env, event_id)?;
+    let (total, payments_to_release) =
+        collect_held_payments_for_token(env, event_id, &payout_token)?;
+    if total <= 0 {
+        return Err(PaymentError::NoRevenue);
+    }
+
+    let total_to_withdraw = total * (withdrawable_ratio_bps as i128) / 10_000;
+    if total_to_withdraw <= 0 {
+        return Err(PaymentError::NoRevenue);
+    }
+
+    let fee_bps = storage::get_platform_fee_bps(env) as i128;
+    let fee_amount = total_to_withdraw * fee_bps / 10_000;
+    let net = total_to_withdraw - fee_amount;
+    if net <= 0 {
+        return Err(PaymentError::NoRevenue);
+    }
+
+    // Move the distributable funds out of the held-payment accounting. For a full
+    // (non-cancelled) settlement we release every held payment; for a partial
+    // (cancelled) settlement we only reduce the revenue counters and leave the
+    // remainder Held so attendees can still claim their pro-rata refunds.
+    if withdrawable_ratio_bps == 10_000 {
+        for i in 0..payments_to_release.len() {
+            let mut payment = payments_to_release
+                .get(i)
+                .ok_or(PaymentError::PaymentNotFound)?;
+            payment.status = PaymentStatus::Released;
+            storage::update_payment(env, &payment)?;
+        }
+        storage::set_event_token_revenue(env, event_id, &payout_token, 0);
+    } else {
+        let current_token_rev = storage::get_event_token_revenue(env, event_id, &payout_token);
+        storage::set_event_token_revenue(
+            env,
+            event_id,
+            &payout_token,
+            current_token_rev - total_to_withdraw,
+        );
+        let current_rev = storage::get_event_revenue(env, event_id);
+        storage::set_event_revenue(env, event_id, current_rev - total_to_withdraw);
+    }
+
+    if fee_amount > 0 {
+        storage::add_platform_revenue(env, event_id, fee_amount);
+        events::emit_platform_fee_collected(
+            env,
+            event_id.clone(),
+            fee_amount,
+            net,
+            payout_token.clone(),
+        );
+    }
+
+    let settlement = SplitSettlement {
+        token: payout_token,
+        net_distributable: net,
+    };
+    storage::set_split_settlement(env, event_id, &settlement);
+
+    Ok(settlement)
+}
+
 #[contractimpl]
 impl PaymentsContract {
     /// Initialize the contract with an admin address, accepted token address,
@@ -588,6 +744,7 @@ impl PaymentsContract {
     pub fn withdraw(env: Env, organizer: Address, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         organizer.require_auth();
+        ensure_no_splits(&env, &event_id)?;
 
         let stored_organizer = storage::get_event_organizer(&env, &event_id)?;
         if organizer != stored_organizer {
@@ -913,6 +1070,7 @@ impl PaymentsContract {
     /// Idempotent: calling after already released returns EscrowAlreadyReleased.
     pub fn release_if_expired(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
+        ensure_no_splits(&env, &event_id)?;
         let mut meta = storage::get_escrow_meta(&env, &event_id)?;
 
         if meta.auto_released {
@@ -983,6 +1141,7 @@ impl PaymentsContract {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
+        ensure_no_splits(&env, &event_id)?;
 
         validate_revenue_invariant(&env, &event_id)?;
 
@@ -1211,6 +1370,7 @@ impl PaymentsContract {
     ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         organizer.require_auth();
+        ensure_no_splits(&env, &event_id)?;
 
         match storage::get_event_status(&env, &event_id) {
             Some(EventStatus::Completed) => {}
@@ -1294,6 +1454,7 @@ impl PaymentsContract {
     ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         organizer.require_auth();
+        ensure_no_splits(&env, &event_id)?;
 
         match storage::get_event_status(&env, &event_id) {
             Some(EventStatus::Completed) => {}
@@ -1365,9 +1526,260 @@ impl PaymentsContract {
 
         Ok(())
     }
+
+    // ── Revenue splits & co-host wallet management ────────────────────────────
+
+    /// Register the revenue split for an event. Callable only by the linked event
+    /// contract, and only once — splits are immutable for the life of the event.
+    ///
+    /// `splits` is `Vec<(Address, u32)>` where the `u32` is basis points. The
+    /// basis points must sum to exactly 10000, there must be between 1 and 5
+    /// recipients, no zero allocations, and no duplicate recipients. Index 0 is
+    /// the primary organizer.
+    pub fn sync_revenue_splits(
+        env: Env,
+        event_contract: Address,
+        event_id: Symbol,
+        splits: soroban_sdk::Vec<(Address, u32)>,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        if event_contract != storage::get_event_contract(&env)? {
+            return Err(PaymentError::Unauthorized);
+        }
+        event_contract.require_auth();
+
+        // Immutable: never overwrite an existing configuration.
+        if storage::has_splits(&env, &event_id) {
+            return Err(PaymentError::InvalidSplitConfig);
+        }
+
+        let len = splits.len();
+        if len == 0 || len > 5 {
+            return Err(PaymentError::InvalidSplitConfig);
+        }
+
+        let mut normalized: soroban_sdk::Vec<RevenueSplit> = soroban_sdk::Vec::new(&env);
+        let mut total: u32 = 0;
+        for i in 0..len {
+            let (recipient, bps) = splits.get(i).ok_or(PaymentError::InvalidSplitConfig)?;
+            if bps == 0 {
+                return Err(PaymentError::InvalidSplitConfig);
+            }
+            total = total
+                .checked_add(bps)
+                .ok_or(PaymentError::InvalidSplitConfig)?;
+            for j in 0..i {
+                let (other, _) = splits.get(j).ok_or(PaymentError::InvalidSplitConfig)?;
+                if other == recipient {
+                    return Err(PaymentError::InvalidSplitConfig);
+                }
+            }
+            normalized.push_back(RevenueSplit {
+                recipient,
+                basis_points: bps,
+            });
+        }
+        if total != 10_000 {
+            return Err(PaymentError::InvalidSplitConfig);
+        }
+
+        storage::set_splits(&env, &event_id, &normalized);
+        Ok(())
+    }
+
+    /// Get the configured revenue split for an event as `Vec<(Address, u32)>`.
+    pub fn get_revenue_splits(env: Env, event_id: Symbol) -> soroban_sdk::Vec<(Address, u32)> {
+        let splits = storage::get_splits(&env, &event_id);
+        let mut out: soroban_sdk::Vec<(Address, u32)> = soroban_sdk::Vec::new(&env);
+        for i in 0..splits.len() {
+            if let Some(split) = splits.get(i) {
+                out.push_back((split.recipient, split.basis_points));
+            }
+        }
+        out
+    }
+
+    /// Withdraw the caller's allocated share of a split event's revenue.
+    ///
+    /// Any configured recipient may call this independently. The first call
+    /// settles the event (deducting the platform fee and freezing the
+    /// net-distributable amount); subsequent calls simply pay out each
+    /// recipient's frozen share. A flagged recipient cannot withdraw.
+    pub fn withdraw_split(
+        env: Env,
+        recipient: Address,
+        event_id: Symbol,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        recipient.require_auth();
+
+        let splits = storage::get_splits(&env, &event_id);
+        if splits.is_empty() {
+            return Err(PaymentError::SplitsNotConfigured);
+        }
+        if find_split_bps(&splits, &recipient).is_none() {
+            return Err(PaymentError::NotASplitRecipient);
+        }
+        if storage::is_split_flagged(&env, &event_id, &recipient) {
+            return Err(PaymentError::RecipientFlagged);
+        }
+        if storage::get_split_withdrawn(&env, &event_id, &recipient) > 0 {
+            return Err(PaymentError::SplitAlreadyWithdrawn);
+        }
+
+        let settlement = ensure_split_settled(&env, &event_id)?;
+        let share = recipient_share(&splits, &recipient, settlement.net_distributable);
+        if share <= 0 {
+            return Err(PaymentError::NoRevenue);
+        }
+
+        let token_client = token::Client::new(&env, &settlement.token);
+        token_client.transfer(&env.current_contract_address(), &recipient, &share);
+
+        storage::set_split_withdrawn(&env, &event_id, &recipient, share);
+
+        let record = WithdrawalRecord {
+            amount: share,
+            timestamp: env.ledger().timestamp(),
+            organizer: recipient.clone(),
+        };
+        storage::add_withdrawal_record(&env, &event_id, &record);
+
+        events::emit_revenue_withdrawn(
+            &env,
+            event_id.clone(),
+            recipient.clone(),
+            share,
+            settlement.token,
+            recipient,
+            &storage::get_emission_privacy(&env, &event_id),
+        );
+
+        Ok(())
+    }
+
+    /// Flag a co-host wallet as compromised. Only the primary organizer (split
+    /// index 0) may call this. The flagged recipient's share is frozen in escrow
+    /// and cannot be withdrawn until the dispute is resolved. The primary
+    /// organizer cannot flag itself, and an already-paid recipient cannot be
+    /// flagged.
+    pub fn flag_cohost(
+        env: Env,
+        primary_organizer: Address,
+        event_id: Symbol,
+        recipient: Address,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+
+        let splits = storage::get_splits(&env, &event_id);
+        if splits.is_empty() {
+            return Err(PaymentError::SplitsNotConfigured);
+        }
+        let primary = splits
+            .get(0)
+            .ok_or(PaymentError::SplitsNotConfigured)?
+            .recipient;
+        if primary_organizer != primary {
+            return Err(PaymentError::Unauthorized);
+        }
+        primary_organizer.require_auth();
+
+        if recipient == primary {
+            return Err(PaymentError::Unauthorized);
+        }
+        if find_split_bps(&splits, &recipient).is_none() {
+            return Err(PaymentError::NotASplitRecipient);
+        }
+        if storage::get_split_withdrawn(&env, &event_id, &recipient) > 0 {
+            return Err(PaymentError::SplitAlreadyWithdrawn);
+        }
+
+        storage::set_split_flagged(&env, &event_id, &recipient, true);
+        events::emit_cohost_flagged(&env, event_id, recipient, primary_organizer);
+        Ok(())
+    }
+
+    /// Resolve a flagged co-host's escrowed share (admin only).
+    ///
+    /// - `ReleaseToRecipient`: clears the flag so the recipient can withdraw.
+    /// - `ReassignToPrimary`: settles the event if needed and transfers the
+    ///   escrowed share to the primary organizer, marking the recipient as paid.
+    pub fn resolve_flagged_share(
+        env: Env,
+        event_id: Symbol,
+        recipient: Address,
+        resolution: FlagResolution,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let admin = storage::get_admin(&env)?;
+        admin.require_auth();
+
+        let splits = storage::get_splits(&env, &event_id);
+        if splits.is_empty() {
+            return Err(PaymentError::SplitsNotConfigured);
+        }
+        if find_split_bps(&splits, &recipient).is_none() {
+            return Err(PaymentError::NotASplitRecipient);
+        }
+        if !storage::is_split_flagged(&env, &event_id, &recipient) {
+            return Err(PaymentError::RecipientNotFlagged);
+        }
+
+        match resolution {
+            FlagResolution::ReleaseToRecipient => {
+                storage::set_split_flagged(&env, &event_id, &recipient, false);
+                events::emit_flagged_share_resolved(&env, event_id, recipient, true, 0);
+            }
+            FlagResolution::ReassignToPrimary => {
+                if storage::get_split_withdrawn(&env, &event_id, &recipient) > 0 {
+                    return Err(PaymentError::SplitAlreadyWithdrawn);
+                }
+                let settlement = ensure_split_settled(&env, &event_id)?;
+                let primary = splits
+                    .get(0)
+                    .ok_or(PaymentError::SplitsNotConfigured)?
+                    .recipient;
+                let share = recipient_share(&splits, &recipient, settlement.net_distributable);
+                if share <= 0 {
+                    return Err(PaymentError::NoRevenue);
+                }
+
+                let token_client = token::Client::new(&env, &settlement.token);
+                token_client.transfer(&env.current_contract_address(), &primary, &share);
+
+                // Mark the flagged recipient as paid so the funds cannot be
+                // double-spent, and clear the flag.
+                storage::set_split_withdrawn(&env, &event_id, &recipient, share);
+                storage::set_split_flagged(&env, &event_id, &recipient, false);
+
+                let record = WithdrawalRecord {
+                    amount: share,
+                    timestamp: env.ledger().timestamp(),
+                    organizer: primary,
+                };
+                storage::add_withdrawal_record(&env, &event_id, &record);
+
+                events::emit_flagged_share_resolved(&env, event_id, recipient, false, share);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Whether a split recipient is currently flagged (share frozen in escrow).
+    pub fn is_recipient_flagged(env: Env, event_id: Symbol, recipient: Address) -> bool {
+        storage::is_split_flagged(&env, &event_id, &recipient)
+    }
+
+    /// Amount already paid out to a given split recipient for an event.
+    pub fn get_split_withdrawn(env: Env, event_id: Symbol, recipient: Address) -> i128 {
+        storage::get_split_withdrawn(&env, &event_id, &recipient)
+    }
 }
 
 #[cfg(test)]
 mod multi_token_test;
+#[cfg(test)]
+mod revenue_split_test;
 #[cfg(test)]
 mod test;
