@@ -280,7 +280,9 @@ pub fn has_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>
     let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
     let exists = env.storage().persistent().has(&key);
     if exists {
-        env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
     }
     exists
 }
@@ -298,7 +300,9 @@ pub fn get_anon_claim_settings(env: &Env, event_id: &Symbol) -> AnonClaimSetting
     let settings: Option<AnonClaimSettings> = env.storage().persistent().get(&key);
     match settings {
         Some(s) => {
-            env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
             s
         }
         None => AnonClaimSettings {
@@ -321,7 +325,9 @@ pub fn get_anon_window_state(env: &Env, event_id: &Symbol) -> AnonWindowState {
     let state: Option<AnonWindowState> = env.storage().persistent().get(&key);
     match state {
         Some(s) => {
-            env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
             s
         }
         None => AnonWindowState {
