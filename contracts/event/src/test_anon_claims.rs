@@ -1,5 +1,7 @@
 use crate::errors::EventError;
-use crate::types::{AnonClaimSettings, CreateEventParams, EventStatus, PrivacyLevel, TicketTierParams};
+use crate::types::{
+    AnonClaimSettings, CreateEventParams, EventStatus, PrivacyLevel, TicketTierParams,
+};
 use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, BytesN, Env, String, Symbol};
@@ -14,7 +16,12 @@ fn setup_env() -> Env {
     env
 }
 
-fn setup_contracts(env: &Env, event_client: &EventContractClient, admin: &Address, token: &Address) {
+fn setup_contracts(
+    env: &Env,
+    event_client: &EventContractClient,
+    admin: &Address,
+    token: &Address,
+) {
     let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
     let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
 
@@ -180,7 +187,10 @@ fn test_anon_claim_rejects_non_anonymous_event() {
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
     let result = client.try_claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
-    assert_eq!(result.err(), Some(Ok(EventError::AnonymousClaimsNotEnabled)));
+    assert_eq!(
+        result.err(),
+        Some(Ok(EventError::AnonymousClaimsNotEnabled))
+    );
 }
 
 #[test]

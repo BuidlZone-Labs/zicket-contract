@@ -277,9 +277,10 @@ pub fn set_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address, tim
 // ── Anonymous free-claim helpers ──────────────────────────────────────────────
 
 pub fn has_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::AnonCommitment(event_id.clone(), commitment.clone()))
+    env.storage().persistent().has(&DataKey::AnonCommitment(
+        event_id.clone(),
+        commitment.clone(),
+    ))
 }
 
 pub fn save_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) {

@@ -16,7 +16,8 @@ pub use storage::*;
 pub use types::*;
 
 use events::{
-    emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_updated, emit_registration, emit_status_changed,
+    emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_updated,
+    emit_registration, emit_status_changed,
 };
 
 // Minimum withdrawal delay (in ledgers) that must be enforced for events
