@@ -39,6 +39,9 @@ fn create_active_event(
         requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
     };
 
     client.create_event(&params);
@@ -238,7 +241,7 @@ fn test_cancel_event_triggers_refunds() {
     assert_eq!(token_client.balance(&payments_contract_id), price * 2);
     assert_eq!(payments_client.get_event_revenue(&event_id), price * 2);
 
-    // Cancel event - should trigger refunds
+    // Cancel event
     event_client.cancel_event(&organizer, &event_id);
 
     // Check event status
@@ -246,6 +249,15 @@ fn test_cancel_event_triggers_refunds() {
         event_client.get_event_status(&event_id),
         EventStatus::Cancelled
     );
+
+    // Claim refunds
+    let payment_owner_tickets_1 = payments_client.get_owner_tickets(&attendee1);
+    let ticket_1 = payments_client.get_ticket(&payment_owner_tickets_1.get(0).unwrap());
+    payments_client.claim_refund(&attendee1, &ticket_1.payment_id);
+
+    let payment_owner_tickets_2 = payments_client.get_owner_tickets(&attendee2);
+    let ticket_2 = payments_client.get_ticket(&payment_owner_tickets_2.get(0).unwrap());
+    payments_client.claim_refund(&attendee2, &ticket_2.payment_id);
 
     // Check balances restored
     assert_eq!(token_client.balance(&attendee1), price);

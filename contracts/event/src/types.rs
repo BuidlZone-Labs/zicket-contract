@@ -48,6 +48,9 @@ pub struct Event {
     pub max_tickets_per_user: u32,
     pub max_supply: u32,
     pub sold_count: u32,
+    pub event_start_ledger: u32,
+    pub event_end_ledger: u32,
+    pub withdrawal_delay_ledgers: u32,
 }
 
 #[contracttype]
@@ -65,6 +68,9 @@ pub struct CreateEventParams {
     pub requires_verification: bool,
     pub privacy_level: PrivacyLevel,
     pub max_tickets_per_user: u32,
+    pub event_start_ledger: u32,
+    pub event_end_ledger: u32,
+    pub withdrawal_delay_ledgers: u32,
 }
 
 #[contracttype]

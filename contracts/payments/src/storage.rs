@@ -23,6 +23,13 @@ pub struct EventConfig {
     pub max_tickets_per_user: u32,
     pub max_supply: u32,
     pub sold_count: u32,
+    pub event_start_ledger: u32,
+    pub event_end_ledger: u32,
+    pub withdrawal_delay_ledgers: u32,
+    pub admin_delay_extension_ledgers: u32,
+    pub cancel_ledger: Option<u32>,
+    pub withdrawable_ratio_bps: Option<u32>,
+    pub organizer_withdrawn: bool,
 }
 
 #[contracttype]

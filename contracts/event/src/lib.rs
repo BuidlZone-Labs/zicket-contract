@@ -16,9 +16,11 @@ pub use storage::*;
 pub use types::*;
 
 use events::{
-    emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_updated,
-    emit_refunds_processed, emit_registration, emit_status_changed,
+    emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_updated, emit_registration, emit_status_changed,
 };
+
+// Minimum withdrawal delay (in ledgers) that must be enforced for events
+const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 
 #[contract]
 pub struct EventContract;
@@ -58,6 +60,15 @@ impl EventContract {
         let min_date = env.ledger().timestamp() + 86_400; // 24 hours in seconds
         if params.event_date <= min_date {
             return Err(EventError::InvalidEventDate);
+        }
+
+        if params.event_start_ledger > params.event_end_ledger {
+            return Err(EventError::InvalidInput);
+        }
+
+        // Enforce minimum withdrawal delay to prevent bypass at creation time
+        if params.withdrawal_delay_ledgers < MIN_WITHDRAWAL_DELAY_LEDGERS {
+            return Err(EventError::InvalidInput);
         }
 
         // Validate there is at least 1 tier
@@ -123,6 +134,9 @@ impl EventContract {
             max_tickets_per_user: params.max_tickets_per_user,
             max_supply,
             sold_count: 0,
+            event_start_ledger: params.event_start_ledger,
+            event_end_ledger: params.event_end_ledger,
+            withdrawal_delay_ledgers: params.withdrawal_delay_ledgers,
         };
 
         save_event(&env, &params.event_id, &event);
@@ -141,6 +155,9 @@ impl EventContract {
                 &params.requires_verification,
                 &params.max_tickets_per_user,
                 &event.max_supply,
+                &event.event_start_ledger,
+                &event.event_end_ledger,
+                &event.withdrawal_delay_ledgers,
             );
         }
         let privacy = storage::get_event_privacy(&env, &params.event_id);
@@ -222,6 +239,9 @@ impl EventContract {
                 &event.requires_verification,
                 &event.max_tickets_per_user,
                 &event.max_supply,
+                &event.event_start_ledger,
+                &event.event_end_ledger,
+                &event.withdrawal_delay_ledgers,
             );
         }
         emit_event_updated(&env, &event);
@@ -428,19 +448,10 @@ impl EventContract {
 
         // Process refunds if contracts are linked
         if has_linked_contracts(&env) {
-            let admin = storage::get_admin(&env)?;
             let payments_contract = get_payments_contract(&env)?;
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
 
-            let payment_ids = payments_client.get_event_payments(&event_id);
-            let mut refund_count = 0;
-
-            for payment_id in payment_ids.iter() {
-                payments_client.refund(&admin, &payment_id, &None);
-                refund_count += 1;
-            }
-
-            emit_refunds_processed(&env, &event_id, refund_count);
+            payments_client.cancel_event(&event_id, &organizer);
         }
 
         Ok(())
