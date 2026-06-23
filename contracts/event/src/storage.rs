@@ -277,10 +277,12 @@ pub fn set_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address, tim
 // ── Anonymous free-claim helpers ──────────────────────────────────────────────
 
 pub fn has_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) -> bool {
-    env.storage().persistent().has(&DataKey::AnonCommitment(
-        event_id.clone(),
-        commitment.clone(),
-    ))
+    let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
+    let exists = env.storage().persistent().has(&key);
+    if exists {
+        env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    exists
 }
 
 pub fn save_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) {
@@ -292,13 +294,18 @@ pub fn save_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32
 }
 
 pub fn get_anon_claim_settings(env: &Env, event_id: &Symbol) -> AnonClaimSettings {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventAnonSettings(event_id.clone()))
-        .unwrap_or(AnonClaimSettings {
+    let key = DataKey::EventAnonSettings(event_id.clone());
+    let settings: Option<AnonClaimSettings> = env.storage().persistent().get(&key);
+    match settings {
+        Some(s) => {
+            env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            s
+        }
+        None => AnonClaimSettings {
             max_anon_claims_per_window: 0,
             anon_window_size: 0,
-        })
+        },
+    }
 }
 
 pub fn set_anon_claim_settings(env: &Env, event_id: &Symbol, settings: &AnonClaimSettings) {
@@ -310,13 +317,18 @@ pub fn set_anon_claim_settings(env: &Env, event_id: &Symbol, settings: &AnonClai
 }
 
 pub fn get_anon_window_state(env: &Env, event_id: &Symbol) -> AnonWindowState {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventAnonWindow(event_id.clone()))
-        .unwrap_or(AnonWindowState {
+    let key = DataKey::EventAnonWindow(event_id.clone());
+    let state: Option<AnonWindowState> = env.storage().persistent().get(&key);
+    match state {
+        Some(s) => {
+            env.storage().persistent().extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            s
+        }
+        None => AnonWindowState {
             window_index: 0,
             count: 0,
-        })
+        },
+    }
 }
 
 pub fn set_anon_window_state(env: &Env, event_id: &Symbol, state: &AnonWindowState) {

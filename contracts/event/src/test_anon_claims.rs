@@ -63,7 +63,7 @@ fn create_anon_free_event(
         privacy_level: PrivacyLevel::Anonymous,
         max_tickets_per_user: 0,
         event_start_ledger: 0,
-        event_end_ledger: 1000,
+        event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
@@ -186,7 +186,7 @@ fn test_anon_claim_rejects_non_anonymous_event() {
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
         event_start_ledger: 0,
-        event_end_ledger: 1000,
+        event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
@@ -231,7 +231,7 @@ fn test_anon_claim_paid_tier_fails() {
         privacy_level: PrivacyLevel::Anonymous,
         max_tickets_per_user: 0,
         event_start_ledger: 0,
-        event_end_ledger: 1000,
+        event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
@@ -493,7 +493,7 @@ fn test_anon_claim_tier_sold_out() {
         privacy_level: PrivacyLevel::Anonymous,
         max_tickets_per_user: 0,
         event_start_ledger: 0,
-        event_end_ledger: 1000,
+        event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
     };
     client.create_event(&params);
