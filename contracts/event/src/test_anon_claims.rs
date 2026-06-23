@@ -337,13 +337,47 @@ fn test_anon_window_resets_after_ledger_advance() {
     assert_eq!(event.sold_count, 3);
 }
 
-// ── The key sybil-resistance test ────────────────────────────────────────────
-
-/// Demonstrates that a single source cannot drain event capacity in one transaction
-/// batch. Even with five distinct commitments (no reuse), the window rate limit
-/// blocks all claims beyond the per-window maximum.
+/// Window-straddle: a claim at the last ledger of window N and a claim at the
+/// first ledger of window N+1 are treated as separate windows. The second claim
+/// succeeds even though the first window was full. Soroban's deterministic ledger
+/// sequence means there is no ambiguity at the boundary.
 #[test]
-fn test_single_source_cannot_drain_capacity_in_one_batch() {
+fn test_anon_window_straddle_boundary() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_strd");
+
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
+
+    // Window size = 10; sequence 1_000 → window index = 100 (last ledger: 1_009).
+    client.set_anon_claim_settings(&organizer, &event_id, &1, &10);
+
+    // Claim at sequence 1_009 — the final ledger of window 100.
+    env.ledger().with_mut(|li| li.sequence_number = 1_009);
+    client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
+
+    // Window 100 is now full. One step forward lands in window 101.
+    env.ledger().with_mut(|li| li.sequence_number = 1_010);
+    client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.sold_count, 2);
+}
+
+// ── Per-window rate limit — sybil resistance ─────────────────────────────────
+
+/// The window rate limit caps claims per ledger window, not per transaction or
+/// per commitment. Five distinct commitments submitted within the same window
+/// are all subject to the window quota; only the first N succeed.
+///
+/// Note: this does not prevent claims spread across multiple windows — that
+/// requires a per-event hard cap configured separately.
+#[test]
+fn test_single_source_rate_limited_per_window() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);

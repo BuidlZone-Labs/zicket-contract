@@ -940,6 +940,9 @@ impl EventContract {
     /// - `anon_window_size`: window size in ledgers (e.g. 100). 0 = no window limit.
     ///
     /// Only the event organizer may call this.
+    ///
+    /// ⚠️ These settings can be changed at any time by the organizer. Setting either to 0
+    /// disables rate limiting. Consider locking these after event launch.
     pub fn set_anon_claim_settings(
         env: Env,
         organizer: Address,
