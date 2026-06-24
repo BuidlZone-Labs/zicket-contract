@@ -1284,7 +1284,6 @@ fn test_postpone_active_event_opens_window() {
     assert_eq!(info.new_date_ledger, 60_000);
     // deadline = current ledger (100) + window
     assert_eq!(info.choice_deadline_ledger, 100 + MIN_WINDOW as u64);
-    assert_eq!(info.postpone_count, 1);
 }
 
 #[test]
@@ -1374,8 +1373,24 @@ fn test_finalize_before_window_closes_fails() {
 
     client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
     // Still inside the window.
-    let res = client.try_finalize_postponement(&event_id);
+    let res = client.try_finalize_postponement(&organizer, &event_id);
     assert_eq!(res.err(), Some(Ok(EventError::PostponementWindowOpen)));
+}
+
+#[test]
+fn test_finalize_requires_organizer() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
+    at_sequence(&env, 100 + MIN_WINDOW + 1);
+    let res = client.try_finalize_postponement(&attacker, &event_id);
+    assert_eq!(res.err(), Some(Ok(EventError::Unauthorized)));
 }
 
 #[test]
@@ -1387,7 +1402,7 @@ fn test_finalize_requires_postponed_state() {
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
 
-    let res = client.try_finalize_postponement(&event_id);
+    let res = client.try_finalize_postponement(&organizer, &event_id);
     assert_eq!(res.err(), Some(Ok(EventError::EventNotPostponed)));
 }
 
@@ -1406,39 +1421,70 @@ fn test_finalize_resumes_active_and_shifts_schedule() {
 
     client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
     at_sequence(&env, 100 + MIN_WINDOW + 1);
-    client.finalize_postponement(&event_id);
+    client.finalize_postponement(&organizer, &event_id);
 
     assert_eq!(client.get_event_status(&event_id), EventStatus::Active);
     let after = client.get_event(&event_id);
     assert_eq!(after.event_start_ledger, 60_000);
     assert_eq!(after.event_end_ledger, 60_000 + duration);
+
+    // The active postponement record is cleared on resume — no stale window data.
+    let res = client.try_get_postponement(&event_id);
+    assert_eq!(res.err(), Some(Ok(EventError::EventNotPostponed)));
 }
 
 #[test]
-fn test_postpone_count_capped() {
+fn test_postpone_rejects_out_of_range_new_date() {
     let env = setup_env();
-    at_sequence(&env, 10);
+    at_sequence(&env, 100);
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
 
-    // First postponement + finalize.
-    client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
-    at_sequence(&env, 10 + MIN_WINDOW + 1);
-    client.finalize_postponement(&event_id);
+    // new_date_ledger beyond u32::MAX cannot fit the stored u32 schedule.
+    let too_far = u32::MAX as u64 + 1;
+    let res = client.try_postpone_event(&organizer, &event_id, &too_far, &MIN_WINDOW);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
+}
 
-    // Second postponement + finalize.
-    let seq2 = 10 + MIN_WINDOW + 1;
-    let new_date2 = (seq2 + MIN_WINDOW) as u64 + 10_000;
-    client.postpone_event(&organizer, &event_id, &new_date2, &MIN_WINDOW);
-    at_sequence(&env, seq2 + MIN_WINDOW + 1);
-    client.finalize_postponement(&event_id);
+#[test]
+fn test_postpone_rejects_window_above_max() {
+    let env = setup_env();
+    at_sequence(&env, 100);
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
 
-    // Third postponement exceeds MAX_POSTPONEMENTS (2).
-    let seq3 = seq2 + MIN_WINDOW + 1;
-    let new_date3 = (seq3 + MIN_WINDOW) as u64 + 10_000;
-    let res = client.try_postpone_event(&organizer, &event_id, &new_date3, &MIN_WINDOW);
+    // ~30-day cap is 518_400 ledgers; one above is rejected.
+    let res = client.try_postpone_event(&organizer, &event_id, &10_000_000, &518_401);
+    assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
+}
+
+#[test]
+fn test_postpone_count_capped() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let event_id = setup_active_event(&env, &client, &organizer);
+
+    // MAX_POSTPONEMENTS allowed postponements, each followed by a finalize.
+    let mut seq = 10u32;
+    for _ in 0..3 {
+        at_sequence(&env, seq);
+        let new_date = (seq + MIN_WINDOW) as u64 + 10_000;
+        client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+        seq += MIN_WINDOW + 1;
+        at_sequence(&env, seq);
+        client.finalize_postponement(&organizer, &event_id);
+    }
+
+    // The 4th postponement exceeds MAX_POSTPONEMENTS (3).
+    at_sequence(&env, seq);
+    let new_date = (seq + MIN_WINDOW) as u64 + 10_000;
+    let res = client.try_postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
     assert_eq!(res.err(), Some(Ok(EventError::MaxPostponementsReached)));
 }
 

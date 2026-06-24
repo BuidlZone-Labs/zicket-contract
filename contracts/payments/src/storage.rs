@@ -78,12 +78,21 @@ pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
 }
 
 /// Store the refund-choice deadline (ledger sequence) for a postponed event.
+///
+/// The TTL is sized dynamically to outlive the configured refund window: a long
+/// window must not let the deadline entry expire before the window closes, which
+/// would make `get_postpone_deadline` return `None` and break refunds while the
+/// event is still postponed. We extend to cover (deadline - now) plus the standard
+/// threshold buffer.
 pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32) {
     let key = DataKey::PostponeDeadline(event_id.clone());
     env.storage().persistent().set(&key, &deadline_ledger);
+    let current = env.ledger().sequence();
+    let window = deadline_ledger.saturating_sub(current);
+    let extend_to = window.saturating_add(TTL_THRESHOLD);
     env.storage()
         .persistent()
-        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+        .extend_ttl(&key, TTL_THRESHOLD, extend_to.max(TTL_BUMP));
 }
 
 /// Read the refund-choice deadline (ledger sequence) for a postponed event.

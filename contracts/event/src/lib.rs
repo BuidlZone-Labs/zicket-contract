@@ -23,11 +23,20 @@ use events::{
 // Minimum withdrawal delay (in ledgers) that must be enforced for events
 const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 
-// Minimum refund-choice window for a postponement, in ledgers. Set to ~72h (51,840 ledgers) to give ample time for all attendees to claim refunds if they choose.
+// Minimum refund-choice window for a postponement, in ledgers. Set to ~72h
+// (51,840 ledgers at ~5s/ledger) so every holder has ample time to opt out.
 const MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 51_840;
 
-// Maximum number of times a single event may be postponed.
-const MAX_POSTPONEMENTS: u32 = 2;
+// Maximum refund-choice window, in ledgers (~30 days). Bounds how long escrow can
+// stay frozen and keeps the payments-side deadline within its storage TTL.
+const MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 518_400;
+
+// Maximum number of times a single event may be postponed. The issue does not
+// mandate a specific number — it only flags "postpone indefinitely to avoid
+// refunds" as a spec flaw — so this is an anti-abuse bound: once exhausted the
+// organizer must run the event (-> Completed) or cancel it (-> Cancelled, full
+// refund). Each postponement independently opens a fresh refund window.
+const MAX_POSTPONEMENTS: u32 = 3;
 
 #[contract]
 pub struct EventContract;
@@ -503,9 +512,18 @@ impl EventContract {
             return Err(EventError::MaxPostponementsReached);
         }
 
-        // Enforce the mandatory minimum refund-choice window.
+        // Enforce the mandatory minimum (and a sane maximum) refund-choice window.
         if choice_window_ledgers < MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS {
             return Err(EventError::PostponementWindowTooShort);
+        }
+        if choice_window_ledgers > MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS {
+            return Err(EventError::InvalidPostponementDate);
+        }
+
+        // The new date is a ledger sequence; it must fit u32 since the event
+        // schedule (`event_start_ledger`/`event_end_ledger`) is stored as u32.
+        if new_date_ledger > u32::MAX as u64 {
+            return Err(EventError::InvalidPostponementDate);
         }
 
         let current_ledger = env.ledger().sequence();
@@ -523,12 +541,18 @@ impl EventContract {
         update_event(&env, &event_id, &event)?;
 
         let postpone_count = count + 1;
-        let info = PostponementInfo {
-            new_date_ledger,
-            choice_deadline_ledger: choice_deadline_ledger as u64,
-            postpone_count,
-        };
-        storage::set_postponement(&env, &event_id, &info);
+        // The active window data and the cumulative anti-abuse counter are stored
+        // separately: the window record is cleared on resume, while the counter
+        // persists for the lifetime of the event to enforce `MAX_POSTPONEMENTS`.
+        storage::set_postpone_count(&env, &event_id, postpone_count);
+        storage::set_postponement(
+            &env,
+            &event_id,
+            &PostponementInfo {
+                new_date_ledger,
+                choice_deadline_ledger: choice_deadline_ledger as u64,
+            },
+        );
 
         emit_status_changed(&env, &event_id, &old_status, &EventStatus::Postponed);
         emit_event_postponed(
@@ -552,14 +576,25 @@ impl EventContract {
     /// Finalize a postponement once its refund-choice window has closed, returning
     /// the event to `Active` on its new schedule.
     ///
-    /// Permissionless (like `release_if_expired`): anyone may trigger it after the
-    /// deadline so the event is not left stuck in `Postponed` if the organizer is
-    /// inactive. The ledger-based schedule (`event_start_ledger` / `event_end_ledger`)
-    /// is shifted to the new date while preserving the original event duration, and
-    /// the new schedule is synced to the payments contract so escrow/withdrawal
-    /// timing is recomputed against the rescheduled event.
-    pub fn finalize_postponement(env: Env, event_id: Symbol) -> Result<(), EventError> {
+    /// Restricted to the organizer (matching every other state-changing entrypoint).
+    /// The organizer is economically motivated to call it: revenue stays frozen
+    /// until the event is resumed and subsequently `Completed`. The ledger schedule
+    /// (`event_start_ledger` / `event_end_ledger`) is shifted to the new date while
+    /// preserving the original event duration, and the new schedule is synced to the
+    /// payments contract so escrow/withdrawal timing is recomputed against it. The
+    /// active postponement record is cleared so getters no longer expose stale data.
+    pub fn finalize_postponement(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+
         let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
 
         if event.status != EventStatus::Postponed {
             return Err(EventError::EventNotPostponed);
@@ -574,10 +609,12 @@ impl EventContract {
         }
 
         // Shift the ledger schedule to the new date, preserving the original duration.
+        // `new_date_ledger` was validated to fit u32 at postponement time.
         let duration = event
             .event_end_ledger
             .saturating_sub(event.event_start_ledger);
-        let new_start_ledger = info.new_date_ledger as u32;
+        let new_start_ledger =
+            u32::try_from(info.new_date_ledger).map_err(|_| EventError::InvalidPostponementDate)?;
         let new_end_ledger = new_start_ledger
             .checked_add(duration)
             .ok_or(EventError::InvalidPostponementDate)?;
@@ -586,6 +623,9 @@ impl EventContract {
 
         event.status = EventStatus::Active;
         update_event(&env, &event_id, &event)?;
+
+        // Clear the active window record; the cumulative postpone counter is retained.
+        storage::remove_postponement(&env, &event_id);
 
         emit_status_changed(
             &env,
@@ -618,10 +658,61 @@ impl EventContract {
         Ok(())
     }
 
-    /// Read the postponement record for an event, if it has ever been postponed.
+    /// Read the active postponement record for an event. Only present while the
+    /// event is `Postponed`; returns `EventNotPostponed` once it has been resumed
+    /// or if it was never postponed (so callers never see stale window data).
     pub fn get_postponement(env: Env, event_id: Symbol) -> Result<PostponementInfo, EventError> {
         storage::get_event(&env, &event_id)?;
         storage::get_postponement(&env, &event_id).ok_or(EventError::EventNotPostponed)
+    }
+
+    /// Opt a ticket holder out of a postponed event for a full refund, and revoke
+    /// their participation so they cannot also attend the rescheduled event.
+    ///
+    /// Orchestrated here rather than directly on the payments contract because only
+    /// the event contract is linked to both payments and ticket contracts. Sequence:
+    /// the payments contract performs the full token refund (verifying ownership,
+    /// `Held` status and that the choice window is still open — reverting the whole
+    /// call otherwise); this then drops the attendee's event registration and
+    /// cancels their minted ticket for the event. `ticket_id` is the payments-side
+    /// receipt ticket id (as returned by `payments::get_owner_tickets`).
+    pub fn request_postponement_refund(
+        env: Env,
+        attendee: Address,
+        event_id: Symbol,
+        ticket_id: u64,
+    ) -> Result<(), EventError> {
+        attendee.require_auth();
+
+        let event = storage::get_event(&env, &event_id)?;
+        if event.status != EventStatus::Postponed {
+            return Err(EventError::EventNotPostponed);
+        }
+
+        let payments_contract = get_payments_contract(&env)?;
+        let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+        payments_client.request_postponement_refund(&attendee, &ticket_id);
+
+        // Revoke participation so a refunded holder cannot attend the resumed event.
+        storage::remove_registration(&env, &event_id, &attendee);
+
+        let ticket_contract = get_ticket_contract(&env)?;
+        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+        let owned = ticket_client.get_tickets_by_owner(&attendee);
+        for tid in owned.iter() {
+            let minted = ticket_client.get_ticket(&tid);
+            if minted.event_id == event_id
+                && !minted.is_used
+                && minted.status == ticket_contract::TicketStatus::Valid
+            {
+                // The attendee owns the ticket, so their auth on this call covers
+                // the owner-gated cancellation. Cancel one ticket per refunded payment.
+                ticket_client.cancel_ticket(&tid, &attendee);
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     /// Reserve a ticket for a specific tier. The reservation is valid for 15 minutes.

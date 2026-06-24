@@ -25,8 +25,12 @@ pub enum DataKey {
     LastFreeClaim(Symbol, Address),
     /// Organizer-configured sybil-protection settings for a specific event.
     EventClaimSettings(Symbol),
-    /// Postponement data (new date, choice deadline, postpone count) for a specific event.
+    /// Active postponement window (new date, choice deadline) for a specific event.
+    /// Present only while the event is `Postponed`.
     Postponement(Symbol),
+    /// Cumulative number of times an event has been postponed (anti-abuse counter).
+    /// Persists across postponements, independent of the active window record.
+    PostponeCount(Symbol),
     /// Marks a commitment as used for the anonymous free-claim path.
     AnonCommitment(Symbol, BytesN<32>),
     /// Rolling window state (index + count) for the anonymous rate limiter.
@@ -229,9 +233,8 @@ pub fn has_reservation(env: &Env, event_id: &Symbol, attendee: &Address) -> bool
 
 // ── Postponement helpers ──────────────────────────────────────────────────────
 
-/// Persist the postponement record for an event. The record is retained after the
-/// event is finalized back to `Active` so that `postpone_count` survives across
-/// successive postponements (enforcing `MAX_POSTPONEMENTS`).
+/// Persist the active postponement window for an event. Cleared on resume via
+/// [`remove_postponement`].
 pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
     let key = DataKey::Postponement(event_id.clone());
     env.storage().persistent().set(&key, info);
@@ -240,18 +243,62 @@ pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
-/// Read the postponement record for an event, or `None` if it has never been postponed.
+/// Read the active postponement window, or `None` if the event is not postponed.
 pub fn get_postponement(env: &Env, event_id: &Symbol) -> Option<PostponementInfo> {
     env.storage()
         .persistent()
         .get(&DataKey::Postponement(event_id.clone()))
 }
 
-/// Number of times an event has been postponed (0 if never).
+/// Remove the active postponement window when an event resumes to `Active`.
+pub fn remove_postponement(env: &Env, event_id: &Symbol) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Postponement(event_id.clone()));
+}
+
+/// Cumulative number of times an event has been postponed (0 if never).
 pub fn get_postpone_count(env: &Env, event_id: &Symbol) -> u32 {
-    get_postponement(env, event_id)
-        .map(|info| info.postpone_count)
-        .unwrap_or(0)
+    env.storage()
+        .persistent()
+        .get(&DataKey::PostponeCount(event_id.clone()))
+        .unwrap_or(0u32)
+}
+
+/// Persist the cumulative postponement counter. Survives across postponements and
+/// across the active-window record being cleared on resume.
+pub fn set_postpone_count(env: &Env, event_id: &Symbol, count: u32) {
+    let key = DataKey::PostponeCount(event_id.clone());
+    env.storage().persistent().set(&key, &count);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Remove an attendee's registration for an event (used when a postponement refund
+/// revokes participation). Clears the registration flag and drops the attendee from
+/// the public attendee list.
+pub fn remove_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Registration(event_id.clone(), attendee.clone()));
+
+    let attendees_key = DataKey::EventAttendees(event_id.clone());
+    let attendees: Vec<Address> = env
+        .storage()
+        .persistent()
+        .get(&attendees_key)
+        .unwrap_or(Vec::new(env));
+    let mut remaining = Vec::new(env);
+    for a in attendees.iter() {
+        if a != *attendee {
+            remaining.push_back(a);
+        }
+    }
+    env.storage().persistent().set(&attendees_key, &remaining);
+    env.storage()
+        .persistent()
+        .extend_ttl(&attendees_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 // ── Sybil-resistance helpers ──────────────────────────────────────────────────

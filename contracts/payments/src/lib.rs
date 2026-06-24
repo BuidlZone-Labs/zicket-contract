@@ -943,13 +943,20 @@ impl PaymentsContract {
     }
 
     /// Opt out of a postponed event in exchange for a full refund.
+    ///
+    /// Callable only by the linked event contract, which orchestrates the full
+    /// opt-out (refund here, then registration + ticket revocation on its side) so
+    /// a refunded holder cannot also attend the resumed event. `caller` is the
+    /// ticket owner on whose behalf the event contract is acting; ownership is
+    /// verified here. Refunds 100% of the held amount.
     pub fn request_postponement_refund(
         env: Env,
         caller: Address,
         ticket_id: u64,
     ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
-        caller.require_auth();
+        let event_contract = storage::get_event_contract(&env)?;
+        event_contract.require_auth();
 
         let ticket = storage::get_ticket(&env, ticket_id)?;
         if ticket.owner != caller {
@@ -1047,6 +1054,11 @@ impl PaymentsContract {
             return Err(PaymentError::EscrowAlreadyReleased);
         }
 
+        // Escrow is frozen while the event is postponed (refund-choice window open).
+        if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotActive);
+        }
+
         if env.ledger().timestamp() < meta.event_end_time {
             return Err(PaymentError::EscrowNotExpired);
         }
@@ -1111,6 +1123,11 @@ impl PaymentsContract {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
+
+        // Escrow is frozen while the event is postponed (refund-choice window open).
+        if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotActive);
+        }
 
         validate_revenue_invariant(&env, &event_id)?;
 

@@ -395,7 +395,7 @@ fn test_postpone_full_refund_and_resume() {
     let (
         event_client,
         payments_client,
-        _ticket_client,
+        ticket_client,
         token_client,
         token_admin_client,
         token_address,
@@ -429,12 +429,20 @@ fn test_postpone_full_refund_and_resume() {
         EventStatus::Postponed
     );
 
+    // The minted (entry) ticket for attendee1 before opting out.
+    let minted1 = ticket_client
+        .get_tickets_by_owner(&attendee1)
+        .get(0)
+        .unwrap();
+
     let t1 = payments_client
         .get_owner_tickets(&attendee1)
         .get(0)
         .unwrap();
     let payment1 = payments_client.get_ticket(&t1).payment_id;
-    payments_client.request_postponement_refund(&attendee1, &t1);
+
+    // Opt out through the event contract (orchestrates refund + revocation).
+    event_client.request_postponement_refund(&attendee1, &event_id, &t1);
 
     assert_eq!(token_client.balance(&attendee1), PRICE);
     assert_eq!(token_client.balance(&payments_id), PRICE);
@@ -444,11 +452,19 @@ fn test_postpone_full_refund_and_resume() {
         payments_contract::PaymentStatus::Refunded
     );
 
+    // Refunded holder loses participation: registration dropped and ticket cancelled.
+    assert!(!event_client.is_registered(&event_id, &attendee1));
+    assert_eq!(
+        ticket_client.get_ticket(&minted1).status,
+        ticket_contract::TicketStatus::Cancelled
+    );
+
+    // Non-acting holder keeps their place.
     assert!(event_client.is_registered(&event_id, &attendee2));
 
     env.ledger()
         .with_mut(|li| li.sequence_number = 100 + MIN_WINDOW + 1);
-    event_client.finalize_postponement(&event_id);
+    event_client.finalize_postponement(&organizer, &event_id);
     assert_eq!(
         event_client.get_event_status(&event_id),
         EventStatus::Active
@@ -496,10 +512,19 @@ fn test_postponed_event_blocks_all_withdrawals() {
     let new_date = 100 + MIN_WINDOW as u64 + 10_000;
     event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
 
+    // Event-contract withdrawal path (gated on Completed).
     let res = event_client.try_withdraw_revenue(&organizer, &event_id);
     assert!(res.is_err());
 
+    // Every direct payments-contract release path is frozen while Postponed.
     let res = payments_client.try_withdraw(&organizer, &event_id);
+    assert!(res.is_err());
+    let res = payments_client.try_withdraw_revenue(&event_id, &organizer);
+    assert_eq!(
+        res.err(),
+        Some(Ok(payments_contract::PaymentError::EventNotActive))
+    );
+    let res = payments_client.try_withdraw_token(&organizer, &event_id, &token_address);
     assert!(res.is_err());
 }
 
