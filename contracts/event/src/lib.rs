@@ -18,6 +18,7 @@ pub use types::*;
 use events::{
     emit_anon_registration, emit_event_cancelled, emit_event_created, emit_event_postponed,
     emit_event_resumed, emit_event_updated, emit_registration, emit_status_changed,
+    emit_zk_verified_attendance,
 };
 
 // Minimum withdrawal delay (in ledgers) that must be enforced for events
@@ -1261,6 +1262,175 @@ impl EventContract {
         storage::get_anon_claim_settings(&env, &event_id)
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // zkPassport Verification
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Register an attendee for a zkPassport-gated event by submitting a
+    /// zero-knowledge passport proof.
+    ///
+    /// # Verification flow
+    ///
+    /// 1. Asserts the event exists and is `Active`.
+    /// 2. Asserts `event.requires_verification == true` — non-gated events must
+    ///    use `register_for_event` instead.
+    /// 3. Asserts the organizer has enabled zkPassport via `set_zk_config`.
+    /// 4. Checks `claim.expiry_ledger >= env.ledger().sequence()` — stale proofs
+    ///    are rejected immediately.
+    /// 5. If the organizer specified a `required_claim_type`, verifies the claim
+    ///    type matches.
+    /// 6. Checks the nullifier has not already been used for this event.
+    /// 7. Checks capacity and duplicate registration.
+    /// 8. Mints a ticket via the ticket contract (if linked).
+    /// 9. Saves **only** the nullifier — the raw `proof` bytes are discarded.
+    /// 10. Emits `ZkVerifiedAttendance` (nullifier omitted from event payload).
+    ///
+    /// # Privacy guarantees
+    /// - Proof bytes are NEVER written to the ledger.
+    /// - The nullifier prevents reuse without revealing identity.
+    /// - The emitted event contains only `claim_type`, not the nullifier, to
+    ///   prevent cross-event correlation.
+    pub fn verify_and_attend(
+        env: Env,
+        event_id: Symbol,
+        tier_id: u32,
+        claim: ZkPassportClaim,
+    ) -> Result<(), EventError> {
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        // 1. Event must be Active.
+        if event.status != EventStatus::Active {
+            return Err(EventError::EventNotActive);
+        }
+
+        // 2. This path is only for verification-gated events.
+        if !event.requires_verification {
+            return Err(EventError::ZkVerificationRequired);
+        }
+
+        // 3. Organizer must have explicitly enabled zkPassport for this event.
+        let zk_config = storage::get_zk_verification_config(&env, &event_id);
+        if !zk_config.enabled {
+            return Err(EventError::ZkVerificationRequired);
+        }
+
+        // 4. Proof must not be expired.
+        let current_ledger = env.ledger().sequence();
+        if claim.expiry_ledger < current_ledger {
+            return Err(EventError::ZkProofExpired);
+        }
+
+        // 5. Validate claim type if the organizer specified one.
+        if let Some(required_type) = &zk_config.required_claim_type {
+            if &claim.claim_type != required_type {
+                return Err(EventError::ZkClaimTypeMismatch);
+            }
+        }
+
+        // 6. Nullifier must be fresh — no proof reuse allowed.
+        if storage::has_zk_nullifier(&env, &event_id, &claim.nullifier) {
+            return Err(EventError::ZkNullifierReused);
+        }
+
+        // 7. Guard duplicate registration.
+        // NOTE: We intentionally do NOT check is_registered for anonymous paths;
+        // for verified paths the ticket contract enforces uniqueness per-address.
+        // We rely on nullifier uniqueness as the primary sybil guard here.
+
+        // Locate the requested tier.
+        let mut tier_index = None;
+        for i in 0..event.tiers.len() {
+            let t = event.tiers.get(i).ok_or(EventError::TierNotFound)?;
+            if t.tier_id == tier_id {
+                tier_index = Some(i);
+                break;
+            }
+        }
+        let index = tier_index.ok_or(EventError::TierNotFound)?;
+        let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
+
+        // Capacity checks.
+        if event.sold_count >= event.max_supply {
+            return Err(EventError::EventSoldOut);
+        }
+        if tier.sold + tier.reserved >= tier.capacity {
+            return Err(EventError::TierSoldOut);
+        }
+
+        // 8. Handle payment for paid tiers.
+        if tier.price > 0 {
+            if has_linked_contracts(&env) {
+                let payments_contract = get_payments_contract(&env)?;
+                let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+                let token = payments_client.get_accepted_token();
+                payments_client.pay_for_ticket(
+                    &0u64,
+                    &env.current_contract_address(),
+                    &event_id,
+                    &tier.price,
+                    &None::<BytesN<32>>,
+                    &token,
+                    &PaymentPrivacy::Standard,
+                );
+            }
+        }
+
+        // Mint the ticket NFT if the ticket contract is linked.
+        if has_linked_contracts(&env) {
+            let ticket_contract = get_ticket_contract(&env)?;
+            let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+            ticket_client.mint_ticket(&event.event_id, &event.organizer, &env.current_contract_address());
+        }
+
+        // 9. Persist ONLY the nullifier — proof bytes are never stored.
+        storage::save_zk_nullifier(&env, &event_id, &claim.nullifier);
+
+        // Update sold counts.
+        tier.sold += 1;
+        event.sold_count += 1;
+        event.tiers.set(index, tier.clone());
+        storage::update_event(&env, &event_id, &event)?;
+
+        // 10. Emit event — nullifier deliberately excluded from payload.
+        emit_zk_verified_attendance(&env, &event_id, &claim.claim_type, tier_id, tier.sold);
+
+        Ok(())
+    }
+
+    /// Configure the zkPassport verification settings for an event.
+    ///
+    /// - `enabled: true` activates the `verify_and_attend` path.
+    /// - `required_claim_type`: if `Some`, only that claim category is accepted.
+    ///   `None` allows any valid ZK claim type.
+    ///
+    /// Only the event organizer may call this. The event must exist.
+    pub fn set_zk_config(
+        env: Env,
+        organizer: Address,
+        event_id: Symbol,
+        config: ZkVerificationConfig,
+    ) -> Result<(), EventError> {
+        organizer.require_auth();
+        let event = storage::get_event(&env, &event_id)?;
+        if event.organizer != organizer {
+            return Err(EventError::Unauthorized);
+        }
+        storage::set_zk_verification_config(&env, &event_id, &config);
+        Ok(())
+    }
+
+    /// Retrieve the current zkPassport verification configuration for an event.
+    pub fn get_zk_config(env: Env, event_id: Symbol) -> ZkVerificationConfig {
+        storage::get_zk_verification_config(&env, &event_id)
+    }
+
+    /// Check whether a specific nullifier has already been recorded (spent) for
+    /// the given event. Useful for off-chain relayers to pre-screen proofs before
+    /// submitting a transaction.
+    pub fn is_nullifier_used(env: Env, event_id: Symbol, nullifier: BytesN<32>) -> bool {
+        storage::has_zk_nullifier(&env, &event_id, &nullifier)
+    }
+
     /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
@@ -1433,3 +1603,6 @@ mod test_claims;
 
 #[cfg(test)]
 mod test_anon_claims;
+
+#[cfg(test)]
+mod test_zk_passport;

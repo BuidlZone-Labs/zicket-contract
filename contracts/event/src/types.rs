@@ -1,5 +1,63 @@
 pub use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
-use soroban_sdk::{contracttype, Address, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Symbol, Vec};
+
+// ── zkPassport types ──────────────────────────────────────────────────────────
+
+/// The category of identity claim being asserted by a zkPassport proof.
+///
+/// - `Age`         – Proves the attendee is above a minimum age threshold.
+/// - `Location`    – Proves the attendee's issuing country / region.
+/// - `Citizenship` – Proves the attendee holds citizenship in an accepted nation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ZkClaimType {
+    Age = 0,
+    Location = 1,
+    Citizenship = 2,
+}
+
+/// A zero-knowledge passport claim submitted by an attendee for gated event
+/// registration.
+///
+/// # Privacy guarantees
+/// - `proof` bytes are **never persisted on-chain**; they are consumed transiently
+///   during the `verify_and_attend` call and immediately discarded.
+/// - Only the `nullifier` (a cryptographic commitment derived from the proof) is
+///   stored, which prevents reuse without revealing the underlying identity.
+///
+/// # Fields
+/// - `claim_type`    – Which identity property is being asserted.
+/// - `proof`         – Raw ZK proof bytes (validated off-chain by a relayer).
+/// - `nullifier`     – A 32-byte commitment that uniquely identifies this proof
+///                     without revealing the attendee's identity.
+/// - `expiry_ledger` – The ledger sequence number after which this proof is
+///                     considered stale and must be rejected.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ZkPassportClaim {
+    pub claim_type: ZkClaimType,
+    /// Raw proof bytes — accepted as input but NEVER written to storage.
+    pub proof: Bytes,
+    /// Unique per-proof commitment stored on-chain to prevent reuse.
+    pub nullifier: BytesN<32>,
+    /// Ledger sequence at or before which this proof is valid.
+    pub expiry_ledger: u32,
+}
+
+/// Organizer-level configuration for zkPassport-gated attendance.
+///
+/// - `required_claim_type`: which proof category attendees must present.
+///   `None` means the event accepts any valid ZK claim type.
+/// - `enabled`: master switch; when `false` the `verify_and_attend` path is
+///   disabled even if `requires_verification` is set on the event.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ZkVerificationConfig {
+    /// If `Some`, only claims of this type are accepted.
+    pub required_claim_type: Option<ZkClaimType>,
+    /// When `false`, `verify_and_attend` will reject all calls.
+    pub enabled: bool,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
