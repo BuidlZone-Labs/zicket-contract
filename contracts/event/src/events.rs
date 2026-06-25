@@ -1,7 +1,7 @@
 use soroban_sdk::{contractevent, Address, Env, Symbol};
 
 use crate::types::{
-    mask_address, CreateEventParams, Event, EventStatus, MaskedAddress, PrivacyLevel,
+    mask_address, CreateEventParams, Event, EventStatus, MaskedAddress, PrivacyLevel, ZkClaimType,
 };
 
 #[contractevent(data_format = "vec", topics = ["created"])]
@@ -212,6 +212,45 @@ pub struct AnonEventRegistration {
 pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, tickets_sold: u32) {
     AnonEventRegistration {
         event_id: event_id.clone(),
+        tier_id,
+        tickets_sold,
+        registered_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+// ── zkPassport events ───────────────────────────────────────────────────────────
+
+/// Emitted when an attendee successfully registers via a valid zkPassport proof.
+///
+/// # Privacy design
+/// - The **nullifier** is deliberately omitted from the event payload. Publishing
+///   it on-chain would allow any observer to correlate proof submissions across
+///   events. Callers who need the nullifier can read it from storage directly.
+/// - Only `claim_type` is emitted so that indexers can aggregate verification
+///   statistics without linking individual attendees.
+#[contractevent(data_format = "vec", topics = ["zk_attend"])]
+pub struct ZkVerifiedAttendance {
+    pub event_id: Symbol,
+    pub claim_type: ZkClaimType,
+    pub tier_id: u32,
+    pub tickets_sold: u32,
+    pub registered_at: u64,
+}
+
+/// Publish a Soroban event when a zkPassport-verified attendee registers.
+/// The nullifier and raw proof are intentionally not included in the event
+/// data to prevent correlation attacks.
+pub fn emit_zk_verified_attendance(
+    env: &Env,
+    event_id: &Symbol,
+    claim_type: &ZkClaimType,
+    tier_id: u32,
+    tickets_sold: u32,
+) {
+    ZkVerifiedAttendance {
+        event_id: event_id.clone(),
+        claim_type: claim_type.clone(),
         tier_id,
         tickets_sold,
         registered_at: env.ledger().timestamp(),

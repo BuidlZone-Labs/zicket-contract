@@ -1,6 +1,7 @@
 use crate::errors::EventError;
 use crate::types::{
     AnonClaimSettings, AnonWindowState, ClaimSettings, Event, PostponementInfo, PrivacyLevel,
+    ZkClaimType, ZkVerificationConfig,
 };
 use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
@@ -37,6 +38,11 @@ pub enum DataKey {
     EventAnonWindow(Symbol),
     /// Organizer-configured rate-limit settings for the anonymous free-claim path.
     EventAnonSettings(Symbol),
+    /// Marks a zkPassport nullifier as spent for a specific event.
+    /// The nullifier is stored; the proof bytes are NEVER stored.
+    ZkNullifier(Symbol, BytesN<32>),
+    /// Organizer-configured zkPassport verification settings for an event.
+    ZkVerificationConfig(Symbol),
 }
 
 /// Check if an event exists in storage.
@@ -418,6 +424,69 @@ pub fn get_anon_window_state(env: &Env, event_id: &Symbol) -> AnonWindowState {
 pub fn set_anon_window_state(env: &Env, event_id: &Symbol, state: &AnonWindowState) {
     let key = DataKey::EventAnonWindow(event_id.clone());
     env.storage().persistent().set(&key, state);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+// ── zkPassport helpers ────────────────────────────────────────────────────────
+
+/// Returns `true` if the given nullifier has already been recorded for this
+/// event, meaning the associated proof has been consumed and must not be
+/// accepted again.
+pub fn has_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) -> bool {
+    let key = DataKey::ZkNullifier(event_id.clone(), nullifier.clone());
+    let exists = env.storage().persistent().has(&key);
+    if exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    exists
+}
+
+/// Record a nullifier as spent for this event. Only the nullifier is stored;
+/// the raw proof bytes that produced it are deliberately not passed here and
+/// are never written to the ledger.
+pub fn save_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) {
+    let key = DataKey::ZkNullifier(event_id.clone(), nullifier.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Retrieve the organizer-configured zkPassport verification settings for an
+/// event. Defaults to `enabled: false` (no ZK gating) if never explicitly set.
+pub fn get_zk_verification_config(
+    env: &Env,
+    event_id: &Symbol,
+) -> ZkVerificationConfig {
+    let key = DataKey::ZkVerificationConfig(event_id.clone());
+    let cfg: Option<ZkVerificationConfig> = env.storage().persistent().get(&key);
+    match cfg {
+        Some(c) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            c
+        }
+        None => ZkVerificationConfig {
+            required_claim_type: ZkClaimType::Any,
+            enabled: false,
+        },
+    }
+}
+
+/// Persist the organizer-configured zkPassport verification settings for an
+/// event.
+pub fn set_zk_verification_config(
+    env: &Env,
+    event_id: &Symbol,
+    config: &ZkVerificationConfig,
+) {
+    let key = DataKey::ZkVerificationConfig(event_id.clone());
+    env.storage().persistent().set(&key, config);
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);

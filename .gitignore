@@ -4,6 +4,7 @@ target
 # Local settings
 .soroban
 .stellar
+.agents
 
 
 test_snapshots

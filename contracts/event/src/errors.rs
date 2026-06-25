@@ -50,4 +50,20 @@ pub enum EventError {
     /// postponement refund cannot be issued (e.g. the ticket was already used or
     /// transferred away).
     NoRefundableTicket = 35,
+    // ── zkPassport errors ─────────────────────────────────────────────────────
+    /// The proof's `expiry_ledger` is less than the current ledger sequence.
+    ZkProofExpired = 36,
+    /// This nullifier has already been recorded for this event — proof reuse
+    /// is not allowed.
+    ZkNullifierReused = 37,
+    /// The event `requires_verification` is `true` but the ZkVerificationConfig
+    /// has not been enabled by the organizer.
+    ZkVerificationRequired = 38,
+    /// Reserved for future on-chain verifier integration. Currently signals that
+    /// the provided proof bytes are structurally invalid.
+    ZkProofInvalid = 39,
+    /// The submitted `ZkPassportClaim.claim_type` does not match the type
+    /// required by the event's `ZkVerificationConfig`.
+    ZkClaimTypeMismatch = 40,
 }
+
