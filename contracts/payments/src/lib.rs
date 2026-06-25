@@ -1,7 +1,7 @@
 #![no_std]
 #[cfg(test)]
 extern crate std;
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol, IntoVal};
 
 mod errors;
 mod events;
@@ -669,6 +669,9 @@ impl PaymentsContract {
         event_start_ledger: u32,
         event_end_ledger: u32,
         withdrawal_delay_ledgers: u32,
+        resale_royalty_bps: u32,
+        max_resale_price: Option<i128>,
+        allow_free_ticket_transfer: bool,
     ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         if event_contract != storage::get_event_contract(&env)? {
@@ -723,6 +726,9 @@ impl PaymentsContract {
                 cancel_ledger: existing_cancel,
                 withdrawable_ratio_bps: existing_ratio,
                 organizer_withdrawn: existing_withdrawn,
+                resale_royalty_bps,
+                max_resale_price,
+                allow_free_ticket_transfer,
             },
         );
 
@@ -1939,6 +1945,147 @@ impl PaymentsContract {
     ) -> Result<bool, PaymentError> {
         let payment = storage::get_payment(&env, payment_id)?;
         Ok(payment.zk_email_commitment == Some(candidate))
+    }
+
+    // -- Secondary market resale & royalty enforcement ------------------------
+
+    pub fn set_ticket_contract(env: Env, admin: Address, ticket_contract: Address) -> Result<(), PaymentError> {
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        admin.require_auth();
+        storage::set_ticket_contract(&env, &ticket_contract);
+        Ok(())
+    }
+
+    pub fn list_ticket_for_resale(
+        env: Env,
+        seller: Address,
+        ticket_id: u64,
+        price: i128,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        seller.require_auth();
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+        if ticket.owner != seller {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let config = storage::get_event_config(&env, &ticket.event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let payment = storage::get_payment(&env, ticket.payment_id)?;
+
+        if payment.amount == 0 && price > 0 && !config.allow_free_ticket_transfer {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        if !config.allow_free_ticket_transfer && payment.amount == 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        if payment.amount == 0 && price > 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        if let Some(max_price) = config.max_resale_price {
+            if price > max_price {
+                return Err(PaymentError::InvalidAmount);
+            }
+        }
+
+        let listing = crate::types::ResaleListing { price, seller: seller.clone() };
+        storage::save_resale_listing(&env, ticket_id, &listing);
+        Ok(())
+    }
+
+    pub fn delist_ticket(
+        env: Env,
+        seller: Address,
+        ticket_id: u64,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        seller.require_auth();
+
+        let listing = storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
+        if listing.seller != seller {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        storage::remove_resale_listing(&env, ticket_id);
+        Ok(())
+    }
+
+    pub fn buy_resale_ticket(
+        env: Env,
+        buyer: Address,
+        ticket_id: u64,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        buyer.require_auth();
+
+        let listing = storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if listing.seller != ticket.owner {
+            storage::remove_resale_listing(&env, ticket_id);
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let config = storage::get_event_config(&env, &ticket.event_id).ok_or(PaymentError::InvalidOrganizer)?;
+
+        if listing.price > 0 {
+            let platform_fee_bps = storage::get_platform_fee_bps(&env) as i128;
+            let platform_fee = listing.price * platform_fee_bps / 10000;
+            let royalty = listing.price * (config.resale_royalty_bps as i128) / 10000;
+            let seller_proceeds = listing.price - platform_fee - royalty;
+
+            let token_client = token::Client::new(&env, &config.payout_token);
+            token_client.transfer(&buyer, &env.current_contract_address(), &listing.price);
+
+            if seller_proceeds > 0 {
+                token_client.transfer(&env.current_contract_address(), &listing.seller, &seller_proceeds);
+            }
+
+            if platform_fee > 0 {
+                storage::add_platform_revenue(&env, &ticket.event_id, platform_fee);
+            }
+
+            if royalty > 0 {
+                storage::add_event_revenue(&env, &ticket.event_id, royalty);
+                storage::add_event_token_revenue(&env, &ticket.event_id, &config.payout_token, royalty);
+            }
+        }
+
+        let ticket_contract = storage::get_ticket_contract(&env)?;
+        let _: () = env.invoke_contract(
+            &ticket_contract,
+            &soroban_sdk::Symbol::new(&env, "admin_transfer_ticket"),
+            soroban_sdk::vec![
+                &env,
+                env.current_contract_address().into_val(&env),
+                listing.seller.into_val(&env),
+                buyer.clone().into_val(&env),
+                ticket_id.into_val(&env)
+            ],
+        );
+
+        let mut new_ticket = ticket.clone();
+        new_ticket.owner = buyer.clone();
+        let key = crate::storage::DataKey::Ticket(ticket_id);
+        env.storage().persistent().set(&key, &new_ticket);
+
+        let mut seller_tickets = storage::get_owner_tickets(&env, &listing.seller);
+        if let Some(index) = seller_tickets.first_index_of(ticket_id) {
+            seller_tickets.remove(index);
+            let seller_key = crate::storage::DataKey::OwnerTickets(listing.seller.clone());
+            env.storage().persistent().set(&seller_key, &seller_tickets);
+        }
+        storage::add_owner_ticket(&env, &buyer, ticket_id);
+
+        storage::remove_resale_listing(&env, ticket_id);
+
+        Ok(())
     }
 }
 

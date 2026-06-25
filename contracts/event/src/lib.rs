@@ -63,6 +63,13 @@ impl EventContract {
         if params.withdrawal_delay_ledgers < MIN_WITHDRAWAL_DELAY_LEDGERS {
             return Err(EventError::InvalidInput);
         }
+
+        // Validate resale royalty (max 2000 bps = 20%)
+        if params.resale_royalty_bps > 2000 {
+            return Err(EventError::InvalidInput);
+        }
+
+        // Validate there is at least 1 tier
         if params.initial_tiers.is_empty() {
             return Err(EventError::InvalidInput);
         }
@@ -131,6 +138,9 @@ impl EventContract {
             event_end_ledger: params.event_end_ledger,
             withdrawal_delay_ledgers: params.withdrawal_delay_ledgers,
             revenue_splits: params.revenue_splits.clone(),
+            resale_royalty_bps: params.resale_royalty_bps,
+            max_resale_price: params.max_resale_price,
+            allow_free_ticket_transfer: params.allow_free_ticket_transfer,
         };
 
         save_event(&env, &params.event_id, &event);
@@ -150,6 +160,9 @@ impl EventContract {
                 &event.event_start_ledger,
                 &event.event_end_ledger,
                 &event.withdrawal_delay_ledgers,
+                &event.resale_royalty_bps,
+                &event.max_resale_price,
+                &event.allow_free_ticket_transfer,
             );
             // Register the (immutable) revenue split alongside the event config so
             // the payments contract can pay each recipient independently.
@@ -215,6 +228,36 @@ impl EventContract {
             event.max_tickets_per_user = max_tickets;
         }
 
+        if let Some(bps) = params.resale_royalty_bps {
+            if event.sold_count > 0 {
+                return Err(EventError::EventNotUpdatable); // Cannot change royalty after selling starts
+            }
+            if bps > 2000 {
+                return Err(EventError::InvalidInput);
+            }
+            event.resale_royalty_bps = bps;
+        }
+        if let Some(cap_opt) = params.max_resale_price {
+            if event.sold_count > 0 {
+                return Err(EventError::EventNotUpdatable);
+            }
+            if let Some(cap) = cap_opt {
+                if cap < 0 && cap != -1 {
+                    return Err(EventError::InvalidInput);
+                }
+                if cap == -1 {
+                    event.max_resale_price = None;
+                } else {
+                    event.max_resale_price = Some(cap);
+                }
+            } else {
+                event.max_resale_price = None;
+            }
+        }
+        if let Some(allow_transfer) = params.allow_free_ticket_transfer {
+            event.allow_free_ticket_transfer = allow_transfer;
+        }
+
         save_event(&env, &params.event_id, &event);
         if has_linked_contracts(&env) {
             let payments_contract = get_payments_contract(&env)?;
@@ -231,6 +274,9 @@ impl EventContract {
                 &event.event_start_ledger,
                 &event.event_end_ledger,
                 &event.withdrawal_delay_ledgers,
+                &event.resale_royalty_bps,
+                &event.max_resale_price,
+                &event.allow_free_ticket_transfer,
             );
         }
         emit_event_updated(&env, &event);

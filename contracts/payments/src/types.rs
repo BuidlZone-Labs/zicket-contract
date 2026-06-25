@@ -100,3 +100,10 @@ pub enum FlagResolution {
     /// Send the escrowed share to the primary organizer instead.
     ReassignToPrimary = 1,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResaleListing {
+    pub price: i128,
+    pub seller: Address,
+}
