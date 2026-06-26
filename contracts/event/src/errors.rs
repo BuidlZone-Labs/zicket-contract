@@ -46,4 +46,8 @@ pub enum EventError {
     PostponementWindowOpen = 33,
     /// The operation requires the event to be in the `Postponed` state.
     EventNotPostponed = 34,
+    /// The caller holds no revocable (valid, unused) ticket for the event, so a
+    /// postponement refund cannot be issued (e.g. the ticket was already used or
+    /// transferred away).
+    NoRefundableTicket = 35,
 }

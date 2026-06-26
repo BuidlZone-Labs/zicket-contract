@@ -700,24 +700,31 @@ impl EventContract {
             return Err(EventError::EventNotPostponed);
         }
 
-        // Full refund (verifies ownership, Held status and open window; reverts otherwise).
-        payments_client.request_postponement_refund(&attendee, &ticket_id);
-
-        // Cancel one of the attendee's valid minted tickets for this event. The
+        // Locate a revocable (valid, unused) minted ticket for this event BEFORE
+        // issuing any refund, so we never refund a holder who has nothing to give up
+        // (e.g. their entry ticket was already used or transferred away). The
         // attendee owns the ticket, so their auth on this call covers the
-        // owner-gated cancellation.
+        // owner-gated cancellation that follows.
         let ticket_contract = get_ticket_contract(&env)?;
         let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+        let mut revocable: Option<u64> = None;
         for tid in ticket_client.get_tickets_by_owner(&attendee).iter() {
             let minted = ticket_client.get_ticket(&tid);
             if minted.event_id == event_id
                 && !minted.is_used
                 && minted.status == ticket_contract::TicketStatus::Valid
             {
-                ticket_client.cancel_ticket(&tid, &attendee);
+                revocable = Some(tid);
                 break;
             }
         }
+        let revocable = revocable.ok_or(EventError::NoRefundableTicket)?;
+
+        // Full refund (verifies ownership, Held status and open window; reverts otherwise).
+        payments_client.request_postponement_refund(&attendee, &ticket_id);
+
+        // Revoke the entry ticket that we proved exists above.
+        ticket_client.cancel_ticket(&revocable, &attendee);
 
         // Drop the registration only when no valid ticket for this event remains.
         if !has_valid_ticket_for_event(&ticket_client, &attendee, &event_id) {

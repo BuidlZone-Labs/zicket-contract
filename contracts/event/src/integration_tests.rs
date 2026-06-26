@@ -615,6 +615,61 @@ fn test_postponement_refund_rejects_non_owner() {
 }
 
 #[test]
+fn test_postponement_refund_requires_revocable_ticket() {
+    // If the holder has no valid, unused entry ticket to give up (e.g. it was
+    // already cancelled/transferred), the refund must be rejected — and no money
+    // must move.
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        ticket_client,
+        token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_5");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    // Holder cancels their entry ticket, so nothing is revocable.
+    let minted = ticket_client
+        .get_tickets_by_owner(&attendee)
+        .get(0)
+        .unwrap();
+    ticket_client.cancel_ticket(&minted, &attendee);
+
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+    let res = event_client.try_request_postponement_refund(&attendee, &t);
+    assert_eq!(res.err(), Some(Ok(crate::EventError::NoRefundableTicket)));
+
+    // No refund was issued: escrow and payment status are unchanged.
+    assert_eq!(token_client.balance(&attendee), 0);
+    assert_eq!(token_client.balance(&payments_id), PRICE);
+    assert_eq!(
+        payments_client.get_payment(&t).status,
+        payments_contract::PaymentStatus::Held
+    );
+}
+
+#[test]
 fn test_postponement_refund_is_event_scoped() {
     // A refund must revoke access only for the event the payment ticket belongs to,
     // never for a different event the caller also participates in.
