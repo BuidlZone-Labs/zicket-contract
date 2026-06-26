@@ -171,7 +171,10 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     }
 
     if let Some(status) = storage::get_event_status(&env, &params.event_id) {
-        if matches!(status, EventStatus::Completed | EventStatus::Cancelled) {
+        if matches!(
+            status,
+            EventStatus::Completed | EventStatus::Cancelled | EventStatus::Postponed
+        ) {
             return Err(PaymentError::EventNotActive);
         }
     }
@@ -883,6 +886,138 @@ impl PaymentsContract {
         Ok(())
     }
 
+    /// Freeze escrow for a postponed event and open the refund-choice window.
+    ///
+    /// Called by the event contract as part of `event::postpone_event`. Sets the
+    /// payments-side status to `Postponed` (which blocks every withdrawal path —
+    /// `withdraw`, `withdraw_token`, `withdraw_all_tokens` all reject any non-
+    /// `Completed`/`Cancelled` status) and records the choice-window deadline used
+    /// by `request_postponement_refund`.
+    pub fn postpone_event(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+        choice_deadline_ledger: u32,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let event_contract = storage::get_event_contract(&env)?;
+        event_contract.require_auth();
+
+        let config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        if config.organizer != organizer {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        storage::set_event_status(&env, &event_id, &EventStatus::Postponed);
+        storage::set_postpone_deadline(&env, &event_id, choice_deadline_ledger);
+        Ok(())
+    }
+
+    /// Resume a postponed event back to `Active` once its choice window has closed.
+    ///
+    /// Called by the event contract as part of `event::finalize_postponement`.
+    /// Clears the choice-window deadline so the refund path is no longer open.
+    pub fn resume_event(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let event_contract = storage::get_event_contract(&env)?;
+        event_contract.require_auth();
+
+        let config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        if config.organizer != organizer {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        if storage::get_event_status(&env, &event_id) != Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotPostponed);
+        }
+
+        storage::set_event_status(&env, &event_id, &EventStatus::Active);
+        storage::remove_postpone_deadline(&env, &event_id);
+        Ok(())
+    }
+
+    /// Opt out of a postponed event in exchange for a full refund.
+    ///
+    /// Callable only by the linked event contract, which orchestrates the full
+    /// opt-out (refund here, then registration + ticket revocation on its side) so
+    /// a refunded holder cannot also attend the resumed event. `caller` is the
+    /// ticket owner on whose behalf the event contract is acting; ownership is
+    /// verified here. Refunds 100% of the held amount.
+    pub fn request_postponement_refund(
+        env: Env,
+        caller: Address,
+        ticket_id: u64,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let event_contract = storage::get_event_contract(&env)?;
+        event_contract.require_auth();
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+        if ticket.owner != caller {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        let mut payment = storage::get_payment(&env, ticket.payment_id)?;
+        if payment.status == PaymentStatus::Refunded {
+            return Err(PaymentError::PaymentAlreadyRefunded);
+        }
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        if storage::get_event_status(&env, &payment.event_id) != Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotPostponed);
+        }
+
+        let deadline = storage::get_postpone_deadline(&env, &payment.event_id)
+            .ok_or(PaymentError::EventNotPostponed)?;
+        if env.ledger().sequence() > deadline {
+            return Err(PaymentError::PostponementWindowClosed);
+        }
+
+        let refund_amt = payment.amount - payment.refunded_amount;
+        if refund_amt <= 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        let token_client = token::Client::new(&env, &payment.token);
+        token_client.transfer(&env.current_contract_address(), &payment.payer, &refund_amt);
+
+        payment.refunded_amount += refund_amt;
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+
+        let revenue = storage::get_event_revenue(&env, &payment.event_id);
+        storage::set_event_revenue(&env, &payment.event_id, revenue - refund_amt);
+
+        let token_revenue =
+            storage::get_event_token_revenue(&env, &payment.event_id, &payment.token);
+        storage::set_event_token_revenue(
+            &env,
+            &payment.event_id,
+            &payment.token,
+            token_revenue - refund_amt,
+        );
+
+        events::emit_payment_refunded(
+            &env,
+            payment.payment_id,
+            payment.event_id.clone(),
+            payment.payer.clone(),
+            refund_amt,
+            payment.token.clone(),
+            &storage::get_emission_privacy(&env, &payment.event_id),
+        );
+
+        Ok(())
+    }
+
     /// Register escrow metadata for an event. Admin only.
     /// Must be called before release_if_expired can be used.
     pub fn set_event_end_time(
@@ -919,8 +1054,25 @@ impl PaymentsContract {
             return Err(PaymentError::EscrowAlreadyReleased);
         }
 
+        // Escrow is frozen while the event is postponed (refund-choice window open).
+        if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotActive);
+        }
+
         if env.ledger().timestamp() < meta.event_end_time {
             return Err(PaymentError::EscrowNotExpired);
+        }
+
+        // When the event has a ledger schedule (set/rescheduled via the event
+        // contract), the timestamp-based escrow metadata is not authoritative on its
+        // own: a postponed-then-resumed event carries a stale `event_end_time`. Also
+        // require the (possibly rescheduled) ledger end to have passed so escrow
+        // cannot auto-release before the rescheduled event actually ends. Events that
+        // only use the legacy timestamp escrow (no config) are unaffected.
+        if let Some(config) = storage::get_event_config(&env, &event_id) {
+            if env.ledger().sequence() < config.event_end_ledger {
+                return Err(PaymentError::EscrowNotExpired);
+            }
         }
 
         validate_revenue_invariant(&env, &event_id)?;
@@ -983,6 +1135,11 @@ impl PaymentsContract {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
+
+        // Escrow is frozen while the event is postponed (refund-choice window open).
+        if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
+            return Err(PaymentError::EventNotActive);
+        }
 
         validate_revenue_invariant(&env, &event_id)?;
 

@@ -47,6 +47,23 @@ pub struct _RefundsProcessed {
     pub processed_at: u64,
 }
 
+#[contractevent(data_format = "vec", topics = ["ev_pp"])]
+pub struct EventPostponed {
+    pub event_id: Symbol,
+    pub new_date_ledger: u64,
+    pub choice_deadline_ledger: u64,
+    pub postpone_count: u32,
+    pub postponed_at: u64,
+}
+
+#[contractevent(data_format = "vec", topics = ["ev_rsm"])]
+pub struct EventResumed {
+    pub event_id: Symbol,
+    pub new_start_ledger: u32,
+    pub new_end_ledger: u32,
+    pub resumed_at: u64,
+}
+
 #[contractevent(data_format = "vec", topics = ["register"])]
 pub struct EventRegistration {
     pub event_id: Symbol,
@@ -124,6 +141,43 @@ pub fn emit_event_cancelled(
 //     }
 //     .publish(env);
 // }
+
+/// Publish a Soroban event when an event is postponed (rescheduled).
+///
+/// Carries no address-derivable fields, so it is privacy-safe for all levels.
+pub fn emit_event_postponed(
+    env: &Env,
+    event_id: &Symbol,
+    new_date_ledger: u64,
+    choice_deadline_ledger: u64,
+    postpone_count: u32,
+) {
+    EventPostponed {
+        event_id: event_id.clone(),
+        new_date_ledger,
+        choice_deadline_ledger,
+        postpone_count,
+        postponed_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+/// Publish a Soroban event when a postponed event is finalized back to `Active`
+/// on its new schedule.
+pub fn emit_event_resumed(
+    env: &Env,
+    event_id: &Symbol,
+    new_start_ledger: u32,
+    new_end_ledger: u32,
+) {
+    EventResumed {
+        event_id: event_id.clone(),
+        new_start_ledger,
+        new_end_ledger,
+        resumed_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
 
 /// Publish a Soroban event when an attendee registers.
 /// The attendee address is masked according to the event's privacy level.
