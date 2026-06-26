@@ -85,7 +85,7 @@ The `event` contract is the most developed and supports:
 
 ### Event Lifecycle
 
-```
+```text
 Upcoming ─────→ Active ───────────────→ Completed
     │            │   ▲
     │            │   │ finalize_postponement

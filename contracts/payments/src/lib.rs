@@ -1063,6 +1063,18 @@ impl PaymentsContract {
             return Err(PaymentError::EscrowNotExpired);
         }
 
+        // When the event has a ledger schedule (set/rescheduled via the event
+        // contract), the timestamp-based escrow metadata is not authoritative on its
+        // own: a postponed-then-resumed event carries a stale `event_end_time`. Also
+        // require the (possibly rescheduled) ledger end to have passed so escrow
+        // cannot auto-release before the rescheduled event actually ends. Events that
+        // only use the legacy timestamp escrow (no config) are unaffected.
+        if let Some(config) = storage::get_event_config(&env, &event_id) {
+            if env.ledger().sequence() < config.event_end_ledger {
+                return Err(PaymentError::EscrowNotExpired);
+            }
+        }
+
         validate_revenue_invariant(&env, &event_id)?;
 
         let tokens = storage::get_event_tokens(&env, &event_id);

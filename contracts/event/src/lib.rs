@@ -670,46 +670,58 @@ impl EventContract {
     /// their participation so they cannot also attend the rescheduled event.
     ///
     /// Orchestrated here rather than directly on the payments contract because only
-    /// the event contract is linked to both payments and ticket contracts. Sequence:
-    /// the payments contract performs the full token refund (verifying ownership,
-    /// `Held` status and that the choice window is still open — reverting the whole
-    /// call otherwise); this then drops the attendee's event registration and
-    /// cancels their minted ticket for the event. `ticket_id` is the payments-side
-    /// receipt ticket id (as returned by `payments::get_owner_tickets`).
+    /// the event contract is linked to both payments and ticket contracts. The
+    /// target event is derived from the payment ticket itself (not a caller-supplied
+    /// argument) so the refund and the access-revocation always concern the same
+    /// event. Sequence: the payments contract performs the full token refund
+    /// (verifying ownership, `Held` status and that the choice window is still open —
+    /// reverting the whole call otherwise); one of the attendee's valid minted
+    /// tickets for the event is cancelled; and the registration is dropped only once
+    /// the attendee has no remaining valid ticket for the event (so a single-ticket
+    /// refund does not strip a holder who still has other valid tickets).
+    /// `ticket_id` is the payments-side receipt ticket id (as returned by
+    /// `payments::get_owner_tickets`).
     pub fn request_postponement_refund(
         env: Env,
         attendee: Address,
-        event_id: Symbol,
         ticket_id: u64,
     ) -> Result<(), EventError> {
         attendee.require_auth();
+
+        let payments_contract = get_payments_contract(&env)?;
+        let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+
+        // Derive the event from the payment ticket so refund and revocation can
+        // never target different events.
+        let event_id = payments_client.get_ticket(&ticket_id).event_id;
 
         let event = storage::get_event(&env, &event_id)?;
         if event.status != EventStatus::Postponed {
             return Err(EventError::EventNotPostponed);
         }
 
-        let payments_contract = get_payments_contract(&env)?;
-        let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+        // Full refund (verifies ownership, Held status and open window; reverts otherwise).
         payments_client.request_postponement_refund(&attendee, &ticket_id);
 
-        // Revoke participation so a refunded holder cannot attend the resumed event.
-        storage::remove_registration(&env, &event_id, &attendee);
-
+        // Cancel one of the attendee's valid minted tickets for this event. The
+        // attendee owns the ticket, so their auth on this call covers the
+        // owner-gated cancellation.
         let ticket_contract = get_ticket_contract(&env)?;
         let ticket_client = TicketContractClient::new(&env, &ticket_contract);
-        let owned = ticket_client.get_tickets_by_owner(&attendee);
-        for tid in owned.iter() {
+        for tid in ticket_client.get_tickets_by_owner(&attendee).iter() {
             let minted = ticket_client.get_ticket(&tid);
             if minted.event_id == event_id
                 && !minted.is_used
                 && minted.status == ticket_contract::TicketStatus::Valid
             {
-                // The attendee owns the ticket, so their auth on this call covers
-                // the owner-gated cancellation. Cancel one ticket per refunded payment.
                 ticket_client.cancel_ticket(&tid, &attendee);
                 break;
             }
+        }
+
+        // Drop the registration only when no valid ticket for this event remains.
+        if !has_valid_ticket_for_event(&ticket_client, &attendee, &event_id) {
+            storage::remove_registration(&env, &event_id, &attendee);
         }
 
         Ok(())
@@ -1266,6 +1278,26 @@ impl EventContract {
 
         Ok(new_version)
     }
+}
+
+/// Whether `attendee` still holds at least one `Valid`, unused minted ticket for
+/// `event_id`. Used to decide if a postponement refund should drop the attendee's
+/// event registration (only once their last valid ticket is gone).
+fn has_valid_ticket_for_event(
+    ticket_client: &TicketContractClient,
+    attendee: &Address,
+    event_id: &Symbol,
+) -> bool {
+    for tid in ticket_client.get_tickets_by_owner(attendee).iter() {
+        let minted = ticket_client.get_ticket(&tid);
+        if minted.event_id == *event_id
+            && !minted.is_used
+            && minted.status == ticket_contract::TicketStatus::Valid
+        {
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

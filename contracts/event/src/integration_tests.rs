@@ -442,7 +442,8 @@ fn test_postpone_full_refund_and_resume() {
     let payment1 = payments_client.get_ticket(&t1).payment_id;
 
     // Opt out through the event contract (orchestrates refund + revocation).
-    event_client.request_postponement_refund(&attendee1, &event_id, &t1);
+    // The event is derived from the payment ticket, so no event_id argument.
+    event_client.request_postponement_refund(&attendee1, &t1);
 
     assert_eq!(token_client.balance(&attendee1), PRICE);
     assert_eq!(token_client.balance(&payments_id), PRICE);
@@ -611,6 +612,79 @@ fn test_postponement_refund_rejects_non_owner() {
         res.err(),
         Some(Ok(payments_contract::PaymentError::Unauthorized))
     );
+}
+
+#[test]
+fn test_postponement_refund_is_event_scoped() {
+    // A refund must revoke access only for the event the payment ticket belongs to,
+    // never for a different event the caller also participates in.
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE * 2);
+
+    let event_a = Symbol::new(&env, "evt_a");
+    let event_b = Symbol::new(&env, "evt_b");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_a.clone(),
+    );
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_b.clone(),
+    );
+
+    event_client.register_for_event(&1, &attendee, &event_a, &0, &false, &None);
+    event_client.register_for_event(&2, &attendee, &event_b, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_a, &new_date, &MIN_WINDOW);
+    event_client.postpone_event(&organizer, &event_b, &new_date, &MIN_WINDOW);
+
+    // Locate the payments receipt ticket that belongs to event B.
+    let tickets = payments_client.get_owner_tickets(&attendee);
+    let mut ticket_b = None;
+    for i in 0..tickets.len() {
+        let tid = tickets.get(i).unwrap();
+        if payments_client.get_ticket(&tid).event_id == event_b {
+            ticket_b = Some(tid);
+        }
+    }
+    let ticket_b = ticket_b.unwrap();
+
+    // Refunding event B's ticket revokes participation in B only — A is untouched.
+    event_client.request_postponement_refund(&attendee, &ticket_b);
+
+    assert!(!event_client.is_registered(&event_b, &attendee));
+    assert!(event_client.is_registered(&event_a, &attendee));
+
+    // Event A's minted ticket stays valid; event B's is cancelled.
+    for tid in ticket_client.get_tickets_by_owner(&attendee).iter() {
+        let minted = ticket_client.get_ticket(&tid);
+        if minted.event_id == event_a {
+            assert_eq!(minted.status, ticket_contract::TicketStatus::Valid);
+        } else if minted.event_id == event_b {
+            assert_eq!(minted.status, ticket_contract::TicketStatus::Cancelled);
+        }
+    }
 }
 
 #[test]
