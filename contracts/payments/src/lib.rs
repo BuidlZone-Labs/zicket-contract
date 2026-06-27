@@ -962,7 +962,12 @@ impl PaymentsContract {
         payer.require_auth();
 
         let mut payment = storage::get_payment(&env, payment_id)?;
-        if payment.payer != payer {
+        let payment_payer = payment
+            .payer
+            .as_ref()
+            .ok_or(PaymentError::RefundNotAllowed)?
+            .clone();
+        if payment_payer != payer {
             return Err(PaymentError::Unauthorized);
         }
         if payment.status != PaymentStatus::Held {
@@ -990,7 +995,7 @@ impl PaymentsContract {
         }
 
         let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(&env.current_contract_address(), &payment.payer, &remaining);
+        token_client.transfer(&env.current_contract_address(), &payment_payer, &remaining);
 
         payment.refunded_amount += remaining;
         payment.status = PaymentStatus::Refunded;
@@ -1008,15 +1013,7 @@ impl PaymentsContract {
             token_revenue - remaining,
         );
 
-        events::emit_payment_refunded(
-            &env,
-            payment_id,
-            payment.event_id.clone(),
-            payment.payer,
-            remaining,
-            payment.token.clone(),
-            &storage::get_emission_privacy(&env, &payment.event_id),
-        );
+        events::emit_payment_refunded(&env, &payment, remaining);
 
         Ok(())
     }
@@ -1094,7 +1091,12 @@ impl PaymentsContract {
         event_contract.require_auth();
 
         let ticket = storage::get_ticket(&env, ticket_id)?;
-        if ticket.owner != caller {
+        let ticket_owner = ticket
+            .owner
+            .as_ref()
+            .ok_or(PaymentError::RefundNotAllowed)?
+            .clone();
+        if ticket_owner != caller {
             return Err(PaymentError::Unauthorized);
         }
 
@@ -1121,8 +1123,13 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidAmount);
         }
 
+        let payer_addr = payment
+            .payer
+            .as_ref()
+            .ok_or(PaymentError::RefundNotAllowed)?
+            .clone();
         let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(&env.current_contract_address(), &payment.payer, &refund_amt);
+        token_client.transfer(&env.current_contract_address(), &payer_addr, &refund_amt);
 
         payment.refunded_amount += refund_amt;
         payment.status = PaymentStatus::Refunded;
@@ -1140,15 +1147,7 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
 
-        events::emit_payment_refunded(
-            &env,
-            payment.payment_id,
-            payment.event_id.clone(),
-            payment.payer.clone(),
-            refund_amt,
-            payment.token.clone(),
-            &storage::get_emission_privacy(&env, &payment.event_id),
-        );
+        events::emit_payment_refunded(&env, &payment, refund_amt);
 
         Ok(())
     }
