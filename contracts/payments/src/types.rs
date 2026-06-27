@@ -8,6 +8,7 @@ pub enum EventStatus {
     Active = 1,
     Completed = 2,
     Cancelled = 3,
+    Postponed = 4,
 }
 
 #[contracttype]
