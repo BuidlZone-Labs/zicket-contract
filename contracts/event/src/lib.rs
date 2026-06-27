@@ -1307,10 +1307,10 @@ impl EventContract {
         }
 
         // 5. Validate claim type if the organizer specified one.
-        if let Some(required_type) = &zk_config.required_claim_type {
-            if &claim.claim_type != required_type {
-                return Err(EventError::ZkClaimTypeMismatch);
-            }
+        if zk_config.required_claim_type != ZkClaimType::Any
+            && claim.claim_type != zk_config.required_claim_type
+        {
+            return Err(EventError::ZkClaimTypeMismatch);
         }
 
         // 6. Nullifier must be fresh — no proof reuse allowed.
@@ -1344,28 +1344,30 @@ impl EventContract {
         }
 
         // 8. Handle payment for paid tiers.
-        if tier.price > 0 {
-            if has_linked_contracts(&env) {
-                let payments_contract = get_payments_contract(&env)?;
-                let payments_client = PaymentsContractClient::new(&env, &payments_contract);
-                let token = payments_client.get_accepted_token();
-                payments_client.pay_for_ticket(
-                    &0u64,
-                    &env.current_contract_address(),
-                    &event_id,
-                    &tier.price,
-                    &None::<BytesN<32>>,
-                    &token,
-                    &PaymentPrivacy::Standard,
-                );
-            }
+        if tier.price > 0 && has_linked_contracts(&env) {
+            let payments_contract = get_payments_contract(&env)?;
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            let token = payments_client.get_accepted_token();
+            payments_client.pay_for_ticket(
+                &0u64,
+                &env.current_contract_address(),
+                &event_id,
+                &tier.price,
+                &None::<BytesN<32>>,
+                &token,
+                &PaymentPrivacy::Standard,
+            );
         }
 
         // Mint the ticket NFT if the ticket contract is linked.
         if has_linked_contracts(&env) {
             let ticket_contract = get_ticket_contract(&env)?;
             let ticket_client = TicketContractClient::new(&env, &ticket_contract);
-            ticket_client.mint_ticket(&event.event_id, &event.organizer, &env.current_contract_address());
+            ticket_client.mint_ticket(
+                &event.event_id,
+                &event.organizer,
+                &env.current_contract_address(),
+            );
         }
 
         // 9. Persist ONLY the nullifier — proof bytes are never stored.

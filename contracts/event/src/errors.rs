@@ -66,4 +66,3 @@ pub enum EventError {
     /// required by the event's `ZkVerificationConfig`.
     ZkClaimTypeMismatch = 40,
 }
-
