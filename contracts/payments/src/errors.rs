@@ -39,4 +39,10 @@ pub enum PaymentError {
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
+    /// A zkEmail commitment is already bound to this payment; commitments are
+    /// write-once and cannot be overwritten.
+    CommitmentAlreadySet = 35,
+    /// The payment is in a state that no longer accepts a commitment
+    /// (e.g. it has been refunded).
+    CommitmentNotAllowed = 36,
 }
