@@ -1,4 +1,6 @@
 #![no_std]
+#[cfg(test)]
+extern crate std;
 use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol};
 
 mod errors;
@@ -28,6 +30,7 @@ struct PaymentParams {
     is_verified: bool,
     privacy_level: PaymentPrivacy,
     email_hash: Option<BytesN<32>>,
+    zk_email_commitment: Option<BytesN<32>>,
 }
 
 #[contract]
@@ -200,6 +203,9 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         paid_at,
         privacy_level: params.privacy_level.clone(),
         refunded_amount: 0,
+        // Stored, never emitted. Binds the payment to an off-chain email target
+        // without revealing the address.
+        zk_email_commitment: params.zk_email_commitment.clone(),
     };
 
     storage::save_payment(&env, &payment)?;
@@ -552,6 +558,43 @@ impl PaymentsContract {
                 is_verified: false,
                 privacy_level,
                 email_hash,
+                zk_email_commitment: None,
+            },
+        )
+    }
+
+    /// Pay for a ticket and bind a zkEmail receipt commitment in the same call.
+    ///
+    /// `zk_email_commitment` is an optional salted hash of the buyer's email
+    /// (e.g. `H(email || ticket_id)`) computed off-chain. It is stored on the
+    /// payment record and never emitted; the raw email never touches the chain.
+    /// Pass `None` to behave exactly like [`PaymentsContract::pay_for_ticket`]
+    /// (fully anonymous attendees).
+    #[allow(clippy::too_many_arguments)]
+    pub fn pay_for_ticket_with_commitment(
+        env: Env,
+        nonce: u64,
+        payer: Address,
+        event_id: Symbol,
+        amount: i128,
+        email_hash: Option<BytesN<32>>,
+        token_address: Address,
+        privacy_level: PaymentPrivacy,
+        zk_email_commitment: Option<BytesN<32>>,
+    ) -> Result<u64, PaymentError> {
+        create_payment(
+            env,
+            PaymentParams {
+                nonce,
+                payer,
+                event_id,
+                amount,
+                token_address,
+                is_anonymous: false,
+                is_verified: false,
+                privacy_level,
+                email_hash,
+                zk_email_commitment,
             },
         )
     }
@@ -579,6 +622,7 @@ impl PaymentsContract {
                 is_verified,
                 privacy_level: PaymentPrivacy::Standard,
                 email_hash: None,
+                zk_email_commitment: None,
             },
         )
     }
@@ -1928,9 +1972,80 @@ impl PaymentsContract {
         storage::is_split_flagged(&env, &event_id, &recipient)
     }
 
+
     /// Amount already paid out to a given split recipient for an event.
     pub fn get_split_withdrawn(env: Env, event_id: Symbol, recipient: Address) -> i128 {
         storage::get_split_withdrawn(&env, &event_id, &recipient)
+    }
+
+    // ── zkEmail receipt commitments ───────────────────────────────────────────
+
+    /// Bind a zkEmail receipt commitment to an existing payment.
+    ///
+    /// This is the canonical path when the commitment is salted with the
+    /// `ticket_id` (which is only known after the payment is created). The payer
+    /// computes `commitment = H(email || ticket_id)` off-chain and binds it here.
+    ///
+    /// Rules:
+    /// - Only the original payer may bind, and must authorize the call.
+    /// - Commitments are write-once: a payment that already has one is rejected.
+    /// - A refunded payment can no longer accept a commitment.
+    /// - Only the salted hash is stored; the raw email never touches the chain
+    ///   and the commitment value is never emitted.
+    pub fn bind_email_commitment(
+        env: Env,
+        payer: Address,
+        payment_id: u64,
+        commitment: BytesN<32>,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        payer.require_auth();
+
+        let mut payment = storage::get_payment(&env, payment_id)?;
+        if payment.payer != payer {
+            return Err(PaymentError::Unauthorized);
+        }
+        if payment.status == PaymentStatus::Refunded {
+            return Err(PaymentError::CommitmentNotAllowed);
+        }
+        if payment.zk_email_commitment.is_some() {
+            return Err(PaymentError::CommitmentAlreadySet);
+        }
+
+        payment.zk_email_commitment = Some(commitment);
+        storage::update_payment(&env, &payment)?;
+
+        events::emit_receipt_commitment_bound(&env, payment_id, payment.event_id);
+        Ok(())
+    }
+
+    /// Read the zkEmail commitment stored for a payment, if any.
+    ///
+    /// Returns `Ok(None)` when the payer opted out. Returns
+    /// `Err(PaymentError::PaymentNotFound)` for an invalid `payment_id`. An
+    /// off-chain relayer reads this to learn the commitment, then recomputes
+    /// `H(email || ticket_id)` from a claimed email to confirm delivery
+    /// eligibility — without the email ever being exposed on-chain.
+    pub fn get_payment_commitment(
+        env: Env,
+        payment_id: u64,
+    ) -> Result<Option<BytesN<32>>, PaymentError> {
+        let payment = storage::get_payment(&env, payment_id)?;
+        Ok(payment.zk_email_commitment)
+    }
+
+    /// Verify a candidate commitment against the one stored for a payment.
+    ///
+    /// Lets a relayer prove delivery eligibility on-chain without revealing the
+    /// email: it supplies a freshly recomputed commitment and gets a boolean.
+    /// Returns `false` if the payment has no stored commitment.
+    pub fn verify_email_commitment(
+        env: Env,
+        payment_id: u64,
+        candidate: BytesN<32>,
+    ) -> Result<bool, PaymentError> {
+        let payment = storage::get_payment(&env, payment_id)?;
+        Ok(payment.zk_email_commitment == Some(candidate))
     }
 }
 
@@ -1938,5 +2053,7 @@ impl PaymentsContract {
 mod multi_token_test;
 #[cfg(test)]
 mod revenue_split_test;
+#[cfg(test)]
+mod receipt_commitment_test;
 #[cfg(test)]
 mod test;
