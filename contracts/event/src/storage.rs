@@ -458,10 +458,7 @@ pub fn save_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) {
 
 /// Retrieve the organizer-configured zkPassport verification settings for an
 /// event. Defaults to `enabled: false` (no ZK gating) if never explicitly set.
-pub fn get_zk_verification_config(
-    env: &Env,
-    event_id: &Symbol,
-) -> ZkVerificationConfig {
+pub fn get_zk_verification_config(env: &Env, event_id: &Symbol) -> ZkVerificationConfig {
     let key = DataKey::ZkVerificationConfig(event_id.clone());
     let cfg: Option<ZkVerificationConfig> = env.storage().persistent().get(&key);
     match cfg {
@@ -480,11 +477,7 @@ pub fn get_zk_verification_config(
 
 /// Persist the organizer-configured zkPassport verification settings for an
 /// event.
-pub fn set_zk_verification_config(
-    env: &Env,
-    event_id: &Symbol,
-    config: &ZkVerificationConfig,
-) {
+pub fn set_zk_verification_config(env: &Env, event_id: &Symbol, config: &ZkVerificationConfig) {
     let key = DataKey::ZkVerificationConfig(event_id.clone());
     env.storage().persistent().set(&key, config);
     env.storage()

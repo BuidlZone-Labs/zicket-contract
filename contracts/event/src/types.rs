@@ -11,9 +11,10 @@ use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Symbol, Vec};
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZkClaimType {
-    Age = 0,
-    Location = 1,
-    Citizenship = 2,
+    Any = 0,
+    Age = 1,
+    Location = 2,
+    Citizenship = 3,
 }
 
 /// A zero-knowledge passport claim submitted by an attendee for gated event
@@ -53,8 +54,9 @@ pub struct ZkPassportClaim {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkVerificationConfig {
-    /// If `Some`, only claims of this type are accepted.
-    pub required_claim_type: Option<ZkClaimType>,
+    /// Which proof category attendees must present. Use `ZkClaimType::Any`
+    /// to accept any valid ZK claim type.
+    pub required_claim_type: ZkClaimType,
     /// When `false`, `verify_and_attend` will reject all calls.
     pub enabled: bool,
 }

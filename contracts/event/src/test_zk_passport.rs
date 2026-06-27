@@ -1,4 +1,4 @@
-﻿//! Tests for the zkPassport verification path (verify_and_attend).
+//! Tests for the zkPassport verification path (verify_and_attend).
 //!
 //! Acceptance criteria covered:
 //!  [AC-1] ZkPassportClaim struct (claim_type / proof / nullifier / expiry_ledger)
@@ -34,11 +34,7 @@ fn setup_env() -> Env {
 }
 
 /// Register a minimal Upcoming event with `requires_verification = true`.
-fn setup_verified_event(
-    env: &Env,
-    client: &EventContractClient,
-    organizer: &Address,
-) -> Symbol {
+fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = Symbol::new(env, "ev_zk_01");
     let tiers = soroban_sdk::vec![
         env,
@@ -70,12 +66,7 @@ fn setup_verified_event(
 }
 
 /// Transition an event to Active status.
-fn activate_event(
-    env: &Env,
-    client: &EventContractClient,
-    organizer: &Address,
-    event_id: &Symbol,
-) {
+fn activate_event(env: &Env, client: &EventContractClient, organizer: &Address, event_id: &Symbol) {
     let _ = env;
     client.update_event_status(organizer, event_id, &EventStatus::Active);
 }
@@ -124,7 +115,7 @@ fn test_verify_and_attend_happy_path() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -158,7 +149,7 @@ fn test_nullifier_reuse_rejected() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -191,7 +182,7 @@ fn test_expired_proof_rejected() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -270,7 +261,7 @@ fn test_claim_type_mismatch_rejected() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: Some(ZkClaimType::Citizenship),
+            required_claim_type: ZkClaimType::Citizenship,
             enabled: true,
         },
     );
@@ -299,7 +290,7 @@ fn test_correct_claim_type_accepted() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: Some(ZkClaimType::Location),
+            required_claim_type: ZkClaimType::Location,
             enabled: true,
         },
     );
@@ -328,7 +319,7 @@ fn test_zk_config_disabled_rejects() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: false,
         },
     );
@@ -376,7 +367,7 @@ fn test_is_nullifier_used_query() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -409,7 +400,7 @@ fn test_only_organizer_can_set_zk_config() {
         &intruder,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -431,7 +422,7 @@ fn test_get_zk_config_defaults() {
     let config = client.get_zk_config(&event_id);
 
     assert!(!config.enabled);
-    assert!(config.required_claim_type.is_none());
+    assert_eq!(config.required_claim_type, ZkClaimType::Any);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -452,7 +443,7 @@ fn test_inactive_event_rejects_verify_and_attend() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
@@ -503,13 +494,17 @@ fn test_sold_out_event_rejects_verify_and_attend() {
         &organizer,
         &event_id,
         &ZkVerificationConfig {
-            required_claim_type: None,
+            required_claim_type: ZkClaimType::Any,
             enabled: true,
         },
     );
 
     // Fill the only seat.
-    client.verify_and_attend(&event_id, &0u32, &make_claim(&env, ZkClaimType::Age, 80, 9_999));
+    client.verify_and_attend(
+        &event_id,
+        &0u32,
+        &make_claim(&env, ZkClaimType::Age, 80, 9_999),
+    );
 
     // Second attendee (different nullifier) hits sold-out.
     let result = client.try_verify_and_attend(
@@ -517,5 +512,5 @@ fn test_sold_out_event_rejects_verify_and_attend() {
         &0u32,
         &make_claim(&env, ZkClaimType::Age, 81, 9_999),
     );
-    assert_eq!(result, Err(Ok(EventError::TierSoldOut)));
+    assert_eq!(result, Err(Ok(EventError::EventSoldOut)));
 }
