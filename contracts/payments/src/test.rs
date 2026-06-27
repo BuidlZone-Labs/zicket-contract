@@ -2884,3 +2884,657 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
     let config = client.get_event_config(&event_id);
     assert!(config.organizer_withdrawn);
 }
+
+// ============================================================
+// Dispute Resolution Tests
+// ============================================================
+
+/// Set up a contract with a paid ticket and event in Completed status.
+/// Returns (admin, client, token_address, contract_id, ticket_id, payment_id, payer, event_end_time).
+fn setup_dispute_scenario(
+    env: &Env,
+) -> (
+    Address,
+    PaymentsContractClient<'_>,
+    Address,
+    Address,
+    u64,
+    u64,
+    Address,
+    u64,
+) {
+    let (admin, token, client, contract_id, token_client_sa, _event_contract_id) =
+        setup_contract_with_token(env);
+    let payer = Address::generate(env);
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let event_end_time: u64 = env.ledger().timestamp() + 86_400;
+
+    token_client_sa.mint(&admin, &amount);
+    let token_client = token::Client::new(env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    let ticket_id = client.get_owner_tickets(&payer).get(0).unwrap();
+
+    client.set_event_end_time(&admin, &event_id, &payer, &event_end_time);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 1;
+    });
+
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+
+    (
+        admin,
+        client,
+        token,
+        contract_id,
+        ticket_id,
+        payment_id,
+        payer,
+        event_end_time,
+    )
+}
+
+// --- Group 1: Happy Path ---
+
+#[test]
+fn test_raise_dispute_event_no_show() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    assert_eq!(dispute.ticket_id, ticket_id);
+    assert_eq!(dispute.reason, DisputeReason::EventNoShow);
+    assert_eq!(dispute.status, DisputeStatus::Open);
+    assert_eq!(dispute.escrow_amount, 100_000_000i128);
+}
+
+#[test]
+fn test_raise_dispute_ticket_not_delivered() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &1u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    assert_eq!(dispute.reason, DisputeReason::TicketNotDelivered);
+    assert_eq!(dispute.status, DisputeStatus::Open);
+}
+
+#[test]
+fn test_raise_dispute_description_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &2u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    assert_eq!(dispute.reason, DisputeReason::DescriptionMismatch);
+    assert_eq!(dispute.status, DisputeStatus::Open);
+}
+
+#[test]
+fn test_approve_refund_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, token, _contract_id, ticket_id, payment_id, payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let token_client = token::Client::new(&env, &token);
+
+    let revenue_before = client.get_event_revenue(&event_id);
+    assert_eq!(revenue_before, amount);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.approve_refund(&admin, &ticket_id);
+
+    // Token refunded to payer
+    assert_eq!(token_client.balance(&payer), amount);
+
+    // Payment status is Refunded
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.status, PaymentStatus::Refunded);
+
+    let revenue_after = client.get_event_revenue(&event_id);
+    assert_eq!(revenue_after, 0i128);
+
+    // Dispute record removed
+    let result = client.try_get_dispute(&ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+}
+
+#[test]
+fn test_reject_dispute_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.reject_dispute(&admin, &ticket_id);
+
+    // Payment is still Held
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.status, PaymentStatus::Held);
+
+    // Dispute record removed
+    let result = client.try_get_dispute(&ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+}
+
+#[test]
+fn test_timeout_dispute_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    let opened_at = dispute.opened_at;
+
+    // Advance past DISPUTE_TIMEOUT_SECS (1209600)
+    env.ledger().with_mut(|li| {
+        li.timestamp = opened_at + 1_209_600 + 1;
+    });
+
+    client.timeout_dispute(&ticket_id);
+
+    // Dispute record removed
+    let result = client.try_get_dispute(&ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+
+    // Payment still Held (organizer can withdraw later)
+    let payment = client.get_payment(&payment_id);
+    assert_eq!(payment.status, PaymentStatus::Held);
+}
+
+// --- Group 2: Validation — raise_dispute ---
+
+#[test]
+fn test_raise_dispute_invalid_reason_code() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    let result = client.try_raise_dispute(&ticket_id, &99u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::InvalidDisputeReason)));
+}
+
+#[test]
+fn test_raise_dispute_duplicate() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let result = client.try_raise_dispute(&ticket_id, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyOpen)));
+}
+
+#[test]
+fn test_raise_dispute_before_event_ends() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_client_sa, _event_contract_id) =
+        setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+
+    token_client_sa.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    let ticket_id = client.get_owner_tickets(&payer).get(0).unwrap();
+
+    // Event not marked as Completed, no escrow meta with past end time
+    let result = client.try_raise_dispute(&ticket_id, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::EventNotEnded)));
+}
+
+#[test]
+fn test_raise_dispute_after_window_closed() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, event_end_time) =
+        setup_dispute_scenario(&env);
+
+    // Advance past event_end_time + DISPUTE_WINDOW_SECS (604800)
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 604_800 + 1;
+    });
+
+    let result = client.try_raise_dispute(&ticket_id, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeWindowClosed)));
+}
+
+#[test]
+fn test_raise_dispute_invalid_ticket() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, _ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    let result = client.try_raise_dispute(&9999u64, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::TicketNotFound)));
+}
+
+// --- Group 3: Permissions ---
+
+#[test]
+fn test_approve_refund_non_admin_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let non_admin = Address::generate(&env);
+    let result = client.try_approve_refund(&non_admin, &ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
+}
+
+#[test]
+fn test_reject_dispute_non_admin_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let non_admin = Address::generate(&env);
+    let result = client.try_reject_dispute(&non_admin, &ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
+}
+
+// --- Group 4: State machine ---
+
+#[test]
+fn test_approve_refund_already_resolved() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.approve_refund(&admin, &ticket_id);
+
+    // Try to approve again — dispute record deleted
+    let result = client.try_approve_refund(&admin, &ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+}
+
+#[test]
+fn test_reject_dispute_already_resolved() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.reject_dispute(&admin, &ticket_id);
+
+    // Try to reject again — dispute record deleted
+    let result = client.try_reject_dispute(&admin, &ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+}
+
+// --- Group 5: Escrow freeze ---
+
+#[test]
+fn test_disputed_payment_excluded_from_withdraw() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_client_sa, event_contract_id) =
+        setup_contract_with_token_and_event(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let event_end_time: u64 = env.ledger().timestamp() + 86_400;
+
+    token_client_sa.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer1, &amount);
+    token_client.transfer(&admin, &payer2, &amount);
+
+    bind_event(&client, &event_contract_id, &event_id, &organizer, &token);
+
+    // Two payments for same event
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    let ticket_id_1 = client.get_owner_tickets(&payer1).get(0).unwrap();
+
+    client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 1;
+    });
+
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+
+    // Advance past withdrawal delay (event_end_ledger=1000 + withdrawal_delay=17280)
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20000;
+    });
+
+    // Open dispute on ticket 1
+    client.raise_dispute(&ticket_id_1, &0u32);
+
+    // Organizer withdraws — only ticket 2's amount should transfer
+    client.withdraw(&organizer, &event_id);
+
+    // organizer gets only payer2's amount (payer1 disputed)
+    assert_eq!(token_client.balance(&organizer), amount);
+    // Contract still holds payer1's frozen amount
+    assert_eq!(token_client.balance(&contract_id), amount);
+}
+
+#[test]
+fn test_disputed_payment_excluded_from_release_if_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, token, contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    let token_client = token::Client::new(&env, &token);
+    let event_id = symbol_short!("DEVT1");
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    // release_if_expired: disputed payment should NOT be released
+    client.release_if_expired(&event_id);
+
+    // Contract still holds the disputed amount
+    assert_eq!(token_client.balance(&contract_id), 100_000_000i128);
+}
+
+#[test]
+fn test_freeze_cleared_after_reject() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, token, contract_id, ticket_id, _payment_id, payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let token_client = token::Client::new(&env, &token);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.reject_dispute(&admin, &ticket_id);
+
+    // After reject, organizer (payer was used as organizer placeholder) can withdraw via release_if_expired
+    client.release_if_expired(&event_id);
+
+    // Funds released to the organizer (payer address used as organizer in setup)
+    assert_eq!(token_client.balance(&payer), amount);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+// --- Group 6: Anonymous ticket support ---
+
+#[test]
+fn test_anonymous_ticket_dispute_works() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_client_sa, _event_contract_id) =
+        setup_contract_with_token(&env);
+    let payer = Address::generate(&env);
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let event_end_time: u64 = env.ledger().timestamp() + 86_400;
+
+    token_client_sa.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    // Pay with Anonymous privacy
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Anonymous,
+    );
+    let ticket_id = client.get_owner_tickets(&payer).get(0).unwrap();
+
+    client.set_event_end_time(&admin, &event_id, &payer, &event_end_time);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 1;
+    });
+
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+
+    // raise_dispute works without auth (permissionless)
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    assert_eq!(dispute.status, DisputeStatus::Open);
+    assert_eq!(dispute.escrow_amount, amount);
+}
+
+// --- Group 7: Timeout ---
+
+#[test]
+fn test_timeout_dispute_not_yet_timed_out() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    let dispute = client.get_dispute(&ticket_id);
+    let opened_at = dispute.opened_at;
+
+    // Advance to just before DISPUTE_TIMEOUT_SECS (1209600 - 1)
+    env.ledger().with_mut(|li| {
+        li.timestamp = opened_at + 1_209_600 - 1;
+    });
+
+    let result = client.try_timeout_dispute(&ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotTimedOut)));
+}
+
+#[test]
+fn test_timeout_dispute_nonexistent() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, _ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    // No dispute raised — call timeout on ticket that has no dispute
+    let result = client.try_timeout_dispute(&_ticket_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeNotFound)));
+}
+
+#[test]
+fn test_reject_dispute_blocks_subsequent_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+    client.reject_dispute(&admin, &ticket_id);
+
+    let result = client.try_refund(&admin, &payment_id, &None::<i128>);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyResolved)));
+}
+
+#[test]
+fn test_timeout_dispute_blocks_re_dispute() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_admin, client, _token, _contract_id, ticket_id, _payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    client.raise_dispute(&ticket_id, &0u32);
+
+    // Advance time past the 14-day dispute timeout
+    env.ledger().with_mut(|li| {
+        li.timestamp = li.timestamp + DISPUTE_TIMEOUT_SECS + 1;
+    });
+
+    client.timeout_dispute(&ticket_id);
+
+    let result = client.try_raise_dispute(&ticket_id, &0u32);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyResolved)));
+}
+
+#[test]
+fn test_withdraw_revenue_skips_disputed_payments() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_client_sa, _event_contract_id) =
+        setup_contract_with_token(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("DEVT1");
+    let amount = 100_000_000i128;
+    let event_end_time: u64 = env.ledger().timestamp() + 86_400;
+
+    token_client_sa.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer1, &amount);
+    token_client.transfer(&admin, &payer2, &amount);
+
+    // Two tickets for the same event
+    client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+    let ticket_id_1 = client.get_owner_tickets(&payer1).get(0).unwrap();
+
+    client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 1;
+    });
+
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+
+    // Open dispute on ticket 1
+    client.raise_dispute(&ticket_id_1, &0u32);
+
+    // Admin calls withdraw_revenue — only ticket 2's amount should be transferred
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Organizer receives only payer2's amount
+    assert_eq!(token_client.balance(&organizer), amount);
+    // Disputed amount remains frozen in the contract
+    assert_eq!(token_client.balance(&contract_id), amount);
+}
+
+#[test]
+fn test_refund_blocked_while_dispute_active() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, client, _token, _contract_id, ticket_id, payment_id, _payer, _event_end_time) =
+        setup_dispute_scenario(&env);
+
+    // Open dispute on the ticket
+    client.raise_dispute(&ticket_id, &0u32);
+
+    // Admin attempts to refund while the dispute is open — must be blocked
+    let result = client.try_refund(&admin, &payment_id, &None::<i128>);
+    assert_eq!(result.err(), Some(Ok(PaymentError::DisputeAlreadyOpen)));
+}

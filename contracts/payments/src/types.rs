@@ -3,6 +3,34 @@ use soroban_sdk::{contracttype, Address, Symbol};
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeReason {
+    EventNoShow = 0,
+    TicketNotDelivered = 1,
+    DescriptionMismatch = 2,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DisputeStatus {
+    Open = 0,
+    Reviewing = 1,
+    ApprovedRefund = 2,
+    Rejected = 3,
+    TimedOut = 4,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketDispute {
+    pub ticket_id: u64,
+    pub reason: DisputeReason,
+    pub opened_at: u64,
+    pub status: DisputeStatus,
+    pub escrow_amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EventStatus {
     Upcoming = 0,
     Active = 1,

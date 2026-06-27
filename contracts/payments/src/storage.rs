@@ -1,5 +1,7 @@
 use crate::errors::PaymentError;
-use crate::types::{EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket};
+use crate::types::{
+    EscrowMetadata, EventStatus, PaymentRecord, PrivacyLevel, Ticket, TicketDispute,
+};
 use soroban_sdk::{contracttype, Address, Env, Symbol, Vec};
 
 const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
@@ -61,6 +63,9 @@ pub enum DataKey {
     UserEventTickets(Symbol, Address),
     Paused,
     PostponeDeadline(Symbol),
+    TicketDispute(u64),
+    PaymentDisputed(u64),
+    DisputeOutcome(u64), // payment_id -> bool, set when dispute is rejected or timed out
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -694,4 +699,97 @@ pub fn increment_event_sold_count(env: &Env, event_id: &Symbol) -> Result<(), Pa
         .ok_or(PaymentError::EventSoldOut)?;
     set_event_config(env, event_id, &config);
     Ok(())
+}
+
+/// Save a dispute record.
+pub fn save_dispute(env: &Env, dispute: &TicketDispute) {
+    let key = DataKey::TicketDispute(dispute.ticket_id);
+    env.storage().persistent().set(&key, dispute);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Get a dispute record by ticket_id.
+pub fn get_dispute(env: &Env, ticket_id: u64) -> Result<TicketDispute, PaymentError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketDispute(ticket_id))
+        .ok_or(PaymentError::DisputeNotFound)
+}
+
+/// Check if a ticket has an active dispute.
+pub fn has_active_dispute(env: &Env, ticket_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::TicketDispute(ticket_id))
+}
+
+/// Mark a payment as disputed (blocks settlement).
+pub fn mark_payment_disputed(env: &Env, payment_id: u64) {
+    let key = DataKey::PaymentDisputed(payment_id);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Check if a payment is under active dispute.
+pub fn is_payment_disputed(env: &Env, payment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .get::<DataKey, bool>(&DataKey::PaymentDisputed(payment_id))
+        .unwrap_or(false)
+}
+
+/// Clear the dispute flag from a payment (called when dispute is resolved).
+pub fn clear_payment_dispute(env: &Env, payment_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PaymentDisputed(payment_id));
+}
+
+/// Remove a dispute record (called after resolution).
+pub fn remove_dispute(env: &Env, ticket_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::TicketDispute(ticket_id));
+}
+
+/// Update an existing dispute record (e.g., status change).
+pub fn update_dispute(env: &Env, dispute: &TicketDispute) -> Result<(), PaymentError> {
+    if !env
+        .storage()
+        .persistent()
+        .has(&DataKey::TicketDispute(dispute.ticket_id))
+    {
+        return Err(PaymentError::DisputeNotFound);
+    }
+    save_dispute(env, dispute);
+    Ok(())
+}
+
+/// Get a dispute record — returns None if not found.
+pub fn get_dispute_opt(env: &Env, ticket_id: u64) -> Option<TicketDispute> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketDispute(ticket_id))
+}
+
+/// Mark a payment's dispute as permanently resolved in organizer's favor.
+/// Blocks re-disputes and admin refunds on this payment.
+pub fn set_dispute_outcome(env: &Env, payment_id: u64) {
+    let key = DataKey::DisputeOutcome(payment_id);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+/// Returns true if a payment's dispute was resolved in organizer's favor (rejected or timed out).
+pub fn is_dispute_outcome_set(env: &Env, payment_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .get::<DataKey, bool>(&DataKey::DisputeOutcome(payment_id))
+        .unwrap_or(false)
 }
