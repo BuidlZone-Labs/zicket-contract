@@ -3283,6 +3283,11 @@ fn test_disputed_payment_excluded_from_withdraw() {
 
     client.set_event_status(&admin, &event_id, &EventStatus::Completed);
 
+    // Advance past withdrawal delay (event_end_ledger=1000 + withdrawal_delay=17280)
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20000;
+    });
+
     // Open dispute on ticket 1
     client.raise_dispute(&ticket_id_1, &0u32);
 
