@@ -252,6 +252,16 @@ fn test_commitment_is_stored_but_never_emitted() {
 }
 
 #[test]
+fn test_get_payment_commitment_not_found() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let w = setup(&env, 0);
+
+    let res = w.client.try_get_payment_commitment(&999);
+    assert_eq!(res.err(), Some(Ok(PaymentError::PaymentNotFound)));
+}
+
+#[test]
 fn test_bind_event_does_not_leak_commitment() {
     let env = Env::default();
     env.mock_all_auths();

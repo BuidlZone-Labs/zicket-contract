@@ -1610,14 +1610,17 @@ impl PaymentsContract {
 
     /// Read the zkEmail commitment stored for a payment, if any.
     ///
-    /// Returns `None` when the payer opted out. An off-chain relayer reads this
-    /// to learn the commitment, then recomputes `H(email || ticket_id)` from a
-    /// claimed email to confirm delivery eligibility — without the email ever
-    /// being exposed on-chain.
-    pub fn get_payment_commitment(env: Env, payment_id: u64) -> Option<BytesN<32>> {
-        storage::get_payment(&env, payment_id)
-            .ok()
-            .and_then(|p| p.zk_email_commitment)
+    /// Returns `Ok(None)` when the payer opted out. Returns
+    /// `Err(PaymentError::PaymentNotFound)` for an invalid `payment_id`. An
+    /// off-chain relayer reads this to learn the commitment, then recomputes
+    /// `H(email || ticket_id)` from a claimed email to confirm delivery
+    /// eligibility — without the email ever being exposed on-chain.
+    pub fn get_payment_commitment(
+        env: Env,
+        payment_id: u64,
+    ) -> Result<Option<BytesN<32>>, PaymentError> {
+        let payment = storage::get_payment(&env, payment_id)?;
+        Ok(payment.zk_email_commitment)
     }
 
     /// Verify a candidate commitment against the one stored for a payment.
