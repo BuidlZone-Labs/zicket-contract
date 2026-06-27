@@ -327,6 +327,422 @@ fn test_registration_with_email_hook() {
     assert!(registered);
 }
 
+const MIN_WINDOW: u32 = 51_840;
+const PRICE: i128 = 100_000_000;
+
+#[allow(clippy::type_complexity)]
+fn setup_linked(
+    env: &Env,
+) -> (
+    EventContractClient<'_>,
+    payments_contract::PaymentsContractClient<'_>,
+    ticket_contract::TicketContractClient<'_>,
+    token::Client<'_>,
+    token::StellarAssetClient<'_>,
+    Address, // token address
+    Address, // organizer
+    Address, // payments contract id
+) {
+    let organizer = Address::generate(env);
+
+    let event_contract_id = env.register(EventContract, ());
+    let event_client = EventContractClient::new(env, &event_contract_id);
+
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let ticket_client = ticket_contract::TicketContractClient::new(env, &ticket_contract_id);
+
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+
+    let token_admin = Address::generate(env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_admin_client = token::StellarAssetClient::new(env, &token_address);
+    let token_client = token::Client::new(env, &token_address);
+
+    let platform_wallet = Address::generate(env);
+    payments_client.initialize(
+        &organizer,
+        &token_address,
+        &0,
+        &platform_wallet,
+        &event_contract_id,
+    );
+    event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+
+    (
+        event_client,
+        payments_client,
+        ticket_client,
+        token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        payments_contract_id,
+    )
+}
+
+fn fund(token_admin_client: &token::StellarAssetClient, to: &Address, amount: i128) {
+    token_admin_client.mint(to, &amount);
+}
+
+#[test]
+fn test_postpone_full_refund_and_resume() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        ticket_client,
+        token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        payments_id,
+    ) = setup_linked(&env);
+
+    let attendee1 = Address::generate(&env);
+    let attendee2 = Address::generate(&env);
+    fund(&token_admin_client, &attendee1, PRICE);
+    fund(&token_admin_client, &attendee2, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_1");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+
+    event_client.register_for_event(&1, &attendee1, &event_id, &0, &false, &None);
+    event_client.register_for_event(&2, &attendee2, &event_id, &0, &false, &None);
+    assert_eq!(token_client.balance(&payments_id), PRICE * 2);
+    assert_eq!(payments_client.get_event_revenue(&event_id), PRICE * 2);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+    assert_eq!(
+        event_client.get_event_status(&event_id),
+        EventStatus::Postponed
+    );
+
+    // The minted (entry) ticket for attendee1 before opting out.
+    let minted1 = ticket_client
+        .get_tickets_by_owner(&attendee1)
+        .get(0)
+        .unwrap();
+
+    let t1 = payments_client
+        .get_owner_tickets(&attendee1)
+        .get(0)
+        .unwrap();
+    let payment1 = payments_client.get_ticket(&t1).payment_id;
+
+    // Opt out through the event contract (orchestrates refund + revocation).
+    // The event is derived from the payment ticket, so no event_id argument.
+    event_client.request_postponement_refund(&attendee1, &t1);
+
+    assert_eq!(token_client.balance(&attendee1), PRICE);
+    assert_eq!(token_client.balance(&payments_id), PRICE);
+    assert_eq!(payments_client.get_event_revenue(&event_id), PRICE);
+    assert_eq!(
+        payments_client.get_payment(&payment1).status,
+        payments_contract::PaymentStatus::Refunded
+    );
+
+    // Refunded holder loses participation: registration dropped and ticket cancelled.
+    assert!(!event_client.is_registered(&event_id, &attendee1));
+    assert_eq!(
+        ticket_client.get_ticket(&minted1).status,
+        ticket_contract::TicketStatus::Cancelled
+    );
+
+    // Non-acting holder keeps their place.
+    assert!(event_client.is_registered(&event_id, &attendee2));
+
+    env.ledger()
+        .with_mut(|li| li.sequence_number = 100 + MIN_WINDOW + 1);
+    event_client.finalize_postponement(&organizer, &event_id);
+    assert_eq!(
+        event_client.get_event_status(&event_id),
+        EventStatus::Active
+    );
+    let ev = event_client.get_event(&event_id);
+    assert_eq!(ev.event_start_ledger, new_date as u32);
+
+    assert!(event_client.is_registered(&event_id, &attendee2));
+
+    event_client.update_event_status(&organizer, &event_id, &EventStatus::Completed);
+    event_client.withdraw_revenue(&organizer, &event_id);
+    assert_eq!(token_client.balance(&organizer), PRICE);
+    assert_eq!(token_client.balance(&payments_id), 0);
+}
+
+#[test]
+fn test_postponed_event_blocks_all_withdrawals() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        _ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_2");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    // Event-contract withdrawal path (gated on Completed).
+    let res = event_client.try_withdraw_revenue(&organizer, &event_id);
+    assert!(res.is_err());
+
+    // Every direct payments-contract release path is frozen while Postponed.
+    let res = payments_client.try_withdraw(&organizer, &event_id);
+    assert!(res.is_err());
+    let res = payments_client.try_withdraw_revenue(&event_id, &organizer);
+    assert_eq!(
+        res.err(),
+        Some(Ok(payments_contract::PaymentError::EventNotActive))
+    );
+    let res = payments_client.try_withdraw_token(&organizer, &event_id, &token_address);
+    assert!(res.is_err());
+}
+
+#[test]
+fn test_postponement_refund_after_window_closed_fails() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        _ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_3");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    env.ledger()
+        .with_mut(|li| li.sequence_number = 100 + MIN_WINDOW + 1);
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+    let res = payments_client.try_request_postponement_refund(&attendee, &t);
+    assert_eq!(
+        res.err(),
+        Some(Ok(
+            payments_contract::PaymentError::PostponementWindowClosed
+        ))
+    );
+}
+
+#[test]
+fn test_postponement_refund_rejects_non_owner() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        _ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_4");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+    let res = payments_client.try_request_postponement_refund(&attacker, &t);
+    assert_eq!(
+        res.err(),
+        Some(Ok(payments_contract::PaymentError::Unauthorized))
+    );
+}
+
+#[test]
+fn test_postponement_refund_requires_revocable_ticket() {
+    // If the holder has no valid, unused entry ticket to give up (e.g. it was
+    // already cancelled/transferred), the refund must be rejected — and no money
+    // must move.
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        ticket_client,
+        token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_5");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    // Holder cancels their entry ticket, so nothing is revocable.
+    let minted = ticket_client
+        .get_tickets_by_owner(&attendee)
+        .get(0)
+        .unwrap();
+    ticket_client.cancel_ticket(&minted, &attendee);
+
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+    let res = event_client.try_request_postponement_refund(&attendee, &t);
+    assert_eq!(res.err(), Some(Ok(crate::EventError::NoRefundableTicket)));
+
+    // No refund was issued: escrow and payment status are unchanged.
+    assert_eq!(token_client.balance(&attendee), 0);
+    assert_eq!(token_client.balance(&payments_id), PRICE);
+    assert_eq!(
+        payments_client.get_payment(&t).status,
+        payments_contract::PaymentStatus::Held
+    );
+}
+
+#[test]
+fn test_postponement_refund_is_event_scoped() {
+    // A refund must revoke access only for the event the payment ticket belongs to,
+    // never for a different event the caller also participates in.
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE * 2);
+
+    let event_a = Symbol::new(&env, "evt_a");
+    let event_b = Symbol::new(&env, "evt_b");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_a.clone(),
+    );
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_b.clone(),
+    );
+
+    event_client.register_for_event(&1, &attendee, &event_a, &0, &false, &None);
+    event_client.register_for_event(&2, &attendee, &event_b, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_a, &new_date, &MIN_WINDOW);
+    event_client.postpone_event(&organizer, &event_b, &new_date, &MIN_WINDOW);
+
+    // Locate the payments receipt ticket that belongs to event B.
+    let tickets = payments_client.get_owner_tickets(&attendee);
+    let mut ticket_b = None;
+    for i in 0..tickets.len() {
+        let tid = tickets.get(i).unwrap();
+        if payments_client.get_ticket(&tid).event_id == event_b {
+            ticket_b = Some(tid);
+        }
+    }
+    let ticket_b = ticket_b.unwrap();
+
+    // Refunding event B's ticket revokes participation in B only — A is untouched.
+    event_client.request_postponement_refund(&attendee, &ticket_b);
+
+    assert!(!event_client.is_registered(&event_b, &attendee));
+    assert!(event_client.is_registered(&event_a, &attendee));
+
+    // Event A's minted ticket stays valid; event B's is cancelled.
+    for tid in ticket_client.get_tickets_by_owner(&attendee).iter() {
+        let minted = ticket_client.get_ticket(&tid);
+        if minted.event_id == event_a {
+            assert_eq!(minted.status, ticket_contract::TicketStatus::Valid);
+        } else if minted.event_id == event_b {
+            assert_eq!(minted.status, ticket_contract::TicketStatus::Cancelled);
+        }
+    }
+}
+
 #[test]
 fn test_withdraw_revenue_integration() {
     let env = setup_env();

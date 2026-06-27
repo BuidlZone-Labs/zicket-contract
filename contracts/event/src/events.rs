@@ -47,6 +47,23 @@ pub struct _RefundsProcessed {
     pub processed_at: u64,
 }
 
+#[contractevent(data_format = "vec", topics = ["ev_pp"])]
+pub struct EventPostponed {
+    pub event_id: Symbol,
+    pub new_date_ledger: u64,
+    pub choice_deadline_ledger: u64,
+    pub postpone_count: u32,
+    pub postponed_at: u64,
+}
+
+#[contractevent(data_format = "vec", topics = ["ev_rsm"])]
+pub struct EventResumed {
+    pub event_id: Symbol,
+    pub new_start_ledger: u32,
+    pub new_end_ledger: u32,
+    pub resumed_at: u64,
+}
+
 #[contractevent(data_format = "vec", topics = ["register"])]
 pub struct EventRegistration {
     pub event_id: Symbol,
@@ -125,6 +142,43 @@ pub fn emit_event_cancelled(
 //     .publish(env);
 // }
 
+/// Publish a Soroban event when an event is postponed (rescheduled).
+///
+/// Carries no address-derivable fields, so it is privacy-safe for all levels.
+pub fn emit_event_postponed(
+    env: &Env,
+    event_id: &Symbol,
+    new_date_ledger: u64,
+    choice_deadline_ledger: u64,
+    postpone_count: u32,
+) {
+    EventPostponed {
+        event_id: event_id.clone(),
+        new_date_ledger,
+        choice_deadline_ledger,
+        postpone_count,
+        postponed_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+/// Publish a Soroban event when a postponed event is finalized back to `Active`
+/// on its new schedule.
+pub fn emit_event_resumed(
+    env: &Env,
+    event_id: &Symbol,
+    new_start_ledger: u32,
+    new_end_ledger: u32,
+) {
+    EventResumed {
+        event_id: event_id.clone(),
+        new_start_ledger,
+        new_end_ledger,
+        resumed_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
 /// Publish a Soroban event when an attendee registers.
 /// The attendee address is masked according to the event's privacy level.
 pub fn emit_registration(
@@ -138,6 +192,26 @@ pub fn emit_registration(
     EventRegistration {
         event_id: event_id.clone(),
         attendee: mask_address(env, attendee, level.clone()),
+        tier_id,
+        tickets_sold,
+        registered_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+#[contractevent(data_format = "vec", topics = ["anon_reg"])]
+pub struct AnonEventRegistration {
+    pub event_id: Symbol,
+    pub tier_id: u32,
+    pub tickets_sold: u32,
+    pub registered_at: u64,
+}
+
+/// Publish a Soroban event for an anonymous (no-wallet) free ticket claim.
+/// No attendee identifier is emitted — the commitment is kept off-chain.
+pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, tickets_sold: u32) {
+    AnonEventRegistration {
+        event_id: event_id.clone(),
         tier_id,
         tickets_sold,
         registered_at: env.ledger().timestamp(),

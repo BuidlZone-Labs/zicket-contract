@@ -12,8 +12,11 @@ mod test;
 
 use crate::errors::TicketError;
 use crate::storage::DataKey;
-use crate::types::{Ticket, TicketStatus};
 use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
+
+// Re-export public types so dependent contracts (e.g. the event contract) can name
+// `ticket_contract::Ticket` / `ticket_contract::TicketStatus` when consuming the client.
+pub use crate::types::{Ticket, TicketStatus};
 
 #[contract]
 pub struct TicketContract;

@@ -62,6 +62,8 @@ pub enum DataKey {
     ContractVersion,
     UserEventTickets(Symbol, Address),
     Paused,
+    /// Refund-choice deadline ledger for a postponed event.
+    PostponeDeadline(Symbol),
     /// Configured revenue split recipients for an event (immutable once set).
     EventSplits(Symbol),
     /// Frozen net-distributable snapshot taken at first split settlement.
@@ -84,6 +86,38 @@ pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
     env.storage()
         .persistent()
         .get(&DataKey::EventStatus(event_id.clone()))
+}
+
+/// Store the refund-choice deadline (ledger sequence) for a postponed event.
+///
+/// The TTL is sized dynamically to outlive the configured refund window: a long
+/// window must not let the deadline entry expire before the window closes, which
+/// would make `get_postpone_deadline` return `None` and break refunds while the
+/// event is still postponed. We extend to cover (deadline - now) plus the standard
+/// threshold buffer.
+pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32) {
+    let key = DataKey::PostponeDeadline(event_id.clone());
+    env.storage().persistent().set(&key, &deadline_ledger);
+    let current = env.ledger().sequence();
+    let window = deadline_ledger.saturating_sub(current);
+    let extend_to = window.saturating_add(TTL_THRESHOLD);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, extend_to.max(TTL_BUMP));
+}
+
+/// Read the refund-choice deadline (ledger sequence) for a postponed event.
+pub fn get_postpone_deadline(env: &Env, event_id: &Symbol) -> Option<u32> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PostponeDeadline(event_id.clone()))
+}
+
+/// Clear the refund-choice deadline once a postponed event is resumed.
+pub fn remove_postpone_deadline(env: &Env, event_id: &Symbol) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PostponeDeadline(event_id.clone()));
 }
 
 /// Get the admin address from storage.

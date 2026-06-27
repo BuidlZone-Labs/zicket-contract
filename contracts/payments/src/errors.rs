@@ -37,17 +37,19 @@ pub enum PaymentError {
     ContractPaused = 31,
     /// Token transfer failed; no state has been modified
     TransferFailed = 32,
+    PostponementWindowClosed = 33,
+    EventNotPostponed = 34,
     /// Revenue split configuration is invalid (bad sum, too many recipients,
     /// duplicate or empty recipient, or an attempt to mutate an existing config).
-    InvalidSplitConfig = 33,
+    InvalidSplitConfig = 35,
     /// No revenue split has been configured for this event.
-    SplitsNotConfigured = 34,
+    SplitsNotConfigured = 36,
     /// The caller is not one of the configured split recipients.
-    NotASplitRecipient = 35,
+    NotASplitRecipient = 37,
     /// This recipient has already withdrawn (or had reassigned) its split share.
-    SplitAlreadyWithdrawn = 36,
+    SplitAlreadyWithdrawn = 38,
     /// The recipient's share is frozen because the wallet has been flagged.
-    RecipientFlagged = 37,
+    RecipientFlagged = 39,
     /// The recipient is not currently flagged.
-    RecipientNotFlagged = 38,
+    RecipientNotFlagged = 40,
 }
