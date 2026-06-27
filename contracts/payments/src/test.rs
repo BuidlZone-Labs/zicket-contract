@@ -2970,6 +2970,8 @@ fn test_withdraw_cancelled_event_respects_dispute_window() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     // Set ledger to some position and cancel the event
@@ -3024,6 +3026,8 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     // Cancel at ledger 500
