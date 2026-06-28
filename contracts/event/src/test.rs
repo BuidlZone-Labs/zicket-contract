@@ -75,7 +75,12 @@ fn test_create_event_duplicate_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
+
+    // First creation succeeds
     client.create_event(&params);
     let params_dup = CreateEventParams {
         organizer: organizer.clone(),
@@ -94,6 +99,9 @@ fn test_create_event_duplicate_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     let result = client.try_create_event(&params_dup);
     assert_eq!(result.err(), Some(Ok(EventError::EventAlreadyExists)));
@@ -194,7 +202,10 @@ fn test_create_event_past_date_fails() {
                 name: String::from_str(&env, "General"),
                 price: 100,
                 capacity: 100,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -231,7 +242,10 @@ fn test_create_event_date_less_than_24h_fails() {
                 name: String::from_str(&env, "General"),
                 price: 100,
                 capacity: 100,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -268,7 +282,10 @@ fn test_create_event_negative_price_fails() {
                 name: String::from_str(&env, "General"),
                 price: -10,
                 capacity: 100,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -305,7 +322,10 @@ fn test_create_event_empty_name_fails() {
                 name: String::from_str(&env, "General"),
                 price: 100,
                 capacity: 100,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -342,7 +362,10 @@ fn test_create_event_empty_venue_fails() {
                 name: String::from_str(&env, "General"),
                 price: 100,
                 capacity: 100,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -472,7 +495,10 @@ fn test_update_event_details() {
         allow_anonymous: Some(false),
         requires_verification: Some(true),
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
 
     client.update_event_details(&params);
 
@@ -507,7 +533,10 @@ fn test_update_event_details_noop() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
     client.update_event_details(&params);
 
     let updated_event = client.get_event(&event_id);
@@ -531,7 +560,10 @@ fn test_update_event_not_found() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
 
     let result = client.try_update_event_details(&params);
     assert!(result.is_err());
@@ -556,7 +588,10 @@ fn test_update_event_unauthorized() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
 
     let result = client.try_update_event_details(&params);
     assert!(result.is_err());
@@ -581,7 +616,10 @@ fn test_update_active_event_fails() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
 
     let result = client.try_update_event_details(&params);
     assert!(result.is_err());
@@ -606,7 +644,10 @@ fn test_update_cancelled_event_fails() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
 
     let result = client.try_update_event_details(&params);
     assert!(result.is_err());
@@ -630,7 +671,10 @@ fn test_update_invalid_data() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
     let result = client.try_update_event_details(&params_name);
     assert!(result.is_err());
     let params_date = UpdateEventParams {
@@ -643,7 +687,10 @@ fn test_update_invalid_data() {
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
-    };
+        resale_royalty_bps: None,
+            max_resale_price: None,
+            allow_free_ticket_transfer: None,
+        };
     let result_date = client.try_update_event_details(&params_date);
     assert!(result_date.is_err());
 }
@@ -721,7 +768,10 @@ fn test_register_for_event_sold_out_fails() {
                 name: String::from_str(&env, "General"),
                 price: 100,
                 capacity: 1,
-            },
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -850,6 +900,9 @@ fn setup_event_with_payout_token(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     client.create_event(&params);
@@ -1147,7 +1200,10 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
                 name: String::from_str(&env, "VIP"),
                 price: 1000,
                 capacity: 100,
-            });
+                resale_royalty_bps: 0,
+            max_resale_price: None,
+            allow_free_ticket_transfer: false,
+        });
             tiers
         },
         max_tickets_per_user: 0,

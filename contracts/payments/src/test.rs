@@ -261,6 +261,9 @@ fn bind_event(
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
 }
 
@@ -1619,6 +1622,9 @@ fn test_sync_event_config_invalid_payout_token_rejected() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidPayoutToken)));
 
@@ -1902,6 +1908,9 @@ fn test_max_tickets_per_user_enforcement() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
     client.pay_for_ticket(
         &1,
@@ -1977,6 +1986,9 @@ fn test_event_supply_enforcement() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
 
     client.pay_for_ticket(
@@ -2448,6 +2460,9 @@ fn test_per_user_limit_within_limit_succeeds() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
     assert_eq!(client.get_user_tickets(&event_id, &payer), 0);
     client.pay_for_ticket(
@@ -2498,6 +2513,9 @@ fn test_per_user_limit_exceed_is_rejected() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
     client.pay_for_ticket(
         &1,
@@ -2555,6 +2573,9 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
             &0,
             &1000,
             &17280,
+            &0,
+            &None,
+            &false,
         );
     }
     client.pay_for_ticket(

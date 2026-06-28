@@ -873,6 +873,7 @@ impl PaymentsContract {
         let fee_bps = storage::get_platform_fee_bps(&env) as i128;
         let fee_amount = total_to_withdraw * fee_bps / 10_000;
         let organizer_amount = total_to_withdraw - fee_amount;
+        // Transfer organizer share
         token_client.transfer(
             &env.current_contract_address(),
             &stored_organizer,
@@ -1249,8 +1250,7 @@ impl PaymentsContract {
                     collect_held_payments_for_token(&env, &event_id, &token_address)?;
                 if token_total > 0 {
                     let token_client = token::Client::new(&env, &token_address);
-                    token_client.transfer(
-                        &env.current_contract_address(),
+                    token_client.transfer(&env.current_contract_address(),
                         &meta.organizer,
                         &token_total,
                     );
@@ -1396,8 +1396,7 @@ impl PaymentsContract {
         let token_address = storage::get_accepted_token(&env)?;
         let token_client = token::Client::new(&env, &token_address);
 
-        token_client.transfer(
-            &env.current_contract_address(),
+        token_client.transfer(&env.current_contract_address(),
             &platform_wallet,
             &platform_revenue,
         );

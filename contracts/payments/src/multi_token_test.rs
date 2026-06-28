@@ -189,6 +189,9 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
         &0,
         &1000,
         &17280,
+        &0,
+        &None,
+        &false,
     );
     client.pay_for_ticket(
         &1,

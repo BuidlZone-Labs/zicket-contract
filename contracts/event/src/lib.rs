@@ -241,17 +241,13 @@ impl EventContract {
             if event.sold_count > 0 {
                 return Err(EventError::EventNotUpdatable);
             }
-            if let Some(cap) = cap_opt {
-                if cap < 0 && cap != -1 {
-                    return Err(EventError::InvalidInput);
-                }
-                if cap == -1 {
-                    event.max_resale_price = None;
-                } else {
-                    event.max_resale_price = Some(cap);
-                }
-            } else {
+            if cap_opt < 0 && cap_opt != -1 {
+                return Err(EventError::InvalidInput);
+            }
+            if cap_opt == -1 {
                 event.max_resale_price = None;
+            } else {
+                event.max_resale_price = Some(cap_opt);
             }
         }
         if let Some(allow_transfer) = params.allow_free_ticket_transfer {
@@ -601,6 +597,9 @@ impl EventContract {
                 &event.event_start_ledger,
                 &event.event_end_ledger,
                 &event.withdrawal_delay_ledgers,
+                &event.resale_royalty_bps,
+                &event.max_resale_price,
+                &event.allow_free_ticket_transfer,
             );
             payments_client.resume_event(&event_id, &event.organizer);
         }
