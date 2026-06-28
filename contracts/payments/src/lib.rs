@@ -1,7 +1,7 @@
 #![no_std]
 #[cfg(test)]
 extern crate std;
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Symbol, IntoVal};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, IntoVal, Symbol};
 
 mod errors;
 mod events;
@@ -1250,7 +1250,8 @@ impl PaymentsContract {
                     collect_held_payments_for_token(&env, &event_id, &token_address)?;
                 if token_total > 0 {
                     let token_client = token::Client::new(&env, &token_address);
-                    token_client.transfer(&env.current_contract_address(),
+                    token_client.transfer(
+                        &env.current_contract_address(),
                         &meta.organizer,
                         &token_total,
                     );
@@ -1396,7 +1397,8 @@ impl PaymentsContract {
         let token_address = storage::get_accepted_token(&env)?;
         let token_client = token::Client::new(&env, &token_address);
 
-        token_client.transfer(&env.current_contract_address(),
+        token_client.transfer(
+            &env.current_contract_address(),
             &platform_wallet,
             &platform_revenue,
         );
@@ -1633,6 +1635,7 @@ impl PaymentsContract {
 
         Ok(())
     }
+
 
     // -- Revenue splits & co-host wallet management ----------------------------
 
@@ -1948,7 +1951,11 @@ impl PaymentsContract {
 
     // -- Secondary market resale & royalty enforcement ------------------------
 
-    pub fn set_ticket_contract(env: Env, admin: Address, ticket_contract: Address) -> Result<(), PaymentError> {
+    pub fn set_ticket_contract(
+        env: Env,
+        admin: Address,
+        ticket_contract: Address,
+    ) -> Result<(), PaymentError> {
         let stored_admin = storage::get_admin(&env)?;
         if admin != stored_admin {
             return Err(PaymentError::Unauthorized);
@@ -1972,7 +1979,8 @@ impl PaymentsContract {
             return Err(PaymentError::Unauthorized);
         }
 
-        let config = storage::get_event_config(&env, &ticket.event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let config = storage::get_event_config(&env, &ticket.event_id)
+            .ok_or(PaymentError::InvalidOrganizer)?;
         let payment = storage::get_payment(&env, ticket.payment_id)?;
 
         if payment.amount == 0 && price > 0 && !config.allow_free_ticket_transfer {
@@ -1993,20 +2001,20 @@ impl PaymentsContract {
             }
         }
 
-        let listing = crate::types::ResaleListing { price, seller: seller.clone() };
+        let listing = crate::types::ResaleListing {
+            price,
+            seller: seller.clone(),
+        };
         storage::save_resale_listing(&env, ticket_id, &listing);
         Ok(())
     }
 
-    pub fn delist_ticket(
-        env: Env,
-        seller: Address,
-        ticket_id: u64,
-    ) -> Result<(), PaymentError> {
+    pub fn delist_ticket(env: Env, seller: Address, ticket_id: u64) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         seller.require_auth();
 
-        let listing = storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
+        let listing =
+            storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
         if listing.seller != seller {
             return Err(PaymentError::Unauthorized);
         }
@@ -2015,15 +2023,12 @@ impl PaymentsContract {
         Ok(())
     }
 
-    pub fn buy_resale_ticket(
-        env: Env,
-        buyer: Address,
-        ticket_id: u64,
-    ) -> Result<(), PaymentError> {
+    pub fn buy_resale_ticket(env: Env, buyer: Address, ticket_id: u64) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         buyer.require_auth();
 
-        let listing = storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
+        let listing =
+            storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
         let ticket = storage::get_ticket(&env, ticket_id)?;
 
         if listing.seller != ticket.owner {
@@ -2031,7 +2036,8 @@ impl PaymentsContract {
             return Err(PaymentError::Unauthorized);
         }
 
-        let config = storage::get_event_config(&env, &ticket.event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let config = storage::get_event_config(&env, &ticket.event_id)
+            .ok_or(PaymentError::InvalidOrganizer)?;
 
         if listing.price > 0 {
             let platform_fee_bps = storage::get_platform_fee_bps(&env) as i128;
@@ -2043,7 +2049,11 @@ impl PaymentsContract {
             token_client.transfer(&buyer, &env.current_contract_address(), &listing.price);
 
             if seller_proceeds > 0 {
-                token_client.transfer(&env.current_contract_address(), &listing.seller, &seller_proceeds);
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &listing.seller,
+                    &seller_proceeds,
+                );
             }
 
             if platform_fee > 0 {
@@ -2052,7 +2062,12 @@ impl PaymentsContract {
 
             if royalty > 0 {
                 storage::add_event_revenue(&env, &ticket.event_id, royalty);
-                storage::add_event_token_revenue(&env, &ticket.event_id, &config.payout_token, royalty);
+                storage::add_event_token_revenue(
+                    &env,
+                    &ticket.event_id,
+                    &config.payout_token,
+                    royalty,
+                );
             }
         }
 

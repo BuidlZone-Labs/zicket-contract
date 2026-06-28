@@ -50,10 +50,7 @@ fn create_free_event(
                 name: String::from_str(env, "Free"),
                 price: 0,
                 capacity: 100,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -63,6 +60,9 @@ fn create_free_event(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -89,10 +89,7 @@ fn create_paid_event(
                 name: String::from_str(env, "VIP"),
                 price,
                 capacity: 100,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -102,6 +99,9 @@ fn create_paid_event(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);

@@ -288,7 +288,11 @@ impl TicketContract {
         Ok(())
     }
 
-    pub fn set_payments_contract(env: Env, admin: Address, payments_contract: Address) -> Result<(), TicketError> {
+    pub fn set_payments_contract(
+        env: Env,
+        admin: Address,
+        payments_contract: Address,
+    ) -> Result<(), TicketError> {
         if let Ok(stored_admin) = storage::get_admin(&env) {
             if admin != stored_admin {
                 return Err(TicketError::Unauthorized);

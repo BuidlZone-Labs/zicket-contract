@@ -99,11 +99,9 @@ pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::PaymentsContract, payments_contract);
-    env.storage().persistent().extend_ttl(
-        &DataKey::PaymentsContract,
-        TTL_THRESHOLD,
-        TTL_BUMP,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::PaymentsContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_admin(env: &Env) -> Result<Address, TicketError> {
@@ -115,9 +113,7 @@ pub fn get_admin(env: &Env) -> Result<Address, TicketError> {
 
 pub fn set_admin(env: &Env, admin: &Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
-    env.storage().persistent().extend_ttl(
-        &DataKey::Admin,
-        TTL_THRESHOLD,
-        TTL_BUMP,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::Admin, TTL_THRESHOLD, TTL_BUMP);
 }

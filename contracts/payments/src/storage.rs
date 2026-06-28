@@ -194,7 +194,6 @@ pub fn set_ticket_contract(env: &Env, ticket_contract: &soroban_sdk::Address) {
     );
 }
 
-
 pub fn get_event_privacy(env: &Env, event_id: &Symbol) -> EventPrivacyConfig {
     env.storage()
         .persistent()

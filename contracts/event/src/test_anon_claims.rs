@@ -54,10 +54,7 @@ fn create_anon_free_event(
                 name: String::from_str(env, "Free"),
                 price: 0,
                 capacity,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -67,6 +64,9 @@ fn create_anon_free_event(
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -177,10 +177,7 @@ fn test_anon_claim_rejects_non_anonymous_event() {
                 name: String::from_str(&env, "Free"),
                 price: 0,
                 capacity: 10,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: false,
         requires_verification: false,
@@ -190,6 +187,9 @@ fn test_anon_claim_rejects_non_anonymous_event() {
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -226,10 +226,7 @@ fn test_anon_claim_paid_tier_fails() {
                 name: String::from_str(&env, "VIP"),
                 price: 100,
                 capacity: 10,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -239,6 +236,9 @@ fn test_anon_claim_paid_tier_fails() {
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -433,10 +433,7 @@ fn test_anon_claim_tier_sold_out() {
                 name: String::from_str(&env, "Tier0"),
                 price: 0,
                 capacity: 1,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
             TicketTierParams {
                 name: String::from_str(&env, "Tier1"),
                 price: 0,
@@ -451,6 +448,9 @@ fn test_anon_claim_tier_sold_out() {
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);

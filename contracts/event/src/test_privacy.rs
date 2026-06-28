@@ -34,10 +34,7 @@ fn create_event_with_privacy(
                 name: String::from_str(env, "General"),
                 price: 100_000_000,
                 capacity: 100,
-                resale_royalty_bps: 0,
-            max_resale_price: None,
-            allow_free_ticket_transfer: false,
-        },
+            },
         ],
         allow_anonymous: true,
         requires_verification: false,
@@ -47,6 +44,9 @@ fn create_event_with_privacy(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
 }
