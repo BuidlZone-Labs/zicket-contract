@@ -138,6 +138,9 @@ fn test_create_event_invalid_tickets_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -175,6 +178,9 @@ fn test_create_event_too_many_tickets_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -212,6 +218,9 @@ fn test_create_event_past_date_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -249,6 +258,9 @@ fn test_create_event_date_less_than_24h_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -286,6 +298,9 @@ fn test_create_event_negative_price_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -323,6 +338,9 @@ fn test_create_event_empty_name_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -360,6 +378,9 @@ fn test_create_event_empty_venue_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
@@ -763,6 +784,9 @@ fn test_register_for_event_sold_out_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -1009,6 +1033,9 @@ fn test_reserve_expire_and_available_again() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -1190,6 +1217,9 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
         event_end_ledger: 200,
         withdrawal_delay_ledgers: 0, // Below minimum!
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     let result = client.try_create_event(&params);
