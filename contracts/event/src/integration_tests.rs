@@ -1,7 +1,7 @@
 use crate::types::{CreateEventParams, EventStatus, PrivacyLevel, TicketTierParams};
-use crate::{EventContract, EventContractClient};
+use crate::{EventContract, EventContractClient, EventError};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{token, Address, BytesN, Env, String, Symbol};
+use soroban_sdk::{token, vec, Address, BytesN, Env, String, Symbol, Vec};
 
 fn setup_env() -> Env {
     let env = Env::default();
@@ -42,6 +42,7 @@ fn create_active_event(
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
 
     client.create_event(&params);
@@ -798,4 +799,216 @@ fn test_withdraw_revenue_integration() {
 
     assert_eq!(token_client.balance(&organizer), price);
     assert_eq!(token_client.balance(&payments_contract_id), 0);
+}
+
+// ── Multi-organizer revenue split integration (#122) ──────────────────────────
+
+struct SplitWorld<'a> {
+    env: &'a Env,
+    event_client: EventContractClient<'a>,
+    payments_client: payments_contract::PaymentsContractClient<'a>,
+    payments_contract_id: Address,
+    token_admin_client: token::StellarAssetClient<'a>,
+    token_client: token::Client<'a>,
+    token_address: Address,
+    organizer: Address,
+}
+
+fn setup_split_world(env: &Env) -> SplitWorld<'_> {
+    let organizer = Address::generate(env);
+
+    let event_contract_id = env.register(EventContract, ());
+    let event_client = EventContractClient::new(env, &event_contract_id);
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+
+    let token_admin = Address::generate(env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_admin_client = token::StellarAssetClient::new(env, &token_address);
+    let token_client = token::Client::new(env, &token_address);
+
+    let platform_wallet = Address::generate(env);
+    payments_client.initialize(
+        &organizer,
+        &token_address,
+        &0,
+        &platform_wallet,
+        &event_contract_id,
+    );
+    event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+
+    SplitWorld {
+        env,
+        event_client,
+        payments_client,
+        payments_contract_id,
+        token_admin_client,
+        token_client,
+        token_address,
+        organizer,
+    }
+}
+
+fn create_split_event(
+    w: &SplitWorld,
+    event_id: &Symbol,
+    splits: Vec<(Address, u32)>,
+) -> Result<(), EventError> {
+    let params = CreateEventParams {
+        organizer: w.organizer.clone(),
+        payout_token: w.token_address.clone(),
+        event_id: event_id.clone(),
+        name: String::from_str(w.env, "Split Event"),
+        description: String::from_str(w.env, "Co-hosted"),
+        venue: String::from_str(w.env, "Main Hall"),
+        event_date: w.env.ledger().timestamp() + 86_401,
+        initial_tiers: vec![
+            w.env,
+            TicketTierParams {
+                name: String::from_str(w.env, "General"),
+                price: 100_000_000,
+                capacity: 10,
+            },
+        ],
+        allow_anonymous: true,
+        requires_verification: false,
+        privacy_level: PrivacyLevel::Standard,
+        max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
+        revenue_splits: splits,
+    };
+    w.event_client
+        .try_create_event(&params)
+        .map(|_| ())
+        .map_err(|e| e.unwrap())
+}
+
+#[test]
+fn test_event_split_end_to_end_distribution() {
+    let env = setup_env();
+    let w = setup_split_world(&env);
+    let cohost = Address::generate(&env);
+    let attendee = Address::generate(&env);
+    let event_id = Symbol::new(&env, "evt_split_1");
+
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (w.organizer.clone(), 7000u32),
+        (cohost.clone(), 3000u32),
+    ];
+    create_split_event(&w, &event_id, splits).unwrap();
+
+    // The split is visible both on the event and synced to payments.
+    let on_event = w.event_client.get_revenue_splits(&event_id);
+    assert_eq!(on_event.len(), 2);
+    let on_payments = w.payments_client.get_revenue_splits(&event_id);
+    assert_eq!(on_payments.len(), 2);
+
+    w.event_client
+        .update_event_status(&w.organizer, &event_id, &EventStatus::Active);
+
+    let price = 100_000_000i128;
+    w.token_admin_client.mint(&attendee, &price);
+    w.event_client
+        .register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+    assert_eq!(w.token_client.balance(&w.payments_contract_id), price);
+
+    // Mark completed on both contracts and pass the withdrawal delay.
+    w.event_client
+        .update_event_status(&w.organizer, &event_id, &EventStatus::Completed);
+    w.payments_client.set_event_status(
+        &w.organizer,
+        &event_id,
+        &payments_contract::EventStatus::Completed,
+    );
+    env.ledger().with_mut(|li| li.sequence_number = 20_000);
+
+    // Each recipient withdraws independently through the event front door.
+    w.event_client.withdraw_split(&cohost, &event_id);
+    w.event_client.withdraw_split(&w.organizer, &event_id);
+
+    assert_eq!(w.token_client.balance(&cohost), 30_000_000);
+    assert_eq!(w.token_client.balance(&w.organizer), 70_000_000);
+    assert_eq!(w.token_client.balance(&w.payments_contract_id), 0);
+}
+
+#[test]
+fn test_event_rejects_invalid_split_configurations() {
+    let env = setup_env();
+    let w = setup_split_world(&env);
+    let cohost = Address::generate(&env);
+
+    // Index 0 is not the primary organizer.
+    let wrong_primary: Vec<(Address, u32)> = vec![
+        &env,
+        (cohost.clone(), 6000u32),
+        (w.organizer.clone(), 4000u32),
+    ];
+    assert_eq!(
+        create_split_event(&w, &Symbol::new(&env, "bad1"), wrong_primary),
+        Err(EventError::InvalidRevenueSplit)
+    );
+
+    // Basis points do not sum to 10000.
+    let bad_sum: Vec<(Address, u32)> = vec![
+        &env,
+        (w.organizer.clone(), 6000u32),
+        (cohost.clone(), 3000u32),
+    ];
+    assert_eq!(
+        create_split_event(&w, &Symbol::new(&env, "bad2"), bad_sum),
+        Err(EventError::InvalidRevenueSplit)
+    );
+}
+
+#[test]
+fn test_event_flag_cohost_through_front_door() {
+    let env = setup_env();
+    let w = setup_split_world(&env);
+    let cohost = Address::generate(&env);
+    let attendee = Address::generate(&env);
+    let event_id = Symbol::new(&env, "evt_split_2");
+
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (w.organizer.clone(), 6000u32),
+        (cohost.clone(), 4000u32),
+    ];
+    create_split_event(&w, &event_id, splits).unwrap();
+    w.event_client
+        .update_event_status(&w.organizer, &event_id, &EventStatus::Active);
+
+    let price = 100_000_000i128;
+    w.token_admin_client.mint(&attendee, &price);
+    w.event_client
+        .register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    w.event_client
+        .update_event_status(&w.organizer, &event_id, &EventStatus::Completed);
+    w.payments_client.set_event_status(
+        &w.organizer,
+        &event_id,
+        &payments_contract::EventStatus::Completed,
+    );
+    env.ledger().with_mut(|li| li.sequence_number = 20_000);
+
+    // Primary organizer flags the co-host wallet through the event contract.
+    w.event_client.flag_cohost(&w.organizer, &event_id, &cohost);
+    assert!(w.payments_client.is_recipient_flagged(&event_id, &cohost));
+
+    // The flagged co-host cannot withdraw; the primary still can.
+    assert!(w
+        .event_client
+        .try_withdraw_split(&cohost, &event_id)
+        .is_err());
+    w.event_client.withdraw_split(&w.organizer, &event_id);
+    assert_eq!(w.token_client.balance(&w.organizer), 60_000_000);
+    // Co-host's share remains escrowed.
+    assert_eq!(w.token_client.balance(&w.payments_contract_id), 40_000_000);
 }

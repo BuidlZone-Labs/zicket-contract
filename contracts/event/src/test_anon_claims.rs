@@ -65,6 +65,7 @@ fn create_anon_free_event(
         event_start_ledger: 0,
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -188,6 +189,7 @@ fn test_anon_claim_rejects_non_anonymous_event() {
         event_start_ledger: 0,
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -233,6 +235,7 @@ fn test_anon_claim_paid_tier_fails() {
         event_start_ledger: 0,
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -495,6 +498,7 @@ fn test_anon_claim_tier_sold_out() {
         event_start_ledger: 0,
         event_end_ledger: 10_000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);

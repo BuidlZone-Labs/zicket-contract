@@ -50,4 +50,7 @@ pub enum EventError {
     /// postponement refund cannot be issued (e.g. the ticket was already used or
     /// transferred away).
     NoRefundableTicket = 35,
+    /// Revenue split is malformed: wrong basis-point sum, too many recipients,
+    /// a zero/duplicate recipient, or index 0 is not the primary organizer.
+    InvalidRevenueSplit = 36,
 }

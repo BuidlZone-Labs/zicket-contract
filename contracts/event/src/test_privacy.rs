@@ -43,6 +43,7 @@ fn create_event_with_privacy(
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
     client.create_event(&params);
 }

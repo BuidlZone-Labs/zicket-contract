@@ -52,6 +52,10 @@ pub struct Event {
     pub event_start_ledger: u32,
     pub event_end_ledger: u32,
     pub withdrawal_delay_ledgers: u32,
+    /// Revenue split recipients as `(Address, basis_points)`. Empty means the
+    /// legacy single-organizer payout. When set, index 0 is the primary
+    /// organizer and the basis points sum to 10000.
+    pub revenue_splits: Vec<(Address, u32)>,
 }
 
 #[contracttype]
@@ -72,6 +76,10 @@ pub struct CreateEventParams {
     pub event_start_ledger: u32,
     pub event_end_ledger: u32,
     pub withdrawal_delay_ledgers: u32,
+    /// Optional revenue split as `(Address, basis_points)`. Leave empty for the
+    /// legacy single-organizer payout. When provided: 1–5 recipients, basis
+    /// points summing to 10000, index 0 must equal `organizer`, no duplicates.
+    pub revenue_splits: Vec<(Address, u32)>,
 }
 
 #[contracttype]

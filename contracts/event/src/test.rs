@@ -83,6 +83,7 @@ fn test_create_event_duplicate_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     // First creation succeeds
@@ -105,6 +106,7 @@ fn test_create_event_duplicate_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     let result = client.try_create_event(&params_dup);
     assert_eq!(result.err(), Some(Ok(EventError::EventAlreadyExists)));
@@ -140,6 +142,7 @@ fn test_create_event_invalid_tickets_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -176,6 +179,7 @@ fn test_create_event_too_many_tickets_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -212,6 +216,7 @@ fn test_create_event_past_date_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -248,6 +253,7 @@ fn test_create_event_date_less_than_24h_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -284,6 +290,7 @@ fn test_create_event_negative_price_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -320,6 +327,7 @@ fn test_create_event_empty_name_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -356,6 +364,7 @@ fn test_create_event_empty_venue_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);
@@ -768,6 +777,7 @@ fn test_register_for_event_sold_out_fails() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -887,6 +897,7 @@ fn setup_event_with_payout_token(
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
     };
 
     client.create_event(&params);
@@ -1018,6 +1029,7 @@ fn test_reserve_expire_and_available_again() {
         event_start_ledger: 0,
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
@@ -1220,6 +1232,7 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
         event_start_ledger: 100,
         event_end_ledger: 200,
         withdrawal_delay_ledgers: 0, // Below minimum!
+        revenue_splits: soroban_sdk::Vec::new(&env),
     };
 
     let result = client.try_create_event(&params);

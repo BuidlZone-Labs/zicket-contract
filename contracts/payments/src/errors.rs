@@ -39,10 +39,23 @@ pub enum PaymentError {
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
+    /// Revenue split configuration is invalid (bad sum, too many recipients,
+    /// duplicate or empty recipient, or an attempt to mutate an existing config).
+    InvalidSplitConfig = 35,
+    /// No revenue split has been configured for this event.
+    SplitsNotConfigured = 36,
+    /// The caller is not one of the configured split recipients.
+    NotASplitRecipient = 37,
+    /// This recipient has already withdrawn (or had reassigned) its split share.
+    SplitAlreadyWithdrawn = 38,
+    /// The recipient's share is frozen because the wallet has been flagged.
+    RecipientFlagged = 39,
+    /// The recipient is not currently flagged.
+    RecipientNotFlagged = 40,
     /// A zkEmail commitment is already bound to this payment; commitments are
     /// write-once and cannot be overwritten.
-    CommitmentAlreadySet = 35,
+    CommitmentAlreadySet = 41,
     /// The payment is in a state that no longer accepts a commitment
     /// (e.g. it has been refunded).
-    CommitmentNotAllowed = 36,
+    CommitmentNotAllowed = 42,
 }
