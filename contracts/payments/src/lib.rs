@@ -2046,7 +2046,7 @@ impl PaymentsContract {
             let seller_proceeds = listing.price - platform_fee - royalty;
 
             let token_client = token::Client::new(&env, &config.payout_token);
-            token_client.transfer(&buyer, &env.current_contract_address(), &listing.price);
+            token_client.transfer(&buyer, env.current_contract_address(), &listing.price);
 
             if seller_proceeds > 0 {
                 token_client.transfer(
