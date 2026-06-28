@@ -29,7 +29,7 @@ fn setup_env() -> Env {
     env
 }
 
-/
+///
 fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = Symbol::new(env, "ev_zk_01");
     let tiers = soroban_sdk::vec![
@@ -61,13 +61,13 @@ fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Add
     event_id
 }
 
-/
+///
 fn activate_event(env: &Env, client: &EventContractClient, organizer: &Address, event_id: &Symbol) {
     let _ = env;
     client.update_event_status(organizer, event_id, &EventStatus::Active);
 }
 
-/
+///
 fn make_claim(
     env: &Env,
     claim_type: ZkClaimType,

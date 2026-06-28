@@ -1,11 +1,11 @@
 pub use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
 use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Symbol, Vec};
 
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZkClaimType {
@@ -15,47 +15,47 @@ pub enum ZkClaimType {
     Citizenship = 3,
 }
 
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkPassportClaim {
     pub claim_type: ZkClaimType,
-    /
+    ///
     pub proof: Bytes,
-    /
+    ///
     pub nullifier: BytesN<32>,
-    /
+    ///
     pub expiry_ledger: u32,
 }
 
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkVerificationConfig {
-    /
-    /
+    ///
+    ///
     pub required_claim_type: ZkClaimType,
-    /
+    ///
     pub enabled: bool,
 }
 
@@ -161,30 +161,30 @@ pub struct Reservation {
     pub expires_at: u64,
 }
 
-/
-/
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PostponementInfo {
-    /
+    ///
     pub new_date_ledger: u64,
-    /
-    /
+    ///
+    ///
     pub choice_deadline_ledger: u64,
 }
 
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimSettings {
@@ -192,14 +192,14 @@ pub struct ClaimSettings {
     pub cooldown_secs: u64,
 }
 
-/
-/
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
+///
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnonClaimSettings {
@@ -207,7 +207,7 @@ pub struct AnonClaimSettings {
     pub anon_window_size: u32,
 }
 
-/
+///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnonWindowState {

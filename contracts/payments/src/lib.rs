@@ -475,9 +475,9 @@ fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement,
 
 #[contractimpl]
 impl PaymentsContract {
-    /
-    /
-    /
+    ///
+    ///
+    ///
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -503,12 +503,12 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn get_payment(env: Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
         storage::get_payment(&env, payment_id)
     }
 
-    /
+    ///
     pub fn get_event_revenue(env: Env, event_id: Symbol) -> i128 {
         storage::get_event_revenue(&env, &event_id)
     }
@@ -521,12 +521,12 @@ impl PaymentsContract {
         storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)
     }
 
-    /
+    ///
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
         storage::get_ticket(&env, ticket_id)
     }
 
-    /
+    ///
     pub fn get_owner_tickets(env: Env, owner: Address) -> soroban_sdk::Vec<u64> {
         storage::get_owner_tickets(&env, &owner)
     }
@@ -546,7 +546,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn set_event_status(
         env: Env,
         admin: Address,
@@ -563,7 +563,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket(
         env: Env,
@@ -592,13 +592,13 @@ impl PaymentsContract {
         )
     }
 
-    /
-    /
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
     #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket_with_commitment(
         env: Env,
@@ -986,7 +986,7 @@ impl PaymentsContract {
         payments
     }
 
-    /
+    ///
     pub fn extend_withdrawal_delay(
         env: Env,
         admin: Address,
@@ -1006,7 +1006,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn cancel_event(
         env: Env,
         event_id: Symbol,
@@ -1044,7 +1044,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn claim_refund(env: Env, payer: Address, payment_id: u64) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -1108,13 +1108,13 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
     pub fn postpone_event(
         env: Env,
         event_id: Symbol,
@@ -1136,10 +1136,10 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
     pub fn resume_event(
         env: Env,
         event_id: Symbol,
@@ -1164,13 +1164,13 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
     pub fn request_postponement_refund(
         env: Env,
         caller: Address,
@@ -1240,8 +1240,8 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
+    ///
+    ///
     pub fn set_event_end_time(
         env: Env,
         admin: Address,
@@ -1265,9 +1265,9 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
+    ///
+    ///
+    ///
     pub fn release_if_expired(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         ensure_no_splits(&env, &event_id)?;
@@ -1342,9 +1342,9 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
+    ///
+    ///
+    ///
     pub fn withdraw_revenue(env: Env, event_id: Symbol, to: Address) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1409,7 +1409,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn get_withdrawal_history(
         env: Env,
         event_id: Symbol,
@@ -1417,7 +1417,7 @@ impl PaymentsContract {
         storage::get_withdrawal_history(&env, &event_id)
     }
 
-    /
+    ///
     pub fn set_platform_fee(env: Env, fee_bps: u32, wallet: Address) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1436,18 +1436,18 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn get_platform_fee_bps(env: Env) -> u32 {
         storage::get_platform_fee_bps(&env)
     }
 
-    /
+    ///
     pub fn get_platform_revenue(env: Env, event_id: Symbol) -> i128 {
         storage::get_platform_revenue(&env, &event_id)
     }
 
-    /
-    /
+    ///
+    ///
     pub fn withdraw_platform_revenue(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1481,7 +1481,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn set_event_privacy(
         env: Env,
         admin: Address,
@@ -1498,17 +1498,17 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
         storage::get_emission_privacy(&env, &event_id)
     }
 
-    /
+    ///
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
 
-    /
+    ///
     pub fn migrate(env: Env, admin: Address) -> Result<u32, PaymentError> {
         require_not_paused(&env)?;
         admin.require_auth();
@@ -1538,26 +1538,26 @@ impl PaymentsContract {
         Ok(new_version)
     }
 
-    /
+    ///
     pub fn get_event_token_revenue(env: Env, event_id: Symbol, token_address: Address) -> i128 {
         storage::get_event_token_revenue(&env, &event_id, &token_address)
     }
 
-    /
+    ///
     pub fn get_event_tokens(env: Env, event_id: Symbol) -> soroban_sdk::Vec<Address> {
         storage::get_event_tokens(&env, &event_id)
     }
 
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
     pub fn get_user_tickets(env: Env, event_id: Symbol, user: Address) -> u32 {
         storage::get_user_event_tickets(&env, &event_id, &user)
     }
 
-    /
+    ///
     pub fn withdraw_token(
         env: Env,
         organizer: Address,
@@ -1642,7 +1642,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
+    ///
     pub fn withdraw_all_tokens(
         env: Env,
         organizer: Address,
@@ -1723,7 +1723,6 @@ impl PaymentsContract {
         Ok(())
     }
 
-<<<<<<< HEAD
     // ── Revenue splits & co-host wallet management ────────────────────────────
 
     /// Register the revenue split for an event. Callable only by the linked event
@@ -2021,13 +2020,13 @@ impl PaymentsContract {
         Ok(())
     }
 
-    /
-    /
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
+    ///
     pub fn get_payment_commitment(
         env: Env,
         payment_id: u64,
@@ -2036,11 +2035,11 @@ impl PaymentsContract {
         Ok(payment.zk_email_commitment)
     }
 
-    /
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
+    ///
     pub fn verify_email_commitment(
         env: Env,
         payment_id: u64,

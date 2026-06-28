@@ -2423,8 +2423,8 @@ fn test_partial_refund_exceeds_amount_fails() {
     assert!(result.is_err());
 }
 
-/
-/
+///
+///
 #[test]
 fn test_per_user_limit_within_limit_succeeds() {
     let env = Env::default();
@@ -2476,8 +2476,8 @@ fn test_per_user_limit_within_limit_succeeds() {
     assert_eq!(client.get_owner_tickets(&payer).len(), 2);
 }
 
-/
-/
+///
+///
 #[test]
 fn test_per_user_limit_exceed_is_rejected() {
     let env = Env::default();
@@ -2531,9 +2531,9 @@ fn test_per_user_limit_exceed_is_rejected() {
     assert_eq!(token_client.balance(&payer), amount * 2);
 }
 
-/
-/
-/
+///
+///
+///
 #[test]
 fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
     let env = Env::default();
