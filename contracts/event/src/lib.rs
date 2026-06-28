@@ -30,7 +30,6 @@ pub struct EventContract;
 
 #[contractimpl]
 impl EventContract {
-    ///
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -45,8 +44,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
     pub fn create_event(env: Env, params: CreateEventParams) -> Result<Event, EventError> {
         params.organizer.require_auth();
         if params.name.is_empty() {
@@ -169,19 +166,13 @@ impl EventContract {
 
         Ok(event)
     }
-
-    ///
     pub fn get_event(env: Env, event_id: Symbol) -> Result<Event, EventError> {
         storage::get_event(&env, &event_id)
     }
-
-    ///
     pub fn get_event_status(env: Env, event_id: Symbol) -> Result<EventStatus, EventError> {
         let event = storage::get_event(&env, &event_id)?;
         Ok(event.status)
     }
-
-    ///
     pub fn update_event_details(env: Env, params: UpdateEventParams) -> Result<Event, EventError> {
         params.organizer.require_auth();
 
@@ -256,8 +247,6 @@ impl EventContract {
             .unwrap()
             .requires_verification
     }
-
-    ///
     pub fn add_ticket_tier(
         env: Env,
         organizer: Address,
@@ -308,8 +297,6 @@ impl EventContract {
 
         Ok(new_tier)
     }
-
-    ///
     pub fn update_tier(
         env: Env,
         organizer: Address,
@@ -378,9 +365,6 @@ impl EventContract {
         save_event(&env, &event_id, &event);
         Ok(())
     }
-
-    ///
-    ///
     pub fn update_event_status(
         env: Env,
         organizer: Address,
@@ -411,9 +395,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
     pub fn cancel_event(env: Env, organizer: Address, event_id: Symbol) -> Result<(), EventError> {
         organizer.require_auth();
 
@@ -444,20 +425,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn postpone_event(
         env: Env,
         organizer: Address,
@@ -528,17 +495,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn finalize_postponement(
         env: Env,
         organizer: Address,
@@ -605,30 +561,10 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
-    ///
     pub fn get_postponement(env: Env, event_id: Symbol) -> Result<PostponementInfo, EventError> {
         storage::get_event(&env, &event_id)?;
         storage::get_postponement(&env, &event_id).ok_or(EventError::EventNotPostponed)
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn request_postponement_refund(
         env: Env,
         attendee: Address,
@@ -666,8 +602,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
     pub fn reserve_ticket(
         env: Env,
         attendee: Address,
@@ -738,8 +672,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
     pub fn release_expired_reservation(
         env: Env,
         event_id: Symbol,
@@ -913,13 +845,6 @@ impl EventContract {
         storage::get_event(&env, &event_id)?;
         Ok(storage::is_registered(&env, &event_id, &attendee))
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn get_attendees(
         env: Env,
         event_id: Symbol,
@@ -932,10 +857,6 @@ impl EventContract {
             PrivacyLevel::Anonymous => Ok(soroban_sdk::Vec::new(&env)),
         }
     }
-
-    ///
-    ///
-    ///
     pub fn get_attendees_as_organizer(
         env: Env,
         organizer: Address,
@@ -948,8 +869,6 @@ impl EventContract {
         }
         Ok(storage::get_attendees(&env, &event_id))
     }
-
-    ///
     pub fn withdraw_revenue(
         env: Env,
         organizer: Address,
@@ -971,8 +890,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
     pub fn get_withdrawal_history(
         env: Env,
         event_id: Symbol,
@@ -982,8 +899,6 @@ impl EventContract {
         let payments_client = PaymentsContractClient::new(&env, &payments_contract);
         Ok(payments_client.get_withdrawal_history(&event_id))
     }
-
-    ///
     pub fn set_event_privacy(
         env: Env,
         organizer: Address,
@@ -1000,18 +915,9 @@ impl EventContract {
         storage::set_event_privacy(&env, &event_id, &level);
         Ok(())
     }
-
-    ///
     pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
         storage::get_event_privacy(&env, &event_id)
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn set_claim_settings(
         env: Env,
         organizer: Address,
@@ -1034,20 +940,9 @@ impl EventContract {
         );
         Ok(())
     }
-
-    ///
     pub fn get_claim_settings(env: Env, event_id: Symbol) -> ClaimSettings {
         storage::get_claim_settings(&env, &event_id)
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn claim_anonymous_ticket(
         env: Env,
         event_id: Symbol,
@@ -1111,16 +1006,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn set_anon_claim_settings(
         env: Env,
         organizer: Address,
@@ -1143,36 +1028,9 @@ impl EventContract {
         );
         Ok(())
     }
-
-    ///
     pub fn get_anon_claim_settings(env: Env, event_id: Symbol) -> AnonClaimSettings {
         storage::get_anon_claim_settings(&env, &event_id)
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn verify_and_attend(
         env: Env,
         event_id: Symbol,
@@ -1250,14 +1108,6 @@ impl EventContract {
 
         Ok(())
     }
-
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
-    ///
     pub fn set_zk_config(
         env: Env,
         organizer: Address,
@@ -1272,25 +1122,15 @@ impl EventContract {
         storage::set_zk_verification_config(&env, &event_id, &config);
         Ok(())
     }
-
-    ///
     pub fn get_zk_config(env: Env, event_id: Symbol) -> ZkVerificationConfig {
         storage::get_zk_verification_config(&env, &event_id)
     }
-
-    ///
-    ///
-    ///
     pub fn is_nullifier_used(env: Env, event_id: Symbol, nullifier: BytesN<32>) -> bool {
         storage::has_zk_nullifier(&env, &event_id, &nullifier)
     }
-
-    ///
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
-
-    ///
     pub fn migrate(env: Env, admin: Address) -> Result<u32, EventError> {
         admin.require_auth();
 
@@ -1417,10 +1257,6 @@ fn validate_revenue_splits(
 
     Ok(())
 }
-
-///
-///
-///
 fn has_valid_ticket_for_event(
     ticket_client: &TicketContractClient,
     attendee: &Address,

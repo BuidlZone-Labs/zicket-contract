@@ -1,12 +1,6 @@
 #![no_std]
 
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, Bytes, BytesN, Env};
-
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PrivacyLevel {
@@ -14,13 +8,6 @@ pub enum PrivacyLevel {
     Private = 1,
     Anonymous = 2,
 }
-
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MaskedAddress {
@@ -28,18 +15,6 @@ pub enum MaskedAddress {
     Partial(Bytes),
     Hashed(BytesN<32>),
 }
-
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
 pub fn mask_address(env: &Env, address: &Address, privacy_level: PrivacyLevel) -> MaskedAddress {
     match privacy_level {
         PrivacyLevel::Standard => MaskedAddress::Full(address.clone()),

@@ -72,9 +72,6 @@ pub struct EventRegistration {
     pub tickets_sold: u32,
     pub registered_at: u64,
 }
-
-///
-///
 pub fn emit_event_created(env: &Env, params: &CreateEventParams, level: &PrivacyLevel) {
     EventCreated {
         event_id: params.event_id.clone(),
@@ -87,8 +84,6 @@ pub fn emit_event_created(env: &Env, params: &CreateEventParams, level: &Privacy
     }
     .publish(env);
 }
-
-///
 pub fn emit_event_updated(env: &Env, event: &Event) {
     EventUpdated {
         event_id: event.event_id.clone(),
@@ -100,8 +95,6 @@ pub fn emit_event_updated(env: &Env, event: &Event) {
     }
     .publish(env);
 }
-
-///
 pub fn emit_status_changed(
     env: &Env,
     event_id: &Symbol,
@@ -116,9 +109,6 @@ pub fn emit_status_changed(
     }
     .publish(env);
 }
-
-///
-///
 pub fn emit_event_cancelled(
     env: &Env,
     event_id: &Symbol,
@@ -132,10 +122,6 @@ pub fn emit_event_cancelled(
     }
     .publish(env);
 }
-
-///
-///
-///
 pub fn emit_event_postponed(
     env: &Env,
     event_id: &Symbol,
@@ -152,9 +138,6 @@ pub fn emit_event_postponed(
     }
     .publish(env);
 }
-
-///
-///
 pub fn emit_event_resumed(
     env: &Env,
     event_id: &Symbol,
@@ -169,9 +152,6 @@ pub fn emit_event_resumed(
     }
     .publish(env);
 }
-
-///
-///
 pub fn emit_registration(
     env: &Env,
     event_id: &Symbol,
@@ -197,9 +177,6 @@ pub struct AnonEventRegistration {
     pub tickets_sold: u32,
     pub registered_at: u64,
 }
-
-///
-///
 pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, tickets_sold: u32) {
     AnonEventRegistration {
         event_id: event_id.clone(),
@@ -209,15 +186,6 @@ pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, ticket
     }
     .publish(env);
 }
-
-///
-///
-///
-///
-///
-///
-///
-///
 #[contractevent(data_format = "vec", topics = ["zk_attend"])]
 pub struct ZkVerifiedAttendance {
     pub event_id: Symbol,
@@ -226,10 +194,6 @@ pub struct ZkVerifiedAttendance {
     pub tickets_sold: u32,
     pub registered_at: u64,
 }
-
-///
-///
-///
 pub fn emit_zk_verified_attendance(
     env: &Env,
     event_id: &Symbol,

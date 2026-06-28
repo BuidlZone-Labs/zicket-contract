@@ -182,23 +182,15 @@ impl TicketContract {
 
         Ok(())
     }
-
-    ///
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, TicketError> {
         storage::get_ticket(&env, ticket_id)
     }
-
-    ///
     pub fn get_owner_tickets(env: Env, owner: Address) -> Vec<u64> {
         storage::get_tickets_by_owner(&env, owner)
     }
-
-    ///
     pub fn get_event_tickets(env: Env, event_id: Symbol) -> Vec<u64> {
         storage::get_tickets_by_event(&env, event_id)
     }
-
-    ///
     pub fn cancel_ticket(env: Env, ticket_id: u64, caller: Address) -> Result<(), TicketError> {
         caller.require_auth();
 
@@ -295,13 +287,9 @@ impl TicketContract {
 
         Ok(())
     }
-
-    ///
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
-
-    ///
     pub fn migrate(env: Env, caller: Address) -> Result<u32, TicketError> {
         caller.require_auth();
 
