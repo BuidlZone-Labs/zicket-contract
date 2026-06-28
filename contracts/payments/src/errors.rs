@@ -35,14 +35,14 @@ pub enum PaymentError {
     EventSoldOut = 29,
     NonceRequired = 30,
     ContractPaused = 31,
-    /
+    ///
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
-    /
-    /
+    ///
+    ///
     CommitmentAlreadySet = 35,
-    /
-    /
+    ///
+    ///
     CommitmentNotAllowed = 36,
 }

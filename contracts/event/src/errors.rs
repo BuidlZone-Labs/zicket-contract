@@ -33,35 +33,35 @@ pub enum EventError {
     AnonCommitmentReused = 27,
     AnonClaimWindowFull = 28,
     AnonymousClaimsNotEnabled = 29,
-    /
-    /
+    ///
+    ///
     PostponementWindowTooShort = 30,
-    /
-    /
+    ///
+    ///
     InvalidPostponementDate = 31,
-    /
-    /
+    ///
+    ///
     MaxPostponementsReached = 32,
-    /
+    ///
     PostponementWindowOpen = 33,
-    /
+    ///
     EventNotPostponed = 34,
-    /
-    /
-    /
+    ///
+    ///
+    ///
     NoRefundableTicket = 35,
-    /
+    ///
     ZkProofExpired = 36,
-    /
-    /
+    ///
+    ///
     ZkNullifierReused = 37,
-    /
-    /
+    ///
+    ///
     ZkVerificationRequired = 38,
-    /
-    /
+    ///
+    ///
     ZkProofInvalid = 39,
-    /
-    /
+    ///
+    ///
     ZkClaimTypeMismatch = 40,
 }

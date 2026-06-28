@@ -13,7 +13,7 @@ fn setup_env() -> Env {
     env
 }
 
-/
+///
 fn setup_contracts(
     env: &Env,
     event_client: &EventContractClient,
@@ -32,7 +32,7 @@ fn setup_contracts(
     payments_contract_id
 }
 
-/
+///
 fn create_free_event(
     env: &Env,
     client: &EventContractClient,
@@ -68,7 +68,7 @@ fn create_free_event(
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
 }
 
-/
+///
 fn create_paid_event(
     env: &Env,
     client: &EventContractClient,

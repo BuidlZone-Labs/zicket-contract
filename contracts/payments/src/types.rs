@@ -47,10 +47,10 @@ pub struct PaymentRecord {
     pub paid_at: u64,
     pub privacy_level: PaymentPrivacy,
     pub refunded_amount: i128,
-    /
-    /
-    /
-    /
+    ///
+    ///
+    ///
+    ///
     pub zk_email_commitment: Option<BytesN<32>>,
 }
 

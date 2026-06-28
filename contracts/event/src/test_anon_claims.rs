@@ -33,7 +33,7 @@ fn setup_contracts(
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
 }
 
-/
+///
 fn create_anon_free_event(
     env: &Env,
     client: &EventContractClient,
@@ -321,10 +321,10 @@ fn test_anon_window_resets_after_ledger_advance() {
     assert_eq!(event.sold_count, 3);
 }
 
-/
-/
-/
-/
+///
+///
+///
+///
 #[test]
 fn test_anon_window_straddle_boundary() {
     let env = setup_env();
@@ -346,12 +346,12 @@ fn test_anon_window_straddle_boundary() {
     assert_eq!(event.sold_count, 2);
 }
 
-/
-/
-/
-/
-/
-/
+///
+///
+///
+///
+///
+///
 #[test]
 fn test_single_source_rate_limited_per_window() {
     let env = setup_env();

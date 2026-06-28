@@ -108,12 +108,12 @@ impl FactoryContract {
         storage::get_organizer_events(&env, &organizer)
     }
 
-    /
+    ///
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
 
-    /
+    ///
     pub fn migrate(env: Env, admin: Address) -> Result<u32, FactoryError> {
         admin.require_auth();
 
