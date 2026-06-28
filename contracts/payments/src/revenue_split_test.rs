@@ -565,3 +565,48 @@ fn test_cancelled_split_event_distributes_only_withdrawable_ratio() {
     // Remaining 100M stays escrowed for attendee refunds.
     assert_eq!(tc.balance(&contract_id), 100_000_000);
 }
+
+#[test]
+fn test_cancelled_split_settlement_survives_attendee_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_admin, token, client, contract_id, event_contract) = make_payments(&env, 0);
+    let organizer = Address::generate(&env);
+    let cohost = Address::generate(&env);
+    let event_id = symbol_short!("REFND");
+    bind(&client, &event_contract, &event_id, &organizer, &token);
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (organizer.clone(), 6000u32),
+        (cohost.clone(), 4000u32),
+    ];
+    client.sync_revenue_splits(&event_contract, &event_id, &splits);
+
+    let payer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token).mint(&payer, &200_000_000);
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &200_000_000,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+    );
+
+    env.ledger().with_mut(|li| li.sequence_number = 500);
+    client.cancel_event(&event_id, &organizer);
+
+    // Attendee claims their 50% refund before organizers withdraw splits.
+    client.claim_refund(&payer, &payment_id);
+
+    env.ledger().with_mut(|li| li.sequence_number = 700);
+
+    let tc = token::Client::new(&env, &token);
+    client.withdraw_split(&cohost, &event_id);
+    client.withdraw_split(&organizer, &event_id);
+
+    assert_eq!(tc.balance(&cohost), 40_000_000);
+    assert_eq!(tc.balance(&organizer), 60_000_000);
+    assert_eq!(tc.balance(&contract_id), 0);
+}

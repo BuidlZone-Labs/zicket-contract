@@ -711,16 +711,27 @@ pub fn increment_event_sold_count(env: &Env, event_id: &Symbol) -> Result<(), Pa
 
 /// Whether the event has any revenue split configured (more than zero recipients).
 pub fn has_splits(env: &Env, event_id: &Symbol) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::EventSplits(event_id.clone()))
+    let key = DataKey::EventSplits(event_id.clone());
+    let exists = env.storage().persistent().has(&key);
+    if exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    exists
 }
 
 pub fn get_splits(env: &Env, event_id: &Symbol) -> Vec<RevenueSplit> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventSplits(event_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    let key = DataKey::EventSplits(event_id.clone());
+    match env.storage().persistent().get(&key) {
+        Some(splits) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            splits
+        }
+        None => Vec::new(env),
+    }
 }
 
 pub fn set_splits(env: &Env, event_id: &Symbol, splits: &Vec<RevenueSplit>) {
@@ -732,9 +743,16 @@ pub fn set_splits(env: &Env, event_id: &Symbol, splits: &Vec<RevenueSplit>) {
 }
 
 pub fn get_split_settlement(env: &Env, event_id: &Symbol) -> Option<SplitSettlement> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::SplitSettlement(event_id.clone()))
+    let key = DataKey::SplitSettlement(event_id.clone());
+    match env.storage().persistent().get(&key) {
+        Some(settlement) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            Some(settlement)
+        }
+        None => None,
+    }
 }
 
 pub fn set_split_settlement(env: &Env, event_id: &Symbol, settlement: &SplitSettlement) {
@@ -746,13 +764,16 @@ pub fn set_split_settlement(env: &Env, event_id: &Symbol, settlement: &SplitSett
 }
 
 pub fn get_split_withdrawn(env: &Env, event_id: &Symbol, recipient: &Address) -> i128 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::SplitWithdrawn(
-            event_id.clone(),
-            recipient.clone(),
-        ))
-        .unwrap_or(0)
+    let key = DataKey::SplitWithdrawn(event_id.clone(), recipient.clone());
+    match env.storage().persistent().get(&key) {
+        Some(amount) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            amount
+        }
+        None => 0,
+    }
 }
 
 pub fn set_split_withdrawn(env: &Env, event_id: &Symbol, recipient: &Address, amount: i128) {
@@ -764,10 +785,16 @@ pub fn set_split_withdrawn(env: &Env, event_id: &Symbol, recipient: &Address, am
 }
 
 pub fn is_split_flagged(env: &Env, event_id: &Symbol, recipient: &Address) -> bool {
-    env.storage()
-        .persistent()
-        .get(&DataKey::SplitFlagged(event_id.clone(), recipient.clone()))
-        .unwrap_or(false)
+    let key = DataKey::SplitFlagged(event_id.clone(), recipient.clone());
+    match env.storage().persistent().get(&key) {
+        Some(flagged) => {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+            flagged
+        }
+        None => false,
+    }
 }
 
 pub fn set_split_flagged(env: &Env, event_id: &Symbol, recipient: &Address, flagged: bool) {

@@ -296,7 +296,7 @@ pub fn emit_cohost_flagged(env: &Env, event_id: Symbol, recipient: Address, flag
     .publish(env);
 }
 
-#[contractevent(data_format = "vec", topics = ["flag_resolved"])]
+#[contractevent(data_format = "vec", topics = ["flagged_share_resolved"])]
 pub struct FlaggedShareResolved {
     pub event_type: Symbol,
     pub event_id: Symbol,

@@ -288,6 +288,32 @@ fn collect_held_payments_for_token(
     Ok((total, payments))
 }
 
+/// Sum the organizer/co-host withdrawable pool for a cancelled event.
+///
+/// Uses every non-released payment so settlement still works after attendees
+/// claim cancellation refunds and their payments move to `Refunded`.
+fn collect_cancellation_organizer_pool(
+    env: &Env,
+    event_id: &Symbol,
+    token_address: &Address,
+    withdrawable_ratio_bps: u32,
+) -> Result<i128, PaymentError> {
+    let payment_ids = storage::get_event_payments(env, event_id);
+    let mut total = 0i128;
+
+    for index in 0..payment_ids.len() {
+        let payment_id = payment_ids
+            .get(index)
+            .ok_or(PaymentError::PaymentNotFound)?;
+        let payment = storage::get_payment(env, payment_id)?;
+        if payment.token == *token_address && payment.status != PaymentStatus::Released {
+            total += payment.amount * (withdrawable_ratio_bps as i128) / 10_000;
+        }
+    }
+
+    Ok(total)
+}
+
 /// Reject legacy single-organizer withdrawal paths for events that carry a
 /// revenue split. Split events must settle through `withdraw_split` so that the
 /// platform fee is deducted once and each recipient is paid exactly their share.
@@ -381,13 +407,22 @@ fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement,
     validate_revenue_invariant(env, event_id)?;
 
     let payout_token = storage::get_event_payout_token(env, event_id)?;
-    let (total, payments_to_release) =
-        collect_held_payments_for_token(env, event_id, &payout_token)?;
-    if total <= 0 {
-        return Err(PaymentError::NoRevenue);
-    }
-
-    let total_to_withdraw = total * (withdrawable_ratio_bps as i128) / 10_000;
+    let is_cancelled = storage::get_event_status(env, event_id) == Some(EventStatus::Cancelled);
+    let (total_to_withdraw, payments_to_release) = if is_cancelled {
+        let pool = collect_cancellation_organizer_pool(
+            env,
+            event_id,
+            &payout_token,
+            withdrawable_ratio_bps,
+        )?;
+        (pool, soroban_sdk::Vec::new(env))
+    } else {
+        let (total, payments) = collect_held_payments_for_token(env, event_id, &payout_token)?;
+        if total <= 0 {
+            return Err(PaymentError::NoRevenue);
+        }
+        (total * (withdrawable_ratio_bps as i128) / 10_000, payments)
+    };
     if total_to_withdraw <= 0 {
         return Err(PaymentError::NoRevenue);
     }
@@ -412,6 +447,8 @@ fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement,
             storage::update_payment(env, &payment)?;
         }
         storage::set_event_token_revenue(env, event_id, &payout_token, 0);
+        let current_rev = storage::get_event_revenue(env, event_id);
+        storage::set_event_revenue(env, event_id, current_rev - total_to_withdraw);
     } else {
         let current_token_rev = storage::get_event_token_revenue(env, event_id, &payout_token);
         storage::set_event_token_revenue(
@@ -1759,6 +1796,13 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidSplitConfig);
         }
 
+        let config =
+            storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)?;
+        let (primary, _) = splits.get(0).ok_or(PaymentError::InvalidSplitConfig)?;
+        if primary != config.organizer {
+            return Err(PaymentError::InvalidSplitConfig);
+        }
+
         let mut normalized: soroban_sdk::Vec<RevenueSplit> = soroban_sdk::Vec::new(&env);
         let mut total: u32 = 0;
         for i in 0..len {
@@ -1972,7 +2016,6 @@ impl PaymentsContract {
         storage::is_split_flagged(&env, &event_id, &recipient)
     }
 
-
     /// Amount already paid out to a given split recipient for an event.
     pub fn get_split_withdrawn(env: Env, event_id: Symbol, recipient: Address) -> i128 {
         storage::get_split_withdrawn(&env, &event_id, &recipient)
@@ -2052,8 +2095,8 @@ impl PaymentsContract {
 #[cfg(test)]
 mod multi_token_test;
 #[cfg(test)]
-mod revenue_split_test;
-#[cfg(test)]
 mod receipt_commitment_test;
+#[cfg(test)]
+mod revenue_split_test;
 #[cfg(test)]
 mod test;
