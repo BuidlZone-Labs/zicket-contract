@@ -676,8 +676,6 @@ fn test_withdraw_revenue_success() {
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
-
-    // 1. Setup funds and pay for ticket
     token_contract.mint(&admin, &amount);
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &amount);
@@ -694,28 +692,20 @@ fn test_withdraw_revenue_success() {
     assert_eq!(token_client.balance(&payer), 0);
     assert_eq!(token_client.balance(&contract_id), amount);
     assert_eq!(client.get_event_revenue(&event_id), amount);
-
-    // 2. Withdraw revenue
     let organizer = Address::generate(&env);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
     });
     client.withdraw_revenue(&event_id, &organizer);
-
-    // 3. Verify balances
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(token_client.balance(&organizer), amount);
     assert_eq!(client.get_event_revenue(&event_id), 0);
-
-    // 4. Verify withdrawal history
     let history = client.get_withdrawal_history(&event_id);
     assert_eq!(history.len(), 1);
     let record = history.get(0).unwrap();
     assert_eq!(record.amount, amount);
     assert_eq!(record.organizer, organizer);
     assert_eq!(record.timestamp, 1704067200);
-
-    // 5. Try to withdraw again -> should fail as revenue is 0
     let result = client.try_withdraw_revenue(&event_id, &organizer);
     assert!(result.is_err());
 }
@@ -760,8 +750,6 @@ fn test_refund_after_withdrawal() {
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
-
-    // First withdrawal
     token_contract.mint(&admin, &(amount * 3));
     token_client.transfer(&admin, &payer, &(amount * 3));
     client.pay_for_ticket(
@@ -788,8 +776,6 @@ fn test_refund_after_withdrawal() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Set status to complete and withdraw
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
@@ -927,13 +913,9 @@ fn test_mixed_refund_then_withdraw() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Refund payment 2
     client.refund(&admin, &pid2, &None);
     assert_eq!(client.get_event_revenue(&event_id), amount1 + amount3);
     assert_eq!(token_client.balance(&payer2), amount2);
-
-    // Withdraw remaining
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
@@ -1015,8 +997,6 @@ fn test_query_payments() {
 
     bind_event(&client, &event_contract, &event1, &organizer, &token);
     bind_event(&client, &event_contract, &event2, &organizer, &token);
-
-    // P1 -> E1
     client.pay_for_ticket(
         &1,
         &payer1,
@@ -1026,7 +1006,6 @@ fn test_query_payments() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    // P1 -> E2
     client.pay_for_ticket(
         &2,
         &payer1,
@@ -1036,7 +1015,6 @@ fn test_query_payments() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    // P2 -> E1
     client.pay_for_ticket(
         &1,
         &payer2,
@@ -1046,7 +1024,6 @@ fn test_query_payments() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    // P2 -> E2
     client.pay_for_ticket(
         &2,
         &payer2,
@@ -1056,8 +1033,6 @@ fn test_query_payments() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Query by Event E1
     let e1_payments = client.get_payments_by_event(&event1);
     assert_eq!(e1_payments.len(), 2);
     assert_eq!(e1_payments.get(0).unwrap().event_id, event1);
@@ -1066,8 +1041,6 @@ fn test_query_payments() {
         e1_payments.get(0).unwrap().payer,
         e1_payments.get(1).unwrap().payer
     );
-
-    // Query by User P1
     let p1_payments = client.get_payments_by_user(&payer1);
     assert_eq!(p1_payments.len(), 2);
     assert_eq!(p1_payments.get(0).unwrap().payer, payer1);
@@ -1108,10 +1081,6 @@ fn test_pay_for_ticket_with_email_hash() {
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.amount, amount);
 }
-
-// ============================================================
-// Issue #43: Escrow Timeout / Auto-Release Tests
-// ============================================================
 
 #[test]
 fn test_set_event_end_time_success() {
@@ -1288,10 +1257,6 @@ fn test_release_if_expired_no_held_funds_still_marks_released() {
     assert_eq!(result.err(), Some(Ok(PaymentError::EscrowAlreadyReleased)));
 }
 
-// ============================================================
-// Issue #53: Privacy-Preserving Event Emissions Tests
-// ============================================================
-
 #[test]
 fn test_payments_privacy_default_is_standard() {
     use super::PrivacyLevel;
@@ -1467,12 +1432,8 @@ fn test_anonymous_event_does_not_expose_payer() {
         &token,
         &PaymentPrivacy::Anonymous,
     );
-
-    // Verify the payment was recorded with Anonymous privacy on-chain
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.privacy_level, PaymentPrivacy::Anonymous);
-    // The payer is still stored on-chain for refund/admin purposes,
-    // but the emitted event uses PaymentReceivedAnonymous (no payer field)
     assert_eq!(payment.payer, payer);
     assert!(payment_id > 0);
 }
@@ -1804,8 +1765,6 @@ fn test_idempotent_payment() {
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
-
-    // First attempt succeeds
     let nonce = 12345u64;
     client.pay_for_ticket(
         &nonce,
@@ -1816,16 +1775,12 @@ fn test_idempotent_payment() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Check storage manually
     let contract_id = client.address.clone();
     let has_in_storage = env.as_contract(&contract_id, || storage::has_nonce(&env, &payer, nonce));
     assert!(
         has_in_storage,
         "Nonce should be in storage after first call"
     );
-
-    // First attempt succeeds
     let nonce = 123456u64;
     client.pay_for_ticket(
         &nonce,
@@ -1836,8 +1791,6 @@ fn test_idempotent_payment() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Second attempt with same nonce fails (should panic with DuplicateRequest)
     client.pay_for_ticket(
         &nonce,
         &payer,
@@ -1860,12 +1813,8 @@ fn test_idempotent_payment_with_options() {
     let event_id = Symbol::new(&env, "EVENT1");
     let amount = 100_000_000i128;
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
-
-    // First attempt succeeds
     let nonce = 54321u64;
     client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
-
-    // Second attempt with same nonce fails
     client.pay_for_ticket_with_options(&nonce, &payer, &event_id, &amount, &token, &true, &false);
 }
 
@@ -1874,7 +1823,6 @@ fn test_pay_for_ticket_transfer_failure_no_state_change() {
     let env = Env::default();
     env.mock_all_auths();
     let (_admin, token, client, contract_id, _token_contract, _) = setup_contract_with_token(&env);
-    // payer has zero balance - transfer will fail
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
@@ -1888,16 +1836,12 @@ fn test_pay_for_ticket_transfer_failure_no_state_change() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
-    // No payment record created
     assert_eq!(
         client.try_get_payment(&1).err(),
         Some(Ok(PaymentError::PaymentNotFound))
     );
-    // Revenue unchanged
     assert_eq!(client.get_event_revenue(&event_id), 0);
-    // No tickets issued
     assert_eq!(client.get_owner_tickets(&payer).len(), 0);
-    // Contract holds no tokens
     let token_client = token::Client::new(&env, &token);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
@@ -1911,11 +1855,9 @@ fn test_pay_for_ticket_partial_funds_no_state_change() {
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
     let partial = 50_000_000i128;
-    // Mint only partial funds to payer
     token_contract.mint(&admin, &partial);
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &partial);
-    // Attempt to pay full amount - should fail
     let result = client.try_pay_for_ticket(
         &1,
         &payer,
@@ -1926,15 +1868,11 @@ fn test_pay_for_ticket_partial_funds_no_state_change() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
-    // No state written
     assert_eq!(client.get_event_revenue(&event_id), 0);
     assert_eq!(client.get_owner_tickets(&payer).len(), 0);
     assert_eq!(token_client.balance(&contract_id), 0);
-    // Payer still holds their partial funds
     assert_eq!(token_client.balance(&payer), partial);
 }
-
-// ===== Max Tickets Per User Tests =====
 
 #[test]
 fn test_max_tickets_per_user_enforcement() {
@@ -1948,14 +1886,10 @@ fn test_max_tickets_per_user_enforcement() {
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("LIMIT_EV");
     let amount = 100_000_000i128;
-
-    // Mint plenty of tokens for tests
     token_contract.mint(&admin, &(amount * 5));
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer1, &(amount * 3));
     token_client.transfer(&admin, &payer2, &amount);
-
-    // Sync config with limit of 2 tickets per user
     client.sync_event_config(
         &event_contract_id,
         &event_id,
@@ -1969,8 +1903,6 @@ fn test_max_tickets_per_user_enforcement() {
         &1000,
         &17280,
     );
-
-    // Payer 1: First ticket -> Success
     client.pay_for_ticket(
         &1,
         &payer1,
@@ -1980,8 +1912,6 @@ fn test_max_tickets_per_user_enforcement() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Payer 1: Second ticket -> Success
     client.pay_for_ticket(
         &2,
         &payer1,
@@ -1991,8 +1921,6 @@ fn test_max_tickets_per_user_enforcement() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Payer 1: Third ticket -> Failure
     let result = client.try_pay_for_ticket(
         &3,
         &payer1,
@@ -2003,8 +1931,6 @@ fn test_max_tickets_per_user_enforcement() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
-
-    // Payer 2: First ticket -> Success (limit is per user)
     client.pay_for_ticket(
         &1,
         &payer2,
@@ -2089,8 +2015,6 @@ fn test_event_supply_enforcement() {
     assert_eq!(token_client.balance(&payer3), amount);
 }
 
-// ===== Platform Fee Tests =====
-
 #[test]
 fn test_initialize_invalid_fee_bps() {
     let env = Env::default();
@@ -2119,12 +2043,10 @@ fn test_withdraw_revenue_with_fee() {
     env.ledger().with_mut(|li| {
         li.timestamp = 1704067200;
     });
-
-    // 2.5% fee = 250 bps
     let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 250);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
-    let amount = 100_000_000i128; // 100 tokens
+    let amount = 100_000_000i128;
 
     token_contract.mint(&admin, &amount);
     let token_client = token::Client::new(&env, &token);
@@ -2138,28 +2060,17 @@ fn test_withdraw_revenue_with_fee() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Withdraw revenue — fee should be deducted
     let organizer = Address::generate(&env);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
     });
     client.withdraw_revenue(&event_id, &organizer);
-
-    // Fee = 100_000_000 * 250 / 10_000 = 2_500_000
     let expected_fee = 2_500_000i128;
     let expected_organizer = amount - expected_fee;
-
-    // Organizer gets amount minus fee
     assert_eq!(token_client.balance(&organizer), expected_organizer);
-    // Contract still holds the fee portion
     assert_eq!(token_client.balance(&contract_id), expected_fee);
-    // Platform revenue accumulated
     assert_eq!(client.get_platform_revenue(&event_id), expected_fee);
-    // Event revenue is reset
     assert_eq!(client.get_event_revenue(&event_id), 0);
-
-    // Withdrawal history records organizer amount (after fee)
     let history = client.get_withdrawal_history(&event_id);
     assert_eq!(history.len(), 1);
     assert_eq!(history.get(0).unwrap().amount, expected_organizer);
@@ -2172,8 +2083,6 @@ fn test_withdraw_revenue_zero_fee() {
     env.ledger().with_mut(|li| {
         li.timestamp = 1704067200;
     });
-
-    // 0% fee
     let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 0);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -2197,8 +2106,6 @@ fn test_withdraw_revenue_zero_fee() {
         li.sequence_number = 20000;
     });
     client.withdraw_revenue(&event_id, &organizer);
-
-    // Full amount to organizer, nothing retained
     assert_eq!(token_client.balance(&organizer), amount);
     assert_eq!(token_client.balance(&contract_id), 0);
     assert_eq!(client.get_platform_revenue(&event_id), 0);
@@ -2208,8 +2115,6 @@ fn test_withdraw_revenue_zero_fee() {
 fn test_withdraw_platform_revenue() {
     let env = Env::default();
     env.mock_all_auths();
-
-    // 5% fee = 500 bps
     let (admin, token, client, contract_id, token_contract, _) = setup_contract_with_fee(&env, 500);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
@@ -2227,23 +2132,15 @@ fn test_withdraw_platform_revenue() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Withdraw revenue — fee accumulated
     let organizer = Address::generate(&env);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
     });
     client.withdraw_revenue(&event_id, &organizer);
-
-    // Fee = 200_000_000 * 500 / 10_000 = 10_000_000
     let expected_fee = 10_000_000i128;
     assert_eq!(client.get_platform_revenue(&event_id), expected_fee);
     assert_eq!(token_client.balance(&contract_id), expected_fee);
-
-    // Withdraw platform revenue
     client.withdraw_platform_revenue(&event_id);
-
-    // Platform revenue reset, contract balance zero
     assert_eq!(client.get_platform_revenue(&event_id), 0);
     assert_eq!(token_client.balance(&contract_id), 0);
 }
@@ -2291,15 +2188,11 @@ fn test_set_platform_fee_invalid_bps() {
 fn test_organizer_withdraw_with_fee() {
     let env = Env::default();
     env.mock_all_auths();
-
-    // 10% fee = 1000 bps
     let (admin, token, client, contract_id, token_contract, event_contract) =
         setup_contract_with_fee(&env, 1000);
     let payer = Address::generate(&env);
     let event_id = symbol_short!("EVENT1");
     let amount = 100_000_000i128;
-
-    // Set up event config for organizer withdraw
     let organizer = Address::generate(&env);
     bind_event(&client, &event_contract, &event_id, &organizer, &token);
 
@@ -2315,15 +2208,11 @@ fn test_organizer_withdraw_with_fee() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Mark event as completed, then organizer withdraws via `withdraw` function
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
     });
     client.withdraw(&organizer, &event_id);
-
-    // Fee = 100_000_000 * 1000 / 10_000 = 10_000_000
     let expected_fee = 10_000_000i128;
     let expected_organizer = amount - expected_fee;
 
@@ -2336,8 +2225,6 @@ fn test_organizer_withdraw_with_fee() {
 fn test_platform_revenue_accumulates_across_withdrawals() {
     let env = Env::default();
     env.mock_all_auths();
-
-    // 5% fee = 500 bps
     let (admin, token, client, _contract_id, token_contract, _) =
         setup_contract_with_fee(&env, 500);
     let payer = Address::generate(&env);
@@ -2345,8 +2232,6 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
     let amount = 100_000_000i128;
     let token_client = token::Client::new(&env, &token);
     let organizer = Address::generate(&env);
-
-    // First cycle
     token_contract.mint(&admin, &amount);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
@@ -2363,10 +2248,8 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
     });
     client.withdraw_revenue(&event_id, &organizer);
 
-    let fee_per_cycle = 5_000_000i128; // 100M * 500 / 10000
+    let fee_per_cycle = 5_000_000i128;
     assert_eq!(client.get_platform_revenue(&event_id), fee_per_cycle);
-
-    // Second cycle
     token_contract.mint(&admin, &amount);
     token_client.transfer(&admin, &payer, &amount);
     client.pay_for_ticket(
@@ -2382,8 +2265,6 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
         li.sequence_number = 20000;
     });
     client.withdraw_revenue(&event_id, &organizer);
-
-    // Platform revenue should accumulate
     assert_eq!(client.get_platform_revenue(&event_id), fee_per_cycle * 2);
 }
 
@@ -2404,8 +2285,6 @@ fn test_replay_attack_rejected_detailed() {
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
 
     let nonce = 101u64;
-
-    // First attempt succeeds
     client.pay_for_ticket(
         &nonce,
         &payer,
@@ -2415,8 +2294,6 @@ fn test_replay_attack_rejected_detailed() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Second attempt with same nonce fails with DuplicateRequest
     let result = client.try_pay_for_ticket(
         &nonce,
         &payer,
@@ -2489,11 +2366,7 @@ fn test_partial_refund_success() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Initial revenue
     assert_eq!(client.get_event_revenue(&event_id), amount);
-
-    // 1. Partial refund 30%
     let partial_1 = 30_000_000i128;
     client.refund(&admin, &payment_id, &Some(partial_1));
 
@@ -2503,8 +2376,6 @@ fn test_partial_refund_success() {
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.refunded_amount, partial_1);
     assert_eq!(payment.status, PaymentStatus::Held);
-
-    // 2. Partial refund another 20%
     let partial_2 = 20_000_000i128;
     client.refund(&admin, &payment_id, &Some(partial_2));
 
@@ -2513,8 +2384,6 @@ fn test_partial_refund_success() {
         client.get_event_revenue(&event_id),
         amount - partial_1 - partial_2
     );
-
-    // 3. Full refund remaining (passing None)
     client.refund(&admin, &payment_id, &None);
 
     assert_eq!(token_client.balance(&payer), amount);
@@ -2550,16 +2419,12 @@ fn test_partial_refund_exceeds_amount_fails() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Try to refund more than original amount
     let result = client.try_refund(&admin, &payment_id, &Some(amount + 1));
     assert!(result.is_err());
 }
 
-// ===== Issue #100: Per-User Purchase Limits (On-Chain Enforcement) =====
-
-/// Verify that a purchase within the per-user limit succeeds and the on-chain
-/// counter is correctly updated.
+/
+/
 #[test]
 fn test_per_user_limit_within_limit_succeeds() {
     let env = Env::default();
@@ -2571,13 +2436,9 @@ fn test_per_user_limit_within_limit_succeeds() {
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("LIM_OK");
     let amount = 100_000_000i128;
-
-    // Mint enough tokens for 2 tickets
     token_contract.mint(&admin, &(amount * 2));
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &(amount * 2));
-
-    // Configure event with max 2 tickets per user
     client.sync_event_config(
         &event_contract_id,
         &event_id,
@@ -2591,11 +2452,7 @@ fn test_per_user_limit_within_limit_succeeds() {
         &1000,
         &17280,
     );
-
-    // Counter starts at zero
     assert_eq!(client.get_user_tickets(&event_id, &payer), 0);
-
-    // First purchase within limit
     client.pay_for_ticket(
         &1,
         &payer,
@@ -2606,8 +2463,6 @@ fn test_per_user_limit_within_limit_succeeds() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(client.get_user_tickets(&event_id, &payer), 1);
-
-    // Second purchase still within limit
     client.pay_for_ticket(
         &2,
         &payer,
@@ -2618,13 +2473,11 @@ fn test_per_user_limit_within_limit_succeeds() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(client.get_user_tickets(&event_id, &payer), 2);
-
-    // Tickets are properly recorded
     assert_eq!(client.get_owner_tickets(&payer).len(), 2);
 }
 
-/// Verify that exceeding the per-user limit is rejected on-chain regardless of
-/// how the request is submitted (i.e., not bypassable via frontend).
+/
+/
 #[test]
 fn test_per_user_limit_exceed_is_rejected() {
     let env = Env::default();
@@ -2636,13 +2489,9 @@ fn test_per_user_limit_exceed_is_rejected() {
     let organizer = Address::generate(&env);
     let event_id = symbol_short!("LIM_FAIL");
     let amount = 100_000_000i128;
-
-    // Mint enough tokens for 3 tickets
     token_contract.mint(&admin, &(amount * 3));
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer, &(amount * 3));
-
-    // Configure event with max 1 ticket per user
     client.sync_event_config(
         &event_contract_id,
         &event_id,
@@ -2656,8 +2505,6 @@ fn test_per_user_limit_exceed_is_rejected() {
         &1000,
         &17280,
     );
-
-    // First purchase succeeds
     client.pay_for_ticket(
         &1,
         &payer,
@@ -2667,8 +2514,6 @@ fn test_per_user_limit_exceed_is_rejected() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Second purchase via pay_for_ticket is rejected on-chain
     let result = client.try_pay_for_ticket(
         &2,
         &payer,
@@ -2679,21 +2524,16 @@ fn test_per_user_limit_exceed_is_rejected() {
         &PaymentPrivacy::Standard,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
-
-    // Second purchase via pay_for_ticket_with_options is also rejected on-chain
     let result2 = client
         .try_pay_for_ticket_with_options(&3, &payer, &event_id, &amount, &token, &false, &false);
     assert_eq!(result2.err(), Some(Ok(PaymentError::MaxTicketsReached)));
-
-    // Counter must not have advanced beyond the limit
     assert_eq!(client.get_user_tickets(&event_id, &payer), 1);
-    // Token balance must be unchanged after rejected purchases
     assert_eq!(token_client.balance(&payer), amount * 2);
 }
 
-/// Verify that get_user_tickets can be queried on-chain and is independent
-/// per (event_id, payer) pair — different events or different users do not
-/// share limits.
+/
+/
+/
 #[test]
 fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
     let env = Env::default();
@@ -2712,8 +2552,6 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
     let token_client = token::Client::new(&env, &token);
     token_client.transfer(&admin, &payer_a, &(amount * 2));
     token_client.transfer(&admin, &payer_b, &(amount * 2));
-
-    // Both events limit to 1 ticket per user
     for event_id in [&event_x, &event_y] {
         client.sync_event_config(
             &event_contract_id,
@@ -2729,8 +2567,6 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
             &17280,
         );
     }
-
-    // payer_a buys one ticket for event_x
     client.pay_for_ticket(
         &1,
         &payer_a,
@@ -2740,7 +2576,6 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    // payer_b buys one ticket for event_x — separate counter
     client.pay_for_ticket(
         &2,
         &payer_b,
@@ -2750,7 +2585,6 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &token,
         &PaymentPrivacy::Standard,
     );
-    // payer_a buys one ticket for event_y — separate counter (different event)
     client.pay_for_ticket(
         &3,
         &payer_a,
@@ -2760,14 +2594,10 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Each (event, user) counter is independent
     assert_eq!(client.get_user_tickets(&event_x, &payer_a), 1);
     assert_eq!(client.get_user_tickets(&event_x, &payer_b), 1);
     assert_eq!(client.get_user_tickets(&event_y, &payer_a), 1);
     assert_eq!(client.get_user_tickets(&event_y, &payer_b), 0);
-
-    // payer_a cannot buy a second ticket for event_x (limit reached)
     let result = client.try_pay_for_ticket(
         &4,
         &payer_a,
@@ -2807,28 +2637,20 @@ fn test_withdraw_cancelled_event_respects_dispute_window() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Set ledger to some position and cancel the event
     env.ledger().with_mut(|li| {
         li.sequence_number = 1000;
     });
 
     client.cancel_event(&event_id, &organizer);
-
-    // Try to withdraw immediately after cancellation - should fail
     let result = client.try_withdraw(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::EscrowNotExpired)));
-
-    // Move forward, but not past the dispute window (MIN_DISPUTE_WINDOW_LEDGERS = 100)
     env.ledger().with_mut(|li| {
-        li.sequence_number = 1050; // Only 50 ledgers after cancellation
+        li.sequence_number = 1050;
     });
     let result = client.try_withdraw(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(PaymentError::EscrowNotExpired)));
-
-    // Move past the dispute window
     env.ledger().with_mut(|li| {
-        li.sequence_number = 1100; // Exactly 100 ledgers after cancellation
+        li.sequence_number = 1100;
     });
     let result = client.try_withdraw(&organizer, &event_id);
     assert!(result.is_ok());
@@ -2861,14 +2683,10 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
         &token,
         &PaymentPrivacy::Standard,
     );
-
-    // Cancel at ledger 500
     env.ledger().with_mut(|li| {
         li.sequence_number = 500;
     });
     client.cancel_event(&event_id, &organizer);
-
-    // Move to ledger 601 (well past the dispute window of 100 ledgers)
     env.ledger().with_mut(|li| {
         li.sequence_number = 601;
     });
@@ -2876,11 +2694,7 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
     let initial_organizer_balance = token_client.balance(&organizer);
     client.withdraw(&organizer, &event_id);
     let final_organizer_balance = token_client.balance(&organizer);
-
-    // Organizer should have received funds
     assert!(final_organizer_balance > initial_organizer_balance);
-
-    // Verify the payment status is marked as withdrawn
     let config = client.get_event_config(&event_id);
     assert!(config.organizer_withdrawn);
 }

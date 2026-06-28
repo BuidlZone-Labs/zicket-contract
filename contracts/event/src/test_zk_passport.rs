@@ -17,11 +17,7 @@ use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, Bytes, BytesN, Env, String, Symbol};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-const BASE_TIMESTAMP: u64 = 1_704_067_200; // 2024-01-01T00:00:00Z
+const BASE_TIMESTAMP: u64 = 1_704_067_200;
 
 fn setup_env() -> Env {
     let env = Env::default();
@@ -33,7 +29,7 @@ fn setup_env() -> Env {
     env
 }
 
-/// Register a minimal Upcoming event with `requires_verification = true`.
+/
 fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = Symbol::new(env, "ev_zk_01");
     let tiers = soroban_sdk::vec![
@@ -65,25 +61,22 @@ fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Add
     event_id
 }
 
-/// Transition an event to Active status.
+/
 fn activate_event(env: &Env, client: &EventContractClient, organizer: &Address, event_id: &Symbol) {
     let _ = env;
     client.update_event_status(organizer, event_id, &EventStatus::Active);
 }
 
-/// Build a mock `ZkPassportClaim` with a given nullifier seed byte and expiry.
+/
 fn make_claim(
     env: &Env,
     claim_type: ZkClaimType,
     nullifier_seed: u8,
     expiry_ledger: u32,
 ) -> ZkPassportClaim {
-    // Proof is 64 bytes of mock data — never stored.
     let mut proof_arr = [0u8; 64];
     proof_arr[0] = nullifier_seed;
     let proof = Bytes::from_array(env, &proof_arr);
-
-    // Nullifier is 32 bytes — this is what IS stored.
     let mut null_arr = [0u8; 32];
     null_arr[0] = nullifier_seed;
     let nullifier = BytesN::from_array(env, &null_arr);
@@ -96,10 +89,6 @@ fn make_claim(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// [AC-5] Happy path: valid proof gates ticket issuance
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_verify_and_attend_happy_path() {
     let env = setup_env();
@@ -109,8 +98,6 @@ fn test_verify_and_attend_happy_path() {
 
     let event_id = setup_verified_event(&env, &client, &organizer);
     activate_event(&env, &client, &organizer, &event_id);
-
-    // Organizer enables zkPassport for this event.
     client.set_zk_config(
         &organizer,
         &event_id,
@@ -119,21 +106,11 @@ fn test_verify_and_attend_happy_path() {
             enabled: true,
         },
     );
-
-    // Build a valid claim with expiry well in the future.
     let claim = make_claim(&env, ZkClaimType::Age, 1, 9_999);
-
-    // Should succeed.
     client.verify_and_attend(&event_id, &0u32, &claim);
-
-    // Sold count must increment.
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 1);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// [AC-3] Nullifier reuse must be rejected
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_nullifier_reuse_rejected() {
@@ -155,18 +132,10 @@ fn test_nullifier_reuse_rejected() {
     );
 
     let claim = make_claim(&env, ZkClaimType::Age, 42, 9_999);
-
-    // First use succeeds.
     client.verify_and_attend(&event_id, &0u32, &claim);
-
-    // Second use with identical nullifier must fail.
     let result = client.try_verify_and_attend(&event_id, &0u32, &claim);
     assert_eq!(result, Err(Ok(EventError::ZkNullifierReused)));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// [AC-4] Expired proof must be rejected
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_expired_proof_rejected() {
@@ -186,22 +155,14 @@ fn test_expired_proof_rejected() {
             enabled: true,
         },
     );
-
-    // Advance the ledger sequence past the claim's expiry.
     env.ledger().with_mut(|li| {
         li.sequence_number = 2000;
     });
-
-    // Claim expires at ledger 999, current is 2000.
     let expired_claim = make_claim(&env, ZkClaimType::Age, 99, 999);
 
     let result = client.try_verify_and_attend(&event_id, &0u32, &expired_claim);
     assert_eq!(result, Err(Ok(EventError::ZkProofExpired)));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// [AC-5] Non-gated event rejects verify_and_attend
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_non_gated_event_rejects_verify_and_attend() {
@@ -228,7 +189,7 @@ fn test_non_gated_event_rejects_verify_and_attend() {
             },
         ],
         allow_anonymous: false,
-        requires_verification: false, // <-- not gated
+        requires_verification: false,
         privacy_level: PrivacyLevel::Standard,
         max_tickets_per_user: 0,
         event_start_ledger: 0,
@@ -242,10 +203,6 @@ fn test_non_gated_event_rejects_verify_and_attend() {
     assert_eq!(result, Err(Ok(EventError::ZkVerificationRequired)));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Claim type mismatch is rejected
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_claim_type_mismatch_rejected() {
     let env = setup_env();
@@ -255,8 +212,6 @@ fn test_claim_type_mismatch_rejected() {
 
     let event_id = setup_verified_event(&env, &client, &organizer);
     activate_event(&env, &client, &organizer, &event_id);
-
-    // Organizer requires Citizenship only.
     client.set_zk_config(
         &organizer,
         &event_id,
@@ -265,16 +220,10 @@ fn test_claim_type_mismatch_rejected() {
             enabled: true,
         },
     );
-
-    // Attendee submits an Age claim.
     let claim = make_claim(&env, ZkClaimType::Age, 11, 9_999);
     let result = client.try_verify_and_attend(&event_id, &0u32, &claim);
     assert_eq!(result, Err(Ok(EventError::ZkClaimTypeMismatch)));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Correct claim type is accepted when organizer specifies it
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_correct_claim_type_accepted() {
@@ -301,10 +250,6 @@ fn test_correct_claim_type_accepted() {
     assert_eq!(client.get_event(&event_id).sold_count, 1);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ZK config disabled rejects verify_and_attend
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_zk_config_disabled_rejects() {
     let env = setup_env();
@@ -329,10 +274,6 @@ fn test_zk_config_disabled_rejects() {
     assert_eq!(result, Err(Ok(EventError::ZkVerificationRequired)));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Default ZK config (never set) also rejects
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_default_zk_config_rejects() {
     let env = setup_env();
@@ -342,16 +283,11 @@ fn test_default_zk_config_rejects() {
 
     let event_id = setup_verified_event(&env, &client, &organizer);
     activate_event(&env, &client, &organizer, &event_id);
-    // No set_zk_config call.
 
     let claim = make_claim(&env, ZkClaimType::Citizenship, 44, 9_999);
     let result = client.try_verify_and_attend(&event_id, &0u32, &claim);
     assert_eq!(result, Err(Ok(EventError::ZkVerificationRequired)));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// is_nullifier_used query reflects storage correctly
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_is_nullifier_used_query() {
@@ -373,18 +309,10 @@ fn test_is_nullifier_used_query() {
     );
 
     let claim = make_claim(&env, ZkClaimType::Age, 55, 9_999);
-
-    // Before: not recorded.
     assert!(!client.is_nullifier_used(&event_id, &claim.nullifier));
-
-    // After: recorded.
     client.verify_and_attend(&event_id, &0u32, &claim);
     assert!(client.is_nullifier_used(&event_id, &claim.nullifier));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Non-organizer cannot change zk_config
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_only_organizer_can_set_zk_config() {
@@ -407,10 +335,6 @@ fn test_only_organizer_can_set_zk_config() {
     assert_eq!(result, Err(Ok(EventError::Unauthorized)));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// get_zk_config returns defaults when never set
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_get_zk_config_defaults() {
     let env = setup_env();
@@ -425,18 +349,12 @@ fn test_get_zk_config_defaults() {
     assert_eq!(config.required_claim_type, ZkClaimType::Any);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inactive (Upcoming) event rejects verify_and_attend
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[test]
 fn test_inactive_event_rejects_verify_and_attend() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
-
-    // Event NOT activated.
     let event_id = setup_verified_event(&env, &client, &organizer);
 
     client.set_zk_config(
@@ -452,10 +370,6 @@ fn test_inactive_event_rejects_verify_and_attend() {
     let result = client.try_verify_and_attend(&event_id, &0u32, &claim);
     assert_eq!(result, Err(Ok(EventError::EventNotActive)));
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sold-out event rejects verify_and_attend
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[test]
 fn test_sold_out_event_rejects_verify_and_attend() {
@@ -498,15 +412,11 @@ fn test_sold_out_event_rejects_verify_and_attend() {
             enabled: true,
         },
     );
-
-    // Fill the only seat.
     client.verify_and_attend(
         &event_id,
         &0u32,
         &make_claim(&env, ZkClaimType::Age, 80, 9_999),
     );
-
-    // Second attendee (different nullifier) hits sold-out.
     let result = client.try_verify_and_attend(
         &event_id,
         &0u32,

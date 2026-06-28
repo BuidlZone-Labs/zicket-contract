@@ -13,7 +13,7 @@ fn setup_env() -> Env {
     env
 }
 
-/// Registers all contracts, returns (payments_id, token_address, token_admin).
+/
 fn setup_contracts(
     env: &Env,
     event_client: &EventContractClient,
@@ -32,7 +32,7 @@ fn setup_contracts(
     payments_contract_id
 }
 
-/// Creates a free event (price = 0) and activates it.
+/
 fn create_free_event(
     env: &Env,
     client: &EventContractClient,
@@ -69,7 +69,7 @@ fn create_free_event(
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
 }
 
-/// Creates a paid event and activates it.
+/
 fn create_paid_event(
     env: &Env,
     client: &EventContractClient,
@@ -106,8 +106,6 @@ fn create_paid_event(
     client.create_event(&params);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
 }
-
-// ── set_claim_settings ────────────────────────────────────────────────────────
 
 #[test]
 fn test_set_claim_settings_by_organizer() {
@@ -167,8 +165,6 @@ fn test_get_claim_settings_default_unlimited() {
     );
 }
 
-// ── Claim limit enforcement ───────────────────────────────────────────────────
-
 #[test]
 fn test_free_ticket_no_limit_succeeds() {
     let env = setup_env();
@@ -184,8 +180,6 @@ fn test_free_ticket_no_limit_succeeds() {
 
     setup_contracts(&env, &client, &organizer, &token_address);
     create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
-
-    // No limits configured: claim should succeed
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert!(client.is_registered(&event_id, &attendee));
 }
@@ -205,15 +199,8 @@ fn test_free_ticket_claim_limit_exceeded() {
 
     setup_contracts(&env, &client, &organizer, &token_address);
     create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
-
-    // Set limit to 1 free claim per wallet
     client.set_claim_settings(&organizer, &event_id, &1, &0);
-
-    // First claim succeeds and increments count to 1
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
-
-    // Same attendee — now count == max_free_claims == 1, so ClaimLimitExceeded fires
-    // (sybil check runs before AlreadyRegistered)
     let result = client.try_register_for_event(&2, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::ClaimLimitExceeded)));
 }
@@ -235,16 +222,12 @@ fn test_free_ticket_different_wallets_independent() {
     setup_contracts(&env, &client, &organizer, &token_address);
     create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
     client.set_claim_settings(&organizer, &event_id, &1, &0);
-
-    // Both wallets can each claim once independently
     client.register_for_event(&1, &attendee_a, &event_id, &0, &false, &None);
     client.register_for_event(&2, &attendee_b, &event_id, &0, &false, &None);
 
     assert!(client.is_registered(&event_id, &attendee_a));
     assert!(client.is_registered(&event_id, &attendee_b));
 }
-
-// ── Cooldown enforcement ──────────────────────────────────────────────────────
 
 #[test]
 fn test_free_ticket_cooldown_active() {
@@ -261,15 +244,8 @@ fn test_free_ticket_cooldown_active() {
 
     setup_contracts(&env, &client, &organizer, &token_address);
     create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
-
-    // Set cooldown to 3600 seconds, no claim limit (to avoid limit error masking cooldown error)
     client.set_claim_settings(&organizer, &event_id, &0, &3600);
-
-    // First claim succeeds; last_claim timestamp is now recorded
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
-
-    // Immediately re-attempt — cooldown not yet elapsed → ClaimCooldownActive
-    // (sybil check runs before AlreadyRegistered)
     let result = client.try_register_for_event(&2, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::ClaimCooldownActive)));
 }
@@ -289,26 +265,14 @@ fn test_free_ticket_cooldown_elapsed_passes_sybil() {
 
     setup_contracts(&env, &client, &organizer, &token_address);
     create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
-
-    // 60 second cooldown, no claim limit
     client.set_claim_settings(&organizer, &event_id, &0, &60);
-
-    // First claim at t=0
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
-
-    // Advance time past cooldown
     env.ledger().with_mut(|li| {
-        li.timestamp += 120; // 120s > 60s cooldown
+        li.timestamp += 120;
     });
-
-    // Second attempt: cooldown has elapsed, sybil check passes.
-    // It should return AlreadyRegistered (not ClaimCooldownActive), confirming
-    // the cooldown gate is no longer blocking.
     let result = client.try_register_for_event(&2, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::AlreadyRegistered)));
 }
-
-// ── Paid tickets bypass sybil checks ─────────────────────────────────────────
 
 #[test]
 fn test_paid_ticket_not_affected_by_claim_settings() {
@@ -334,17 +298,11 @@ fn test_paid_ticket_not_affected_by_claim_settings() {
         event_id.clone(),
         price,
     );
-
-    // Extremely restrictive claim settings — should not affect paid tickets
     client.set_claim_settings(&organizer, &event_id, &1, &86400);
-
-    // Fund attendee
     let token_asset_client = token::StellarAssetClient::new(&env, &token_address);
     let token_client = token::Client::new(&env, &token_address);
     token_asset_client.mint(&token_admin, &price);
     token_client.transfer(&token_admin, &attendee, &price);
-
-    // Paid registration should succeed regardless of free-claim settings
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert!(client.is_registered(&event_id, &attendee));
 }

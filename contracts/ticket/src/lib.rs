@@ -13,9 +13,6 @@ mod test;
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
-
-// Re-export public types so dependent contracts (e.g. the event contract) can name
-// `ticket_contract::Ticket` / `ticket_contract::TicketStatus` when consuming the client.
 pub use crate::types::{Ticket, TicketStatus};
 
 #[contract]
@@ -117,8 +114,6 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-
-        // Update old owner's list
         let mut from_tickets: Vec<u64> = env
             .storage()
             .persistent()
@@ -131,8 +126,6 @@ impl TicketContract {
                 .persistent()
                 .set(&DataKey::OwnerTickets(from.clone()), &from_tickets);
         }
-
-        // Update new owner's list
         let mut to_tickets: Vec<u64> = env
             .storage()
             .persistent()
@@ -157,22 +150,15 @@ impl TicketContract {
     }
 
     pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), TicketError> {
-        // 1. Require organizer authorization
         organizer.require_auth();
-
-        // 2. Retrieve the ticket from storage
         let mut ticket: Ticket = env
             .storage()
             .persistent()
             .get(&DataKey::Ticket(ticket_id))
             .ok_or(TicketError::TicketNotFound)?;
-
-        // 3. Verify the caller is the event's organizer
         if ticket.organizer != organizer {
             return Err(TicketError::Unauthorized);
         }
-
-        // 4. Verify ticket is not already used and status is Valid
         if ticket.is_used {
             return Err(TicketError::TicketAlreadyUsed);
         }
@@ -182,17 +168,11 @@ impl TicketContract {
             TicketStatus::Cancelled => return Err(TicketError::EventNotActive),
             TicketStatus::Used => return Err(TicketError::TicketAlreadyUsed),
         }
-
-        // 5. Update ticket to used
         ticket.is_used = true;
         ticket.status = TicketStatus::Used;
-
-        // 6. Save the updated ticket back to storage
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-
-        // 7. Emit ticket used event
         events::emit_ticket_used(
             &env,
             ticket_id,
@@ -203,22 +183,22 @@ impl TicketContract {
         Ok(())
     }
 
-    /// Query a ticket by its ID.
+    /
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, TicketError> {
         storage::get_ticket(&env, ticket_id)
     }
 
-    /// List all ticket IDs for a specific owner.
+    /
     pub fn get_owner_tickets(env: Env, owner: Address) -> Vec<u64> {
         storage::get_tickets_by_owner(&env, owner)
     }
 
-    /// List all ticket IDs for a specific event.
+    /
     pub fn get_event_tickets(env: Env, event_id: Symbol) -> Vec<u64> {
         storage::get_tickets_by_event(&env, event_id)
     }
 
-    /// Cancel a ticket. Can be called by the owner or an authorized caller.
+    /
     pub fn cancel_ticket(env: Env, ticket_id: u64, caller: Address) -> Result<(), TicketError> {
         caller.require_auth();
 
@@ -289,16 +269,12 @@ impl TicketContract {
             storage::get_recovery_key(&env, ticket_id).ok_or(TicketError::RecoveryKeyNotFound)?;
 
         let message = new_owner.clone().to_xdr(&env);
-
-        // Verifies the signature. Panics if verification fails.
         env.crypto()
             .ed25519_verify(&public_key, &message, &signature);
 
         let old_owner = ticket.owner.clone();
         ticket.owner = new_owner.clone();
         storage::update_ticket(&env, &ticket);
-
-        // Update old owner's list
         let mut old_owner_tickets = storage::get_tickets_by_owner(&env, old_owner.clone());
         if let Some(index) = old_owner_tickets.first_index_of(ticket_id) {
             old_owner_tickets.remove(index);
@@ -307,16 +283,12 @@ impl TicketContract {
                 &old_owner_tickets,
             );
         }
-
-        // Update new owner's list
         let mut new_owner_tickets = storage::get_tickets_by_owner(&env, new_owner.clone());
         new_owner_tickets.push_back(ticket_id);
         env.storage().persistent().set(
             &DataKey::OwnerTickets(new_owner.clone()),
             &new_owner_tickets,
         );
-
-        // Remove recovery key after successful recovery
         storage::remove_recovery_key(&env, ticket_id);
 
         events::emit_ticket_recovered(&env, ticket_id, old_owner, new_owner);
@@ -324,30 +296,25 @@ impl TicketContract {
         Ok(())
     }
 
-    /// Get the current contract version.
+    /
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
 
-    /// Migrate the contract to a new version. Only organizer can call this through authorization.
+    /
     pub fn migrate(env: Env, caller: Address) -> Result<u32, TicketError> {
         caller.require_auth();
 
         let current_version = storage::get_contract_version(&env);
         let new_version = current_version + 1;
-
-        // Perform any necessary migrations based on version transitions
         match current_version {
             0 => {
-                // First migration: initialize version tracking
                 storage::set_contract_version(&env, 1);
             }
             1 => {
-                // Future migrations can be added here
                 storage::set_contract_version(&env, 2);
             }
             2 => {
-                // v2 -> v3 migration
                 storage::set_contract_version(&env, 3);
             }
             _ => {
