@@ -45,16 +45,12 @@ pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
         .get(&DataKey::EventTickets(event_id))
         .unwrap_or(Vec::new(env))
 }
-
-///
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::ContractVersion)
         .unwrap_or(1)
 }
-
-///
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -63,8 +59,6 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .persistent()
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 #[allow(dead_code)]
 pub fn verify_version(env: &Env) -> Result<(), TicketError> {
     let version = get_contract_version(env);

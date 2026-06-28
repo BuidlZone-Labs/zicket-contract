@@ -33,8 +33,6 @@ fn setup(env: &Env, fee_bps: u32) -> World<'_> {
         client,
     }
 }
-
-///
 fn funded_payer(w: &World, amount: i128) -> Address {
     let payer = Address::generate(w.env);
     token::StellarAssetClient::new(w.env, &w.token).mint(&payer, &amount);
@@ -52,15 +50,9 @@ fn pay(w: &World, payer: &Address, event_id: &Symbol, amount: i128) -> u64 {
         &PaymentPrivacy::Standard,
     )
 }
-
-///
-///
-///
 fn events_debug(env: &Env) -> std::string::String {
     std::format!("{:?}", env.events().all())
 }
-
-///
 fn hash_hex_run(byte: u8) -> std::string::String {
     std::format!("{:02x}", byte).repeat(32)
 }

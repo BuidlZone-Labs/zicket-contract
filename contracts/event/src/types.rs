@@ -1,11 +1,5 @@
 pub use privacy_utils::{mask_address, MaskedAddress, PrivacyLevel};
 use soroban_sdk::{contracttype, Address, Bytes, BytesN, String, Symbol, Vec};
-
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ZkClaimType {
@@ -14,48 +8,18 @@ pub enum ZkClaimType {
     Location = 2,
     Citizenship = 3,
 }
-
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkPassportClaim {
     pub claim_type: ZkClaimType,
-    ///
     pub proof: Bytes,
-    ///
     pub nullifier: BytesN<32>,
-    ///
     pub expiry_ledger: u32,
 }
-
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkVerificationConfig {
-    ///
-    ///
     pub required_claim_type: ZkClaimType,
-    ///
     pub enabled: bool,
 }
 
@@ -152,54 +116,24 @@ pub struct Reservation {
     pub tier_id: u32,
     pub expires_at: u64,
 }
-
-///
-///
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PostponementInfo {
-    ///
     pub new_date_ledger: u64,
-    ///
-    ///
     pub choice_deadline_ledger: u64,
 }
-
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClaimSettings {
     pub max_free_claims: u32,
     pub cooldown_secs: u64,
 }
-
-///
-///
-///
-///
-///
-///
-///
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnonClaimSettings {
     pub max_anon_claims_per_window: u32,
     pub anon_window_size: u32,
 }
-
-///
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnonWindowState {

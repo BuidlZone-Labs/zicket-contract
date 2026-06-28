@@ -76,14 +76,6 @@ pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
         .persistent()
         .get(&DataKey::EventStatus(event_id.clone()))
 }
-
-///
-///
-///
-///
-///
-///
-///
 pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32) {
     let key = DataKey::PostponeDeadline(event_id.clone());
     env.storage().persistent().set(&key, &deadline_ledger);
@@ -94,22 +86,16 @@ pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32)
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, extend_to.max(TTL_BUMP));
 }
-
-///
 pub fn get_postpone_deadline(env: &Env, event_id: &Symbol) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::PostponeDeadline(event_id.clone()))
 }
-
-///
 pub fn remove_postpone_deadline(env: &Env, event_id: &Symbol) {
     env.storage()
         .persistent()
         .remove(&DataKey::PostponeDeadline(event_id.clone()));
 }
-
-///
 pub fn get_admin(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     env.storage()
         .persistent()
@@ -139,16 +125,12 @@ pub fn set_paused(env: &Env, paused: bool) {
         .persistent()
         .extend_ttl(&DataKey::Paused, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 pub fn get_accepted_token(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     env.storage()
         .persistent()
         .get(&DataKey::AcceptedToken)
         .ok_or(PaymentError::NotInitialized)
 }
-
-///
 pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     env.storage()
         .persistent()
@@ -221,15 +203,11 @@ pub fn get_event_payout_token(env: &Env, event_id: &Symbol) -> Result<Address, P
         .map(|config| config.payout_token)
         .ok_or(PaymentError::InvalidPayoutToken)
 }
-
-///
 pub fn is_initialized(env: &Env) -> bool {
     env.storage().persistent().has(&DataKey::Admin)
         && env.storage().persistent().has(&DataKey::AcceptedToken)
         && env.storage().persistent().has(&DataKey::EventContract)
 }
-
-///
 pub fn get_next_payment_id(env: &Env) -> u64 {
     let current_id: u64 = env
         .storage()
@@ -247,8 +225,6 @@ pub fn get_next_payment_id(env: &Env) -> u64 {
     );
     next_id
 }
-
-///
 pub fn get_next_ticket_id(env: &Env) -> u64 {
     let current_id: u64 = env
         .storage()
@@ -266,8 +242,6 @@ pub fn get_next_ticket_id(env: &Env) -> u64 {
     );
     next_id
 }
-
-///
 pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     let key = DataKey::Payment(payment.payment_id);
     if env.storage().persistent().has(&key) {
@@ -279,16 +253,12 @@ pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentErr
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
     Ok(())
 }
-
-///
 pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
     env.storage()
         .persistent()
         .get(&DataKey::Payment(payment_id))
         .ok_or(PaymentError::PaymentNotFound)
 }
-
-///
 pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
     let key = DataKey::Ticket(ticket.ticket_id);
     if env.storage().persistent().has(&key) {
@@ -300,16 +270,12 @@ pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
     Ok(())
 }
-
-///
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
     env.storage()
         .persistent()
         .get(&DataKey::Ticket(ticket_id))
         .ok_or(PaymentError::TicketNotFound)
 }
-
-///
 pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
     let key = DataKey::OwnerTickets(owner.clone());
     let mut tickets: Vec<u64> = env
@@ -323,16 +289,12 @@ pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
     env.storage()
         .persistent()
         .get(&DataKey::OwnerTickets(owner.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-
-///
 pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
     let key = DataKey::EventPayments(event_id.clone());
     let mut payments: Vec<u64> = env
@@ -346,16 +308,12 @@ pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
     env.storage()
         .persistent()
         .get(&DataKey::EventPayments(event_id.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-
-///
 pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
     let key = DataKey::PayerPayments(payer.clone());
     let mut payments: Vec<u64> = env
@@ -369,16 +327,12 @@ pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
     env.storage()
         .persistent()
         .get(&DataKey::PayerPayments(payer.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-
-///
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     let tokens = get_event_tokens(env, event_id);
     let mut total = 0i128;
@@ -391,8 +345,6 @@ pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
 
     total
 }
-
-///
 pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let current_revenue = get_event_revenue(env, event_id);
     let new_revenue = current_revenue + amount;
@@ -410,8 +362,6 @@ pub fn set_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     let key = DataKey::Payment(payment.payment_id);
     if !env.storage().persistent().has(&key) {
@@ -461,16 +411,12 @@ pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
         }
     }
 }
-
-///
 pub fn get_platform_fee_bps(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::PlatformFeeBps)
         .unwrap_or(0)
 }
-
-///
 pub fn set_platform_fee_bps(env: &Env, bps: u32) {
     env.storage()
         .persistent()
@@ -481,16 +427,12 @@ pub fn set_platform_fee_bps(env: &Env, bps: u32) {
         60 * 60 * 24 * 30 * 2,
     );
 }
-
-///
 pub fn get_platform_wallet(env: &Env) -> Result<Address, PaymentError> {
     env.storage()
         .persistent()
         .get(&DataKey::PlatformWallet)
         .ok_or(PaymentError::NotInitialized)
 }
-
-///
 pub fn set_platform_wallet(env: &Env, wallet: &Address) {
     env.storage()
         .persistent()
@@ -501,16 +443,12 @@ pub fn set_platform_wallet(env: &Env, wallet: &Address) {
         60 * 60 * 24 * 30 * 2,
     );
 }
-
-///
 pub fn get_platform_revenue(env: &Env, event_id: &Symbol) -> i128 {
     env.storage()
         .persistent()
         .get(&DataKey::PlatformRevenue(event_id.clone()))
         .unwrap_or(0)
 }
-
-///
 pub fn add_platform_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let current = get_platform_revenue(env, event_id);
     let key = DataKey::PlatformRevenue(event_id.clone());
@@ -527,8 +465,6 @@ pub fn set_emission_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) 
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn reset_platform_revenue(env: &Env, event_id: &Symbol) {
     let key = DataKey::PlatformRevenue(event_id.clone());
     env.storage().persistent().set(&key, &0i128);
@@ -570,16 +506,12 @@ pub fn set_nonce(env: &Env, address: &Address, nonce: u64) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
 }
-
-///
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::ContractVersion)
         .unwrap_or(1)
 }
-
-///
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -588,8 +520,6 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .persistent()
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 pub fn verify_version(env: &Env) -> Result<(), PaymentError> {
     let version = get_contract_version(env);
     if version > CURRENT_VERSION {
@@ -597,8 +527,6 @@ pub fn verify_version(env: &Env) -> Result<(), PaymentError> {
     }
     Ok(())
 }
-
-///
 pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Address) -> i128 {
     env.storage()
         .persistent()
@@ -608,8 +536,6 @@ pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Add
         ))
         .unwrap_or(0)
 }
-
-///
 pub fn add_event_token_revenue(
     env: &Env,
     event_id: &Symbol,
@@ -624,8 +550,6 @@ pub fn add_event_token_revenue(
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn set_event_token_revenue(
     env: &Env,
     event_id: &Symbol,
@@ -638,8 +562,6 @@ pub fn set_event_token_revenue(
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
     let key = DataKey::EventTokens(event_id.clone());
     let mut tokens: Vec<Address> = env
@@ -661,8 +583,6 @@ pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
     env.storage()
         .persistent()

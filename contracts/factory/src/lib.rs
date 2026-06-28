@@ -107,13 +107,9 @@ impl FactoryContract {
     pub fn get_organizer_events(env: Env, organizer: Address) -> soroban_sdk::Vec<Symbol> {
         storage::get_organizer_events(&env, &organizer)
     }
-
-    ///
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
-
-    ///
     pub fn migrate(env: Env, admin: Address) -> Result<u32, FactoryError> {
         admin.require_auth();
 

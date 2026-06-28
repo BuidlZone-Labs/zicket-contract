@@ -1170,8 +1170,6 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
     assert!(result.is_ok());
 }
 const MIN_WINDOW: u32 = 51_840;
-
-///
 fn setup_active_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = setup_event(env, client, organizer);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);

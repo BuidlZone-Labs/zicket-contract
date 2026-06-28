@@ -139,16 +139,12 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<Symbol> {
         .get(&DataKey::OrganizerEvents(organizer.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-
-///
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::ContractVersion)
         .unwrap_or(1)
 }
-
-///
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -157,8 +153,6 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .persistent()
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 pub fn verify_version(env: &Env) -> Result<(), FactoryError> {
     let version = get_contract_version(env);
     if version > CURRENT_VERSION {

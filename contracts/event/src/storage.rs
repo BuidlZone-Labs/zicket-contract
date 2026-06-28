@@ -20,47 +20,28 @@ pub enum DataKey {
     PaymentsContract,
     EventPrivacy(Symbol),
     ContractVersion,
-    ///
     FreeClaimCount(Symbol, Address),
-    ///
     LastFreeClaim(Symbol, Address),
-    ///
     EventClaimSettings(Symbol),
-    ///
-    ///
     Postponement(Symbol),
-    ///
-    ///
     PostponeCount(Symbol),
-    ///
     AnonCommitment(Symbol, BytesN<32>),
-    ///
     EventAnonWindow(Symbol),
-    ///
     EventAnonSettings(Symbol),
-    ///
-    ///
     ZkNullifier(Symbol, BytesN<32>),
-    ///
     ZkVerificationConfig(Symbol),
 }
-
-///
 pub fn event_exists(env: &Env, event_id: &Symbol) -> bool {
     env.storage()
         .persistent()
         .has(&DataKey::Event(event_id.clone()))
 }
-
-///
 pub fn get_event(env: &Env, event_id: &Symbol) -> Result<Event, EventError> {
     env.storage()
         .persistent()
         .get(&DataKey::Event(event_id.clone()))
         .ok_or(EventError::EventNotFound)
 }
-
-///
 pub fn save_event(env: &Env, event_id: &Symbol, event: &Event) {
     let key = DataKey::Event(event_id.clone());
     env.storage().persistent().set(&key, event);
@@ -68,8 +49,6 @@ pub fn save_event(env: &Env, event_id: &Symbol, event: &Event) {
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
-
-///
 pub fn update_event(env: &Env, event_id: &Symbol, event: &Event) -> Result<(), EventError> {
     if !event_exists(env, event_id) {
         return Err(EventError::EventNotFound);
@@ -187,16 +166,12 @@ pub fn remove_reservation(env: &Env, event_id: &Symbol, attendee: &Address) {
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
     env.storage().persistent().remove(&key);
 }
-
-///
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::ContractVersion)
         .unwrap_or(1)
 }
-
-///
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -205,8 +180,6 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .persistent()
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 pub fn verify_version(env: &Env) -> Result<(), EventError> {
     let version = get_contract_version(env);
     if version > CURRENT_VERSION {
@@ -234,9 +207,6 @@ pub fn has_reservation(env: &Env, event_id: &Symbol, attendee: &Address) -> bool
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
     env.storage().persistent().has(&key)
 }
-
-///
-///
 pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
     let key = DataKey::Postponement(event_id.clone());
     env.storage().persistent().set(&key, info);
@@ -244,31 +214,22 @@ pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
 pub fn get_postponement(env: &Env, event_id: &Symbol) -> Option<PostponementInfo> {
     env.storage()
         .persistent()
         .get(&DataKey::Postponement(event_id.clone()))
 }
-
-///
 pub fn remove_postponement(env: &Env, event_id: &Symbol) {
     env.storage()
         .persistent()
         .remove(&DataKey::Postponement(event_id.clone()));
 }
-
-///
 pub fn get_postpone_count(env: &Env, event_id: &Symbol) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::PostponeCount(event_id.clone()))
         .unwrap_or(0u32)
 }
-
-///
-///
 pub fn set_postpone_count(env: &Env, event_id: &Symbol, count: u32) {
     let key = DataKey::PostponeCount(event_id.clone());
     env.storage().persistent().set(&key, &count);
@@ -276,10 +237,6 @@ pub fn set_postpone_count(env: &Env, event_id: &Symbol, count: u32) {
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
-///
-///
 pub fn remove_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
     env.storage()
         .persistent()
@@ -420,10 +377,6 @@ pub fn set_anon_window_state(env: &Env, event_id: &Symbol, state: &AnonWindowSta
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
-///
-///
 pub fn has_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) -> bool {
     let key = DataKey::ZkNullifier(event_id.clone(), nullifier.clone());
     let exists = env.storage().persistent().has(&key);
@@ -434,10 +387,6 @@ pub fn has_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) ->
     }
     exists
 }
-
-///
-///
-///
 pub fn save_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) {
     let key = DataKey::ZkNullifier(event_id.clone(), nullifier.clone());
     env.storage().persistent().set(&key, &true);
@@ -445,9 +394,6 @@ pub fn save_zk_nullifier(env: &Env, event_id: &Symbol, nullifier: &BytesN<32>) {
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
-
-///
-///
 pub fn get_zk_verification_config(env: &Env, event_id: &Symbol) -> ZkVerificationConfig {
     let key = DataKey::ZkVerificationConfig(event_id.clone());
     let cfg: Option<ZkVerificationConfig> = env.storage().persistent().get(&key);
@@ -464,9 +410,6 @@ pub fn get_zk_verification_config(env: &Env, event_id: &Symbol) -> ZkVerificatio
         },
     }
 }
-
-///
-///
 pub fn set_zk_verification_config(env: &Env, event_id: &Symbol, config: &ZkVerificationConfig) {
     let key = DataKey::ZkVerificationConfig(event_id.clone());
     env.storage().persistent().set(&key, config);

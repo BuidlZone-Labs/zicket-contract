@@ -24,12 +24,6 @@ pub struct PaymentReceiptRequested {
     pub email_hash: Option<BytesN<32>>,
     pub requested_at: u64,
 }
-
-///
-///
-///
-///
-///
 #[contractevent(data_format = "vec", topics = ["receipt_commitment"])]
 pub struct ReceiptCommitmentBound {
     pub event_type: Symbol,
