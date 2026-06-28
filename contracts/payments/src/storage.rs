@@ -43,8 +43,8 @@ pub enum DataKey {
     Ticket(u64),
     EventPayments(Symbol),
     EventRevenue(Symbol),
-    EventTokenRevenue(Symbol, Address), // Revenue per token per event
-    EventTokens(Symbol),                // List of tokens used for an event
+    EventTokenRevenue(Symbol, Address),
+    EventTokens(Symbol),
     EventStatus(Symbol),
     OwnerTickets(Address),
     PayerPayments(Address),
@@ -77,13 +77,13 @@ pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
         .get(&DataKey::EventStatus(event_id.clone()))
 }
 
-/// Store the refund-choice deadline (ledger sequence) for a postponed event.
-///
-/// The TTL is sized dynamically to outlive the configured refund window: a long
-/// window must not let the deadline entry expire before the window closes, which
-/// would make `get_postpone_deadline` return `None` and break refunds while the
-/// event is still postponed. We extend to cover (deadline - now) plus the standard
-/// threshold buffer.
+/
+/
+/
+/
+/
+/
+/
 pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32) {
     let key = DataKey::PostponeDeadline(event_id.clone());
     env.storage().persistent().set(&key, &deadline_ledger);
@@ -95,21 +95,21 @@ pub fn set_postpone_deadline(env: &Env, event_id: &Symbol, deadline_ledger: u32)
         .extend_ttl(&key, TTL_THRESHOLD, extend_to.max(TTL_BUMP));
 }
 
-/// Read the refund-choice deadline (ledger sequence) for a postponed event.
+/
 pub fn get_postpone_deadline(env: &Env, event_id: &Symbol) -> Option<u32> {
     env.storage()
         .persistent()
         .get(&DataKey::PostponeDeadline(event_id.clone()))
 }
 
-/// Clear the refund-choice deadline once a postponed event is resumed.
+/
 pub fn remove_postpone_deadline(env: &Env, event_id: &Symbol) {
     env.storage()
         .persistent()
         .remove(&DataKey::PostponeDeadline(event_id.clone()));
 }
 
-/// Get the admin address from storage.
+/
 pub fn get_admin(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     env.storage()
         .persistent()
@@ -140,7 +140,7 @@ pub fn set_paused(env: &Env, paused: bool) {
         .extend_ttl(&DataKey::Paused, TTL_THRESHOLD, TTL_BUMP);
 }
 
-/// Get the accepted token address from storage.
+/
 pub fn get_accepted_token(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     env.storage()
         .persistent()
@@ -148,7 +148,7 @@ pub fn get_accepted_token(env: &Env) -> Result<soroban_sdk::Address, PaymentErro
         .ok_or(PaymentError::NotInitialized)
 }
 
-/// Set the accepted token address in storage.
+/
 pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     env.storage()
         .persistent()
@@ -222,14 +222,14 @@ pub fn get_event_payout_token(env: &Env, event_id: &Symbol) -> Result<Address, P
         .ok_or(PaymentError::InvalidPayoutToken)
 }
 
-/// Check if contract is initialized.
+/
 pub fn is_initialized(env: &Env) -> bool {
     env.storage().persistent().has(&DataKey::Admin)
         && env.storage().persistent().has(&DataKey::AcceptedToken)
         && env.storage().persistent().has(&DataKey::EventContract)
 }
 
-/// Get the next payment ID and increment it.
+/
 pub fn get_next_payment_id(env: &Env) -> u64 {
     let current_id: u64 = env
         .storage()
@@ -248,7 +248,7 @@ pub fn get_next_payment_id(env: &Env) -> u64 {
     next_id
 }
 
-/// Get the next ticket ID and increment it.
+/
 pub fn get_next_ticket_id(env: &Env) -> u64 {
     let current_id: u64 = env
         .storage()
@@ -267,7 +267,7 @@ pub fn get_next_ticket_id(env: &Env) -> u64 {
     next_id
 }
 
-/// Save a payment record to storage. Returns error if ID already exists.
+/
 pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     let key = DataKey::Payment(payment.payment_id);
     if env.storage().persistent().has(&key) {
@@ -280,7 +280,7 @@ pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentErr
     Ok(())
 }
 
-/// Get a payment record by ID
+/
 pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
     env.storage()
         .persistent()
@@ -288,7 +288,7 @@ pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentE
         .ok_or(PaymentError::PaymentNotFound)
 }
 
-/// Save a ticket record to storage. Returns error if ID already exists.
+/
 pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
     let key = DataKey::Ticket(ticket.ticket_id);
     if env.storage().persistent().has(&key) {
@@ -301,7 +301,7 @@ pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
     Ok(())
 }
 
-/// Get a ticket record by ID.
+/
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
     env.storage()
         .persistent()
@@ -309,7 +309,7 @@ pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
         .ok_or(PaymentError::TicketNotFound)
 }
 
-/// Add a ticket ID to the list of tickets for an owner.
+/
 pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
     let key = DataKey::OwnerTickets(owner.clone());
     let mut tickets: Vec<u64> = env
@@ -324,7 +324,7 @@ pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Get all ticket IDs for an owner.
+/
 pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
     env.storage()
         .persistent()
@@ -332,7 +332,7 @@ pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
-/// add a payment id to the list of payments for an event
+/
 pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
     let key = DataKey::EventPayments(event_id.clone());
     let mut payments: Vec<u64> = env
@@ -347,7 +347,7 @@ pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Get all payment IDs for an event.
+/
 pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
     env.storage()
         .persistent()
@@ -355,7 +355,7 @@ pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
-/// add a payment id to the list of payments for a payer
+/
 pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
     let key = DataKey::PayerPayments(payer.clone());
     let mut payments: Vec<u64> = env
@@ -370,7 +370,7 @@ pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Get all payment IDs for a payer.
+/
 pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
     env.storage()
         .persistent()
@@ -378,7 +378,7 @@ pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
         .unwrap_or_else(|| Vec::new(env))
 }
 
-/// Get the total revenue for an event.
+/
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     let tokens = get_event_tokens(env, event_id);
     let mut total = 0i128;
@@ -392,7 +392,7 @@ pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     total
 }
 
-/// Add to the total revenue for an event.
+/
 pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let current_revenue = get_event_revenue(env, event_id);
     let new_revenue = current_revenue + amount;
@@ -411,7 +411,7 @@ pub fn set_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Update a payment record in storage.
+/
 pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     let key = DataKey::Payment(payment.payment_id);
     if !env.storage().persistent().has(&key) {
@@ -462,7 +462,7 @@ pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
     }
 }
 
-/// Get the platform fee in basis points (0-10000).
+/
 pub fn get_platform_fee_bps(env: &Env) -> u32 {
     env.storage()
         .persistent()
@@ -470,7 +470,7 @@ pub fn get_platform_fee_bps(env: &Env) -> u32 {
         .unwrap_or(0)
 }
 
-/// Set the platform fee in basis points.
+/
 pub fn set_platform_fee_bps(env: &Env, bps: u32) {
     env.storage()
         .persistent()
@@ -482,7 +482,7 @@ pub fn set_platform_fee_bps(env: &Env, bps: u32) {
     );
 }
 
-/// Get the platform wallet address.
+/
 pub fn get_platform_wallet(env: &Env) -> Result<Address, PaymentError> {
     env.storage()
         .persistent()
@@ -490,7 +490,7 @@ pub fn get_platform_wallet(env: &Env) -> Result<Address, PaymentError> {
         .ok_or(PaymentError::NotInitialized)
 }
 
-/// Set the platform wallet address.
+/
 pub fn set_platform_wallet(env: &Env, wallet: &Address) {
     env.storage()
         .persistent()
@@ -502,7 +502,7 @@ pub fn set_platform_wallet(env: &Env, wallet: &Address) {
     );
 }
 
-/// Get accumulated platform revenue for an event.
+/
 pub fn get_platform_revenue(env: &Env, event_id: &Symbol) -> i128 {
     env.storage()
         .persistent()
@@ -510,7 +510,7 @@ pub fn get_platform_revenue(env: &Env, event_id: &Symbol) -> i128 {
         .unwrap_or(0)
 }
 
-/// Add to the platform revenue for an event.
+/
 pub fn add_platform_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let current = get_platform_revenue(env, event_id);
     let key = DataKey::PlatformRevenue(event_id.clone());
@@ -528,7 +528,7 @@ pub fn set_emission_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) 
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Reset platform revenue for an event after withdrawal.
+/
 pub fn reset_platform_revenue(env: &Env, event_id: &Symbol) {
     let key = DataKey::PlatformRevenue(event_id.clone());
     env.storage().persistent().set(&key, &0i128);
@@ -571,7 +571,7 @@ pub fn set_nonce(env: &Env, address: &Address, nonce: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
 }
 
-/// Get the current contract version from storage.
+/
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
@@ -579,7 +579,7 @@ pub fn get_contract_version(env: &Env) -> u32 {
         .unwrap_or(1)
 }
 
-/// Set the contract version in storage.
+/
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -589,7 +589,7 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
 
-/// Verify that the contract version is supported. Returns error if version is not compatible.
+/
 pub fn verify_version(env: &Env) -> Result<(), PaymentError> {
     let version = get_contract_version(env);
     if version > CURRENT_VERSION {
@@ -598,7 +598,7 @@ pub fn verify_version(env: &Env) -> Result<(), PaymentError> {
     Ok(())
 }
 
-/// Get the total revenue for an event and specific token.
+/
 pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Address) -> i128 {
     env.storage()
         .persistent()
@@ -609,7 +609,7 @@ pub fn get_event_token_revenue(env: &Env, event_id: &Symbol, token_address: &Add
         .unwrap_or(0)
 }
 
-/// Add to the total revenue for an event and specific token.
+/
 pub fn add_event_token_revenue(
     env: &Env,
     event_id: &Symbol,
@@ -625,7 +625,7 @@ pub fn add_event_token_revenue(
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Set the total revenue for an event and specific token.
+/
 pub fn set_event_token_revenue(
     env: &Env,
     event_id: &Symbol,
@@ -639,7 +639,7 @@ pub fn set_event_token_revenue(
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Add a token to the list of tokens used for an event.
+/
 pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
     let key = DataKey::EventTokens(event_id.clone());
     let mut tokens: Vec<Address> = env
@@ -647,8 +647,6 @@ pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
         .persistent()
         .get(&key)
         .unwrap_or_else(|| Vec::new(env));
-
-    // Only add if not already present
     for i in 0..tokens.len() {
         if let Some(existing_token) = tokens.get(i) {
             if existing_token == *token_address {
@@ -664,7 +662,7 @@ pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Get all tokens used for an event.
+/
 pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
     env.storage()
         .persistent()

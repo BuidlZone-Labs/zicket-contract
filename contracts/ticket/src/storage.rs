@@ -46,7 +46,7 @@ pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
         .unwrap_or(Vec::new(env))
 }
 
-/// Get the current contract version from storage.
+/
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
@@ -54,7 +54,7 @@ pub fn get_contract_version(env: &Env) -> u32 {
         .unwrap_or(1)
 }
 
-/// Set the contract version in storage.
+/
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -64,7 +64,7 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
 
-/// Verify that the contract version is supported. Returns error if version is not compatible.
+/
 #[allow(dead_code)]
 pub fn verify_version(env: &Env) -> Result<(), TicketError> {
     let version = get_contract_version(env);

@@ -25,11 +25,11 @@ pub struct PaymentReceiptRequested {
     pub requested_at: u64,
 }
 
-/// Emitted when a zkEmail receipt commitment is bound to a payment.
-///
-/// Deliberately carries no email-derivable data: only the payment/event ids and
-/// a timestamp. The commitment hash itself is NOT emitted — it lives only in
-/// contract storage so that an indexer cannot correlate it across payments.
+/
+/
+/
+/
+/
 #[contractevent(data_format = "vec", topics = ["receipt_commitment"])]
 pub struct ReceiptCommitmentBound {
     pub event_type: Symbol,

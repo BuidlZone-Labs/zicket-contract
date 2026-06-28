@@ -33,36 +33,35 @@ pub enum EventError {
     AnonCommitmentReused = 27,
     AnonClaimWindowFull = 28,
     AnonymousClaimsNotEnabled = 29,
-    /// The requested refund-choice window is shorter than the mandatory minimum
-    /// (`MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS`).
+    /
+    /
     PostponementWindowTooShort = 30,
-    /// The proposed new event date is not strictly after the close of the
-    /// refund-choice window, or is in the past.
+    /
+    /
     InvalidPostponementDate = 31,
-    /// The event has already been postponed the maximum number of times
-    /// (`MAX_POSTPONEMENTS`); the organizer must run or cancel it instead.
+    /
+    /
     MaxPostponementsReached = 32,
-    /// `finalize_postponement` was called while the refund-choice window is still open.
+    /
     PostponementWindowOpen = 33,
-    /// The operation requires the event to be in the `Postponed` state.
+    /
     EventNotPostponed = 34,
-    /// The caller holds no revocable (valid, unused) ticket for the event, so a
-    /// postponement refund cannot be issued (e.g. the ticket was already used or
-    /// transferred away).
+    /
+    /
+    /
     NoRefundableTicket = 35,
-    // ── zkPassport errors ─────────────────────────────────────────────────────
-    /// The proof's `expiry_ledger` is less than the current ledger sequence.
+    /
     ZkProofExpired = 36,
-    /// This nullifier has already been recorded for this event — proof reuse
-    /// is not allowed.
+    /
+    /
     ZkNullifierReused = 37,
-    /// The event `requires_verification` is `true` but the ZkVerificationConfig
-    /// has not been enabled by the organizer.
+    /
+    /
     ZkVerificationRequired = 38,
-    /// Reserved for future on-chain verifier integration. Currently signals that
-    /// the provided proof bytes are structurally invalid.
+    /
+    /
     ZkProofInvalid = 39,
-    /// The submitted `ZkPassportClaim.claim_type` does not match the type
-    /// required by the event's `ZkVerificationConfig`.
+    /
+    /
     ZkClaimTypeMismatch = 40,
 }

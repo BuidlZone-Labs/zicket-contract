@@ -6,15 +6,11 @@ use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{token, Address, Env, String, Symbol};
 
-// ============================================================
-// Setup
-// ============================================================
-
 fn setup_env() -> Env {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().with_mut(|li| {
-        li.timestamp = 1704067200; // Jan 1, 2024 (Future relative to now, but static for tests)
+        li.timestamp = 1704067200;
     });
     env
 }
@@ -24,10 +20,6 @@ const BASE_TIMESTAMP: u64 = 1704067200;
 fn test_payout_token(env: &Env) -> Address {
     Address::generate(env)
 }
-
-// ============================================================
-// Tests
-// ============================================================
 
 #[test]
 fn test_create_event() {
@@ -56,7 +48,6 @@ fn test_create_event_duplicate_fails() {
     let name = String::from_str(&env, "Tech Conference 2024");
     let description = String::from_str(&env, "A great conference");
     let venue = String::from_str(&env, "Convention Center");
-    // Ensure date is > 24h in future
     let event_date = env.ledger().timestamp() + 86_401;
     let initial_tiers = soroban_sdk::vec![
         &env,
@@ -84,16 +75,12 @@ fn test_create_event_duplicate_fails() {
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
     };
-
-    // First creation succeeds
     client.create_event(&params);
-
-    // Second creation with same ID fails
     let params_dup = CreateEventParams {
         organizer: organizer.clone(),
         payout_token: test_payout_token(&env),
         event_id: event_id.clone(),
-        name: name.clone(), // doesn't matter
+        name: name.clone(),
         description: description.clone(),
         venue: venue.clone(),
         event_date,
@@ -130,7 +117,7 @@ fn test_create_event_invalid_tickets_fails() {
             TicketTierParams {
                 name: String::from_str(&env, "General"),
                 price: 100,
-                capacity: 0, // Invalid
+                capacity: 0,
             },
         ],
         allow_anonymous: true,
@@ -166,7 +153,7 @@ fn test_create_event_too_many_tickets_fails() {
             TicketTierParams {
                 name: String::from_str(&env, "General"),
                 price: 100,
-                capacity: 100_000, // Invalid limit
+                capacity: 100_000,
             },
         ],
         allow_anonymous: true,
@@ -196,7 +183,7 @@ fn test_create_event_past_date_fails() {
         name: String::from_str(&env, "Bad Event"),
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
-        event_date: env.ledger().timestamp() - 100, // Past
+        event_date: env.ledger().timestamp() - 100,
         initial_tiers: soroban_sdk::vec![
             &env,
             TicketTierParams {
@@ -232,7 +219,7 @@ fn test_create_event_date_less_than_24h_fails() {
         name: String::from_str(&env, "Bad Event"),
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
-        event_date: env.ledger().timestamp() + 3600, // Only 1h
+        event_date: env.ledger().timestamp() + 3600,
         initial_tiers: soroban_sdk::vec![
             &env,
             TicketTierParams {
@@ -273,7 +260,7 @@ fn test_create_event_negative_price_fails() {
             &env,
             TicketTierParams {
                 name: String::from_str(&env, "General"),
-                price: -10, // Invalid
+                price: -10,
                 capacity: 100,
             },
         ],
@@ -301,7 +288,7 @@ fn test_create_event_empty_name_fails() {
         organizer: organizer.clone(),
         payout_token: test_payout_token(&env),
         event_id: Symbol::new(&env, "event_bad"),
-        name: String::from_str(&env, ""), // Empty
+        name: String::from_str(&env, ""),
         description: String::from_str(&env, "Desc"),
         venue: String::from_str(&env, "Venue"),
         event_date: env.ledger().timestamp() + 90_000,
@@ -339,7 +326,7 @@ fn test_create_event_empty_venue_fails() {
         event_id: Symbol::new(&env, "event_bad"),
         name: String::from_str(&env, "Event"),
         description: String::from_str(&env, "Desc"),
-        venue: String::from_str(&env, ""), // Empty
+        venue: String::from_str(&env, ""),
         event_date: env.ledger().timestamp() + 90_000,
         initial_tiers: soroban_sdk::vec![
             &env,
@@ -380,8 +367,6 @@ fn test_update_event_status_upcoming_to_active() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Transitions from Upcoming to Active
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
     let status = client.get_event_status(&event_id);
@@ -412,8 +397,6 @@ fn test_invalid_status_transition_fails() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Try Upcoming -> Completed (Skipping Active) -> Fail
     let result = client.try_update_event_status(&organizer, &event_id, &EventStatus::Completed);
     assert_eq!(result.err(), Some(Ok(EventError::InvalidStatusTransition)));
 }
@@ -444,8 +427,6 @@ fn test_cancel_completed_event_fails() {
 
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
     client.update_event_status(&organizer, &event_id, &EventStatus::Completed);
-
-    // Try cancel -> fail
     let result = client.try_cancel_event(&organizer, &event_id);
     assert_eq!(result.err(), Some(Ok(EventError::InvalidStatusTransition)));
 }
@@ -464,10 +445,6 @@ fn test_unauthorized_cancel() {
     assert_eq!(result.err(), Some(Ok(EventError::Unauthorized)));
 }
 
-// ============================================================
-// Update event details tests
-// ============================================================
-
 #[test]
 fn test_update_event_details() {
     let env = setup_env();
@@ -476,8 +453,6 @@ fn test_update_event_details() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Update name and price
     let params = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -496,7 +471,6 @@ fn test_update_event_details() {
     assert_eq!(event.name, String::from_str(&env, "Updated Conference"));
     assert!(!event.allow_anonymous);
     assert!(event.requires_verification);
-    // Verify other fields remain unchanged
     assert_eq!(event.venue, String::from_str(&env, "Convention Center"));
     let mut capacity = 0;
     for tier in event.tiers.iter() {
@@ -514,8 +488,6 @@ fn test_update_event_details_noop() {
 
     let event_id = setup_event(&env, &client, &organizer);
     let original_event = client.get_event(&event_id);
-
-    // Update with all None
     let params = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -565,8 +537,6 @@ fn test_update_event_unauthorized() {
     let attacker = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Attacker tries to update
     let params = UpdateEventParams {
         organizer: attacker.clone(),
         event_id: event_id.clone(),
@@ -591,11 +561,7 @@ fn test_update_active_event_fails() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Activate event
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-
-    // Try update details -> should fail
     let params = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -609,7 +575,6 @@ fn test_update_active_event_fails() {
     };
 
     let result = client.try_update_event_details(&params);
-    // Expect EventNotUpdatable error
     assert!(result.is_err());
 }
 
@@ -621,11 +586,7 @@ fn test_update_cancelled_event_fails() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Cancel event
     client.cancel_event(&organizer, &event_id);
-
-    // Try update details -> should fail
     let params = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -650,8 +611,6 @@ fn test_update_invalid_data() {
     let organizer = Address::generate(&env);
 
     let event_id = setup_event(&env, &client, &organizer);
-
-    // Empty name
     let params_name = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
@@ -665,15 +624,13 @@ fn test_update_invalid_data() {
     };
     let result = client.try_update_event_details(&params_name);
     assert!(result.is_err());
-
-    // Past date
     let params_date = UpdateEventParams {
         organizer: organizer.clone(),
         event_id: event_id.clone(),
         name: None,
         description: None,
         venue: None,
-        event_date: Some(BASE_TIMESTAMP), // now/past
+        event_date: Some(BASE_TIMESTAMP),
         allow_anonymous: None,
         requires_verification: None,
         max_tickets_per_user: None,
@@ -681,10 +638,6 @@ fn test_update_invalid_data() {
     let result_date = client.try_update_event_details(&params_date);
     assert!(result_date.is_err());
 }
-
-// ============================================================
-// Registration tests
-// ============================================================
 
 #[test]
 fn test_register_for_event_happy_path() {
@@ -860,7 +813,6 @@ fn setup_event_with_payout_token(
     let name = String::from_str(env, "Tech Conference 2024");
     let description = String::from_str(env, "A great conference");
     let venue = String::from_str(env, "Convention Center");
-    // Ensure date is > 24h in future
     let event_date = env.ledger().timestamp() + 86_401;
     let initial_tiers = soroban_sdk::vec![
         env,
@@ -929,10 +881,6 @@ fn fund_attendee(
     token_client.transfer(token_admin, attendee, &amount);
 }
 
-// ============================================================
-// Reservation Tests
-// ============================================================
-
 #[test]
 fn test_reserve_ticket_success() {
     let env = setup_env();
@@ -970,11 +918,7 @@ fn test_reserve_and_pay_success() {
 
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-
-    // 1. Reserve
     client.reserve_ticket(&attendee, &event_id, &0, &None);
-
-    // 2. Pay
     client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
 
     let event = client.get_event(&event_id);
@@ -1008,7 +952,7 @@ fn test_reserve_expire_and_available_again() {
             TicketTierParams {
                 name: String::from_str(&env, "VIP"),
                 price: 100,
-                capacity: 1, // Only 1 spot
+                capacity: 1,
             },
         ],
         allow_anonymous: true,
@@ -1021,30 +965,20 @@ fn test_reserve_expire_and_available_again() {
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-
-    // 1. Reserve
     client.reserve_ticket(&attendee, &event_id, &0, &None);
 
     let event = client.get_event(&event_id);
     assert_eq!(event.tiers.get(0).unwrap().reserved, 1);
-
-    // 2. Try to reserve again by another user -> should fail (Sold out/Reserved out)
     let attendee_2 = Address::generate(&env);
     let result = client.try_reserve_ticket(&attendee_2, &event_id, &0, &None);
     assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
-
-    // 3. Move time forward 16 minutes (beyond 15 min expiry)
     env.ledger().with_mut(|li| {
         li.timestamp += 1000;
     });
-
-    // 4. Release expired
     client.release_expired_reservation(&event_id, &attendee);
 
     let event_after = client.get_event(&event_id);
     assert_eq!(event_after.tiers.get(0).unwrap().reserved, 0);
-
-    // 5. Now attendee_2 can reserve
     client.reserve_ticket(&attendee_2, &event_id, &0, &None);
     assert_eq!(
         client.get_event(&event_id).tiers.get(0).unwrap().reserved,
@@ -1066,23 +1000,13 @@ fn test_pay_with_expired_reservation_fails() {
 
     let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-
-    // 1. Reserve
     client.reserve_ticket(&attendee, &event_id, &0, &None);
-
-    // 2. Move time forward
     env.ledger().with_mut(|li| {
         li.timestamp += 1000;
     });
-
-    // 3. Try to pay -> should fail
     let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert_eq!(result.err(), Some(Ok(EventError::ReservationExpired)));
 }
-
-// ============================================================
-// Issue #53: Privacy-Preserving Event Emissions Tests
-// ============================================================
 
 #[test]
 fn test_privacy_default_is_standard() {
@@ -1194,8 +1118,6 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
 
     let event_id = Symbol::new(&env, "TESTEVENT");
     let payout_token = test_payout_token(&env);
-
-    // Try to create event with withdrawal_delay_ledgers = 0 (below minimum of 100)
     let params = CreateEventParams {
         event_id: event_id.clone(),
         organizer: organizer.clone(),
@@ -1219,13 +1141,11 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
         max_tickets_per_user: 0,
         event_start_ledger: 100,
         event_end_ledger: 200,
-        withdrawal_delay_ledgers: 0, // Below minimum!
+        withdrawal_delay_ledgers: 0,
     };
 
     let result = client.try_create_event(&params);
     assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
-
-    // Try with withdrawal_delay_ledgers = 99 (still below minimum)
     let params_99 = CreateEventParams {
         withdrawal_delay_ledgers: 99,
         ..params.clone()
@@ -1233,8 +1153,6 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
 
     let result = client.try_create_event(&params_99);
     assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
-
-    // Try with withdrawal_delay_ledgers = 100 (exactly at minimum) - should succeed
     let params_100 = CreateEventParams {
         withdrawal_delay_ledgers: 100,
         ..params.clone()
@@ -1242,8 +1160,6 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
 
     let result = client.try_create_event(&params_100);
     assert!(result.is_ok());
-
-    // Try with withdrawal_delay_ledgers = 200 (above minimum) - should succeed
     let params_200 = CreateEventParams {
         event_id: Symbol::new(&env, "TSTEVENT2"),
         withdrawal_delay_ledgers: 200,
@@ -1253,11 +1169,9 @@ fn test_create_event_minimum_withdrawal_delay_enforced() {
     let result = client.try_create_event(&params_200);
     assert!(result.is_ok());
 }
-
-// Minimum choice window in ledgers (~72h at 5s/ledger), mirrors the contract constant.
 const MIN_WINDOW: u32 = 51_840;
 
-/// Create an event and move it to `Active`, returning its id.
+/
 fn setup_active_event(env: &Env, client: &EventContractClient, organizer: &Address) -> Symbol {
     let event_id = setup_event(env, client, organizer);
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
@@ -1282,7 +1196,6 @@ fn test_postpone_active_event_opens_window() {
     assert_eq!(client.get_event_status(&event_id), EventStatus::Postponed);
     let info = client.get_postponement(&event_id);
     assert_eq!(info.new_date_ledger, 60_000);
-    // deadline = current ledger (100) + window
     assert_eq!(info.choice_deadline_ledger, 100 + MIN_WINDOW as u64);
 }
 
@@ -1293,13 +1206,9 @@ fn test_postpone_rejects_non_active_states() {
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
-
-    // Upcoming -> Postponed rejected
     let event_id = setup_event(&env, &client, &organizer);
     let res = client.try_postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
     assert_eq!(res.err(), Some(Ok(EventError::InvalidStatusTransition)));
-
-    // Completed -> Postponed rejected
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
     client.update_event_status(&organizer, &event_id, &EventStatus::Completed);
     let res = client.try_postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
@@ -1341,8 +1250,6 @@ fn test_postpone_rejects_new_date_inside_window() {
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
-
-    // deadline = 100 + MIN_WINDOW; a new date equal to the deadline is rejected.
     let deadline = 100 + MIN_WINDOW as u64;
     let res = client.try_postpone_event(&organizer, &event_id, &deadline, &MIN_WINDOW);
     assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
@@ -1372,7 +1279,6 @@ fn test_finalize_before_window_closes_fails() {
     let event_id = setup_active_event(&env, &client, &organizer);
 
     client.postpone_event(&organizer, &event_id, &60_000, &MIN_WINDOW);
-    // Still inside the window.
     let res = client.try_finalize_postponement(&organizer, &event_id);
     assert_eq!(res.err(), Some(Ok(EventError::PostponementWindowOpen)));
 }
@@ -1414,8 +1320,6 @@ fn test_finalize_resumes_active_and_shifts_schedule() {
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
-
-    // Original schedule: start 0, end 1000 (duration 1000) from setup_event.
     let before = client.get_event(&event_id);
     let duration = before.event_end_ledger - before.event_start_ledger;
 
@@ -1427,8 +1331,6 @@ fn test_finalize_resumes_active_and_shifts_schedule() {
     let after = client.get_event(&event_id);
     assert_eq!(after.event_start_ledger, 60_000);
     assert_eq!(after.event_end_ledger, 60_000 + duration);
-
-    // The active postponement record is cleared on resume — no stale window data.
     let res = client.try_get_postponement(&event_id);
     assert_eq!(res.err(), Some(Ok(EventError::EventNotPostponed)));
 }
@@ -1441,8 +1343,6 @@ fn test_postpone_rejects_out_of_range_new_date() {
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
-
-    // new_date_ledger beyond u32::MAX cannot fit the stored u32 schedule.
     let too_far = u32::MAX as u64 + 1;
     let res = client.try_postpone_event(&organizer, &event_id, &too_far, &MIN_WINDOW);
     assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
@@ -1456,8 +1356,6 @@ fn test_postpone_rejects_window_above_max() {
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
-
-    // ~30-day cap is 518_400 ledgers; one above is rejected.
     let res = client.try_postpone_event(&organizer, &event_id, &10_000_000, &518_401);
     assert_eq!(res.err(), Some(Ok(EventError::InvalidPostponementDate)));
 }
@@ -1469,8 +1367,6 @@ fn test_postpone_count_capped() {
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let event_id = setup_active_event(&env, &client, &organizer);
-
-    // MAX_POSTPONEMENTS allowed postponements, each followed by a finalize.
     let mut seq = 10u32;
     for _ in 0..3 {
         at_sequence(&env, seq);
@@ -1480,8 +1376,6 @@ fn test_postpone_count_capped() {
         at_sequence(&env, seq);
         client.finalize_postponement(&organizer, &event_id);
     }
-
-    // The 4th postponement exceeds MAX_POSTPONEMENTS (3).
     at_sequence(&env, seq);
     let new_date = (seq + MIN_WINDOW) as u64 + 10_000;
     let res = client.try_postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
@@ -1490,8 +1384,6 @@ fn test_postpone_count_capped() {
 
 #[test]
 fn test_cancel_allowed_from_postponed() {
-    // The organizer can always escape a postponement by cancelling outright,
-    // which routes through the full-refund cancellation path.
     let env = setup_env();
     at_sequence(&env, 100);
     let contract_id = env.register(EventContract, ());

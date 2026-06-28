@@ -109,8 +109,6 @@ fn test_registration_cross_contract_happy_path() {
 
     let attendee_tickets = ticket_client.get_tickets_by_owner(&attendee);
     assert_eq!(attendee_tickets.len(), 1);
-
-    // Payment contract also issues a receipt-style ticket record linked to payment.
     let payment_owner_tickets = payments_client.get_owner_tickets(&attendee);
     assert_eq!(payment_owner_tickets.len(), 1);
     let payment_ticket_id = payment_owner_tickets.get(0).unwrap();
@@ -151,7 +149,6 @@ fn test_registration_reverts_if_minting_fails() {
         &platform_wallet,
         &event_contract_id,
     );
-    // Intentionally link the ticket contract to the payments contract to force mint failure.
     event_client.initialize(&organizer, &payments_contract_id, &payments_contract_id);
 
     let price = 100_000_000i128;
@@ -240,17 +237,11 @@ fn test_cancel_event_triggers_refunds() {
     assert_eq!(token_client.balance(&attendee2), 0);
     assert_eq!(token_client.balance(&payments_contract_id), price * 2);
     assert_eq!(payments_client.get_event_revenue(&event_id), price * 2);
-
-    // Cancel event
     event_client.cancel_event(&organizer, &event_id);
-
-    // Check event status
     assert_eq!(
         event_client.get_event_status(&event_id),
         EventStatus::Cancelled
     );
-
-    // Claim refunds
     let payment_owner_tickets_1 = payments_client.get_owner_tickets(&attendee1);
     let ticket_1 = payments_client.get_ticket(&payment_owner_tickets_1.get(0).unwrap());
     payments_client.claim_refund(&attendee1, &ticket_1.payment_id);
@@ -258,8 +249,6 @@ fn test_cancel_event_triggers_refunds() {
     let payment_owner_tickets_2 = payments_client.get_owner_tickets(&attendee2);
     let ticket_2 = payments_client.get_ticket(&payment_owner_tickets_2.get(0).unwrap());
     payments_client.claim_refund(&attendee2, &ticket_2.payment_id);
-
-    // Check balances restored
     assert_eq!(token_client.balance(&attendee1), price);
     assert_eq!(token_client.balance(&attendee2), price);
     assert_eq!(token_client.balance(&payments_contract_id), 0);
@@ -338,9 +327,9 @@ fn setup_linked(
     ticket_contract::TicketContractClient<'_>,
     token::Client<'_>,
     token::StellarAssetClient<'_>,
-    Address, // token address
-    Address, // organizer
-    Address, // payments contract id
+    Address,
+    Address,
+    Address,
 ) {
     let organizer = Address::generate(env);
 
@@ -428,8 +417,6 @@ fn test_postpone_full_refund_and_resume() {
         event_client.get_event_status(&event_id),
         EventStatus::Postponed
     );
-
-    // The minted (entry) ticket for attendee1 before opting out.
     let minted1 = ticket_client
         .get_tickets_by_owner(&attendee1)
         .get(0)
@@ -440,9 +427,6 @@ fn test_postpone_full_refund_and_resume() {
         .get(0)
         .unwrap();
     let payment1 = payments_client.get_ticket(&t1).payment_id;
-
-    // Opt out through the event contract (orchestrates refund + revocation).
-    // The event is derived from the payment ticket, so no event_id argument.
     event_client.request_postponement_refund(&attendee1, &t1);
 
     assert_eq!(token_client.balance(&attendee1), PRICE);
@@ -452,15 +436,11 @@ fn test_postpone_full_refund_and_resume() {
         payments_client.get_payment(&payment1).status,
         payments_contract::PaymentStatus::Refunded
     );
-
-    // Refunded holder loses participation: registration dropped and ticket cancelled.
     assert!(!event_client.is_registered(&event_id, &attendee1));
     assert_eq!(
         ticket_client.get_ticket(&minted1).status,
         ticket_contract::TicketStatus::Cancelled
     );
-
-    // Non-acting holder keeps their place.
     assert!(event_client.is_registered(&event_id, &attendee2));
 
     env.ledger()
@@ -512,12 +492,8 @@ fn test_postponed_event_blocks_all_withdrawals() {
 
     let new_date = 100 + MIN_WINDOW as u64 + 10_000;
     event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
-
-    // Event-contract withdrawal path (gated on Completed).
     let res = event_client.try_withdraw_revenue(&organizer, &event_id);
     assert!(res.is_err());
-
-    // Every direct payments-contract release path is frozen while Postponed.
     let res = payments_client.try_withdraw(&organizer, &event_id);
     assert!(res.is_err());
     let res = payments_client.try_withdraw_revenue(&event_id, &organizer);
@@ -616,9 +592,6 @@ fn test_postponement_refund_rejects_non_owner() {
 
 #[test]
 fn test_postponement_refund_requires_revocable_ticket() {
-    // If the holder has no valid, unused entry ticket to give up (e.g. it was
-    // already cancelled/transferred), the refund must be rejected — and no money
-    // must move.
     let env = setup_env();
     env.ledger().with_mut(|li| li.sequence_number = 100);
 
@@ -648,8 +621,6 @@ fn test_postponement_refund_requires_revocable_ticket() {
 
     let new_date = 100 + MIN_WINDOW as u64 + 10_000;
     event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
-
-    // Holder cancels their entry ticket, so nothing is revocable.
     let minted = ticket_client
         .get_tickets_by_owner(&attendee)
         .get(0)
@@ -659,8 +630,6 @@ fn test_postponement_refund_requires_revocable_ticket() {
     let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
     let res = event_client.try_request_postponement_refund(&attendee, &t);
     assert_eq!(res.err(), Some(Ok(crate::EventError::NoRefundableTicket)));
-
-    // No refund was issued: escrow and payment status are unchanged.
     assert_eq!(token_client.balance(&attendee), 0);
     assert_eq!(token_client.balance(&payments_id), PRICE);
     assert_eq!(
@@ -671,8 +640,6 @@ fn test_postponement_refund_requires_revocable_ticket() {
 
 #[test]
 fn test_postponement_refund_is_event_scoped() {
-    // A refund must revoke access only for the event the payment ticket belongs to,
-    // never for a different event the caller also participates in.
     let env = setup_env();
     env.ledger().with_mut(|li| li.sequence_number = 100);
 
@@ -713,8 +680,6 @@ fn test_postponement_refund_is_event_scoped() {
     let new_date = 100 + MIN_WINDOW as u64 + 10_000;
     event_client.postpone_event(&organizer, &event_a, &new_date, &MIN_WINDOW);
     event_client.postpone_event(&organizer, &event_b, &new_date, &MIN_WINDOW);
-
-    // Locate the payments receipt ticket that belongs to event B.
     let tickets = payments_client.get_owner_tickets(&attendee);
     let mut ticket_b = None;
     for i in 0..tickets.len() {
@@ -724,14 +689,10 @@ fn test_postponement_refund_is_event_scoped() {
         }
     }
     let ticket_b = ticket_b.unwrap();
-
-    // Refunding event B's ticket revokes participation in B only — A is untouched.
     event_client.request_postponement_refund(&attendee, &ticket_b);
 
     assert!(!event_client.is_registered(&event_b, &attendee));
     assert!(event_client.is_registered(&event_a, &attendee));
-
-    // Event A's minted ticket stays valid; event B's is cancelled.
     for tid in ticket_client.get_tickets_by_owner(&attendee).iter() {
         let minted = ticket_client.get_ticket(&tid);
         if minted.event_id == event_a {
@@ -787,12 +748,8 @@ fn test_withdraw_revenue_integration() {
         &token_address,
         event_id.clone(),
     );
-
-    // Register attendee
     event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
     assert_eq!(token_client.balance(&payments_contract_id), price);
-
-    // Complete event to allow withdrawal
     event_client.update_event_status(&organizer, &event_id, &EventStatus::Completed);
     event_client.withdraw_revenue(&organizer, &event_id);
 

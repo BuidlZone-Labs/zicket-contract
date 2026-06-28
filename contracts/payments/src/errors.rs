@@ -1,4 +1,4 @@
-﻿use soroban_sdk::contracterror;
+use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -35,14 +35,14 @@ pub enum PaymentError {
     EventSoldOut = 29,
     NonceRequired = 30,
     ContractPaused = 31,
-    /// Token transfer failed; no state has been modified
+    /
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,
-    /// A zkEmail commitment is already bound to this payment; commitments are
-    /// write-once and cannot be overwritten.
+    /
+    /
     CommitmentAlreadySet = 35,
-    /// The payment is in a state that no longer accepts a commitment
-    /// (e.g. it has been refunded).
+    /
+    /
     CommitmentNotAllowed = 36,
 }

@@ -73,8 +73,8 @@ pub struct EventRegistration {
     pub registered_at: u64,
 }
 
-/// Publish a Soroban event when a new event is created.
-/// The organizer address is masked according to the event's privacy level.
+/
+/
 pub fn emit_event_created(env: &Env, params: &CreateEventParams, level: &PrivacyLevel) {
     EventCreated {
         event_id: params.event_id.clone(),
@@ -88,7 +88,7 @@ pub fn emit_event_created(env: &Env, params: &CreateEventParams, level: &Privacy
     .publish(env);
 }
 
-/// Publish a Soroban event when event details are updated.
+/
 pub fn emit_event_updated(env: &Env, event: &Event) {
     EventUpdated {
         event_id: event.event_id.clone(),
@@ -101,7 +101,7 @@ pub fn emit_event_updated(env: &Env, event: &Event) {
     .publish(env);
 }
 
-/// Publish a Soroban event when an event status changes.
+/
 pub fn emit_status_changed(
     env: &Env,
     event_id: &Symbol,
@@ -117,8 +117,8 @@ pub fn emit_status_changed(
     .publish(env);
 }
 
-/// Publish a Soroban event when an event is cancelled.
-/// The organizer address is masked according to the event's privacy level.
+/
+/
 pub fn emit_event_cancelled(
     env: &Env,
     event_id: &Symbol,
@@ -133,18 +133,9 @@ pub fn emit_event_cancelled(
     .publish(env);
 }
 
-// pub fn emit_refunds_processed(env: &Env, event_id: &Symbol, refund_count: u32) {
-//     RefundsProcessed {
-//         event_id: event_id.clone(),
-//         refund_count,
-//         processed_at: env.ledger().timestamp(),
-//     }
-//     .publish(env);
-// }
-
-/// Publish a Soroban event when an event is postponed (rescheduled).
-///
-/// Carries no address-derivable fields, so it is privacy-safe for all levels.
+/
+/
+/
 pub fn emit_event_postponed(
     env: &Env,
     event_id: &Symbol,
@@ -162,8 +153,8 @@ pub fn emit_event_postponed(
     .publish(env);
 }
 
-/// Publish a Soroban event when a postponed event is finalized back to `Active`
-/// on its new schedule.
+/
+/
 pub fn emit_event_resumed(
     env: &Env,
     event_id: &Symbol,
@@ -179,8 +170,8 @@ pub fn emit_event_resumed(
     .publish(env);
 }
 
-/// Publish a Soroban event when an attendee registers.
-/// The attendee address is masked according to the event's privacy level.
+/
+/
 pub fn emit_registration(
     env: &Env,
     event_id: &Symbol,
@@ -207,8 +198,8 @@ pub struct AnonEventRegistration {
     pub registered_at: u64,
 }
 
-/// Publish a Soroban event for an anonymous (no-wallet) free ticket claim.
-/// No attendee identifier is emitted — the commitment is kept off-chain.
+/
+/
 pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, tickets_sold: u32) {
     AnonEventRegistration {
         event_id: event_id.clone(),
@@ -219,16 +210,14 @@ pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, ticket
     .publish(env);
 }
 
-// ── zkPassport events ───────────────────────────────────────────────────────────
-
-/// Emitted when an attendee successfully registers via a valid zkPassport proof.
-///
-/// # Privacy design
-/// - The **nullifier** is deliberately omitted from the event payload. Publishing
-///   it on-chain would allow any observer to correlate proof submissions across
-///   events. Callers who need the nullifier can read it from storage directly.
-/// - Only `claim_type` is emitted so that indexers can aggregate verification
-///   statistics without linking individual attendees.
+/
+/
+/
+/
+/
+/
+/
+/
 #[contractevent(data_format = "vec", topics = ["zk_attend"])]
 pub struct ZkVerifiedAttendance {
     pub event_id: Symbol,
@@ -238,9 +227,9 @@ pub struct ZkVerifiedAttendance {
     pub registered_at: u64,
 }
 
-/// Publish a Soroban event when a zkPassport-verified attendee registers.
-/// The nullifier and raw proof are intentionally not included in the event
-/// data to prevent correlation attacks.
+/
+/
+/
 pub fn emit_zk_verified_attendance(
     env: &Env,
     event_id: &Symbol,
