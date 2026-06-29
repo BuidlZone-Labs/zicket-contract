@@ -1257,6 +1257,7 @@ fn validate_revenue_splits(
 
     Ok(())
 }
+
 fn has_valid_ticket_for_event(
     ticket_client: &TicketContractClient,
     attendee: &Address,
