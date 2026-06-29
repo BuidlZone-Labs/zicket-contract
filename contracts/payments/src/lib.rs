@@ -1636,7 +1636,6 @@ impl PaymentsContract {
         Ok(())
     }
 
-
     // -- Revenue splits & co-host wallet management ----------------------------
 
     /// Register the revenue split for an event. Callable only by the linked event
