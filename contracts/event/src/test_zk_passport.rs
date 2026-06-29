@@ -56,6 +56,9 @@ fn setup_verified_event(env: &Env, client: &EventContractClient, organizer: &Add
         event_end_ledger: 9_999,
         withdrawal_delay_ledgers: 17_280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     });
     event_id
 }
@@ -191,6 +194,9 @@ fn test_non_gated_event_rejects_verify_and_attend() {
         event_end_ledger: 9_999,
         withdrawal_delay_ledgers: 17_280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     });
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
     let claim = make_claim(&env, ZkClaimType::Age, 5, 9_999);
@@ -398,6 +404,9 @@ fn test_sold_out_event_rejects_verify_and_attend() {
         event_end_ledger: 9_999,
         withdrawal_delay_ledgers: 17_280,
         revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     });
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
     client.set_zk_config(

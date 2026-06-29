@@ -16,7 +16,9 @@ pub enum DataKey {
     EventTickets(Symbol),
     NextTicketId,
     ContractVersion,
+    Admin,
     RecoveryKey(u64),
+    PaymentsContract,
 }
 
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, TicketError> {
@@ -84,4 +86,34 @@ pub fn remove_recovery_key(env: &Env, ticket_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::RecoveryKey(ticket_id));
+}
+
+pub fn get_payments_contract(env: &Env) -> Result<Address, TicketError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PaymentsContract)
+        .ok_or(TicketError::Unauthorized) // or specific error if available
+}
+
+pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PaymentsContract, payments_contract);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::PaymentsContract, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_admin(env: &Env) -> Result<Address, TicketError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Admin)
+        .ok_or(TicketError::Unauthorized)
+}
+
+pub fn set_admin(env: &Env, admin: &Address) {
+    env.storage().persistent().set(&DataKey::Admin, admin);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::Admin, TTL_THRESHOLD, TTL_BUMP);
 }

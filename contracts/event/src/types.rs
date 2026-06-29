@@ -78,6 +78,9 @@ pub struct Event {
     /// legacy single-organizer payout. When set, index 0 is the primary
     /// organizer and the basis points sum to 10000.
     pub revenue_splits: Vec<(Address, u32)>,
+    pub resale_royalty_bps: u32,
+    pub max_resale_price: Option<i128>,
+    pub allow_free_ticket_transfer: bool,
 }
 
 #[contracttype]
@@ -102,6 +105,9 @@ pub struct CreateEventParams {
     /// legacy single-organizer payout. When provided: 1–5 recipients, basis
     /// points summing to 10000, index 0 must equal `organizer`, no duplicates.
     pub revenue_splits: Vec<(Address, u32)>,
+    pub resale_royalty_bps: u32,
+    pub max_resale_price: Option<i128>,
+    pub allow_free_ticket_transfer: bool,
 }
 
 #[contracttype]
@@ -116,6 +122,9 @@ pub struct UpdateEventParams {
     pub allow_anonymous: Option<bool>,
     pub requires_verification: Option<bool>,
     pub max_tickets_per_user: Option<u32>,
+    pub resale_royalty_bps: Option<u32>,
+    pub max_resale_price: Option<i128>, // Will be evaluated: if Some(-1) => None, else => Some(value)
+    pub allow_free_ticket_transfer: Option<bool>,
 }
 
 #[contracttype]

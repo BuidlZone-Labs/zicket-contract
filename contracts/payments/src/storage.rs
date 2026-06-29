@@ -32,6 +32,9 @@ pub struct EventConfig {
     pub cancel_ledger: Option<u32>,
     pub withdrawable_ratio_bps: Option<u32>,
     pub organizer_withdrawn: bool,
+    pub resale_royalty_bps: u32,
+    pub max_resale_price: Option<i128>,
+    pub allow_free_ticket_transfer: bool,
 }
 
 #[contracttype]
@@ -72,6 +75,8 @@ pub enum DataKey {
     SplitWithdrawn(Symbol, Address),
     /// Whether a split recipient's share is frozen pending dispute resolution.
     SplitFlagged(Symbol, Address),
+    ResaleListing(u64),
+    TicketContract,
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -166,6 +171,24 @@ pub fn set_event_contract(env: &Env, event_contract: &soroban_sdk::Address) {
         .set(&DataKey::EventContract, event_contract);
     env.storage().persistent().extend_ttl(
         &DataKey::EventContract,
+        60 * 60 * 24 * 30,
+        60 * 60 * 24 * 30 * 2,
+    );
+}
+
+pub fn get_ticket_contract(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TicketContract)
+        .ok_or(PaymentError::NotInitialized)
+}
+
+pub fn set_ticket_contract(env: &Env, ticket_contract: &soroban_sdk::Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::TicketContract, ticket_contract);
+    env.storage().persistent().extend_ttl(
+        &DataKey::TicketContract,
         60 * 60 * 24 * 30,
         60 * 60 * 24 * 30 * 2,
     );
@@ -721,4 +744,23 @@ pub fn set_split_flagged(env: &Env, event_id: &Symbol, recipient: &Address, flag
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn save_resale_listing(env: &Env, ticket_id: u64, listing: &crate::types::ResaleListing) {
+    let key = DataKey::ResaleListing(ticket_id);
+    env.storage().persistent().set(&key, listing);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+}
+
+pub fn get_resale_listing(env: &Env, ticket_id: u64) -> Option<crate::types::ResaleListing> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::ResaleListing(ticket_id))
+}
+
+pub fn remove_resale_listing(env: &Env, ticket_id: u64) {
+    let key = DataKey::ResaleListing(ticket_id);
+    env.storage().persistent().remove(&key);
 }

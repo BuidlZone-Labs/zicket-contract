@@ -287,6 +287,73 @@ impl TicketContract {
 
         Ok(())
     }
+
+    pub fn set_payments_contract(
+        env: Env,
+        admin: Address,
+        payments_contract: Address,
+    ) -> Result<(), TicketError> {
+        if let Ok(stored_admin) = storage::get_admin(&env) {
+            if admin != stored_admin {
+                return Err(TicketError::Unauthorized);
+            }
+        } else {
+            storage::set_admin(&env, &admin);
+        }
+        admin.require_auth();
+        storage::set_payments_contract(&env, &payments_contract);
+        Ok(())
+    }
+
+    pub fn admin_transfer_ticket(
+        env: Env,
+        admin: Address,
+        from: Address,
+        to: Address,
+        ticket_id: u64,
+    ) -> Result<(), TicketError> {
+        admin.require_auth();
+
+        let payments_contract = storage::get_payments_contract(&env)?;
+        if admin != payments_contract {
+            return Err(TicketError::Unauthorized);
+        }
+
+        let mut ticket = storage::get_ticket(&env, ticket_id)?;
+
+        if ticket.owner != from {
+            return Err(TicketError::Unauthorized);
+        }
+
+        if !ticket.is_transferable || ticket.is_used || ticket.status != TicketStatus::Valid {
+            return Err(TicketError::TicketNotTransferable);
+        }
+
+        ticket.owner = to.clone();
+        storage::update_ticket(&env, &ticket);
+
+        // Update old owner's list
+        let mut from_tickets = storage::get_tickets_by_owner(&env, from.clone());
+        if let Some(index) = from_tickets.first_index_of(ticket_id) {
+            from_tickets.remove(index);
+            env.storage()
+                .persistent()
+                .set(&DataKey::OwnerTickets(from.clone()), &from_tickets);
+        }
+
+        // Update new owner's list
+        let mut to_tickets = storage::get_tickets_by_owner(&env, to.clone());
+        to_tickets.push_back(ticket_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::OwnerTickets(to.clone()), &to_tickets);
+
+        events::emit_ticket_transferred(&env, ticket_id, ticket.event_id.clone(), from, to);
+
+        Ok(())
+    }
+
+    /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }

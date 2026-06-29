@@ -43,6 +43,9 @@ fn create_active_event(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
 
     client.create_event(&params);
@@ -839,6 +842,9 @@ fn create_split_event(
         event_end_ledger: 1000,
         withdrawal_delay_ledgers: 17280,
         revenue_splits: splits,
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
     };
     w.event_client
         .try_create_event(&params)
