@@ -15,8 +15,6 @@ pub use errors::*;
 pub use events::*;
 pub use storage::*;
 pub use types::*;
-
-// Minimum dispute window (in ledgers) that must pass after cancellation before organizer can withdraw
 const MIN_DISPUTE_WINDOW_LEDGERS: u32 = 100;
 
 #[derive(Clone)]
@@ -89,8 +87,6 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
     if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue {
         return Err(PaymentError::AccountingMismatch);
     }
-
-    // Verify token revenue sum matches Held items
     let tokens = storage::get_event_tokens(env, event_id);
     for i in 0..tokens.len() {
         if let Some(token) = tokens.get(i) {
@@ -203,8 +199,6 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         paid_at,
         privacy_level: params.privacy_level.clone(),
         refunded_amount: 0,
-        // Stored, never emitted. Binds the payment to an off-chain email target
-        // without revealing the address.
         zk_email_commitment: params.zk_email_commitment.clone(),
     };
 
@@ -213,8 +207,6 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     storage::add_payer_payment(&env, &params.payer, payment_id);
     storage::set_nonce(&env, &params.payer, params.nonce);
     storage::add_event_revenue(&env, &params.event_id, params.amount);
-
-    // Track token-specific revenue
     storage::add_event_token_revenue(&env, &params.event_id, &params.token_address, params.amount);
     storage::add_event_token(&env, &params.event_id, &params.token_address);
 
@@ -483,9 +475,6 @@ fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement,
 
 #[contractimpl]
 impl PaymentsContract {
-    /// Initialize the contract with an admin address, accepted token address,
-    /// platform fee (in basis points, 0-10000), and platform wallet address.
-    /// This can only be called once. If already initialized, this is a no-op.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -510,13 +499,9 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Get a payment record by payment ID.
     pub fn get_payment(env: Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
         storage::get_payment(&env, payment_id)
     }
-
-    /// Get the total revenue for an event.
     pub fn get_event_revenue(env: Env, event_id: Symbol) -> i128 {
         storage::get_event_revenue(&env, &event_id)
     }
@@ -528,13 +513,9 @@ impl PaymentsContract {
     pub fn get_event_config(env: Env, event_id: Symbol) -> Result<EventConfig, PaymentError> {
         storage::get_event_config(&env, &event_id).ok_or(PaymentError::InvalidOrganizer)
     }
-
-    /// Get a ticket record by ticket ID.
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
         storage::get_ticket(&env, ticket_id)
     }
-
-    /// Get all ticket IDs owned by a wallet.
     pub fn get_owner_tickets(env: Env, owner: Address) -> soroban_sdk::Vec<u64> {
         storage::get_owner_tickets(&env, &owner)
     }
@@ -553,8 +534,6 @@ impl PaymentsContract {
         storage::set_paused(&env, paused);
         Ok(())
     }
-
-    /// Set the current lifecycle status for an event.
     pub fn set_event_status(
         env: Env,
         admin: Address,
@@ -570,8 +549,6 @@ impl PaymentsContract {
         storage::set_event_status(&env, &event_id, &status);
         Ok(())
     }
-
-    /// Pay for a ticket with a specific token. Transfers tokens from payer to contract escrow.
     #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket(
         env: Env,
@@ -599,14 +576,6 @@ impl PaymentsContract {
             },
         )
     }
-
-    /// Pay for a ticket and bind a zkEmail receipt commitment in the same call.
-    ///
-    /// `zk_email_commitment` is an optional salted hash of the buyer's email
-    /// (e.g. `H(email || ticket_id)`) computed off-chain. It is stored on the
-    /// payment record and never emitted; the raw email never touches the chain.
-    /// Pass `None` to behave exactly like [`PaymentsContract::pay_for_ticket`]
-    /// (fully anonymous attendees).
     #[allow(clippy::too_many_arguments)]
     pub fn pay_for_ticket_with_commitment(
         env: Env,
@@ -798,8 +767,6 @@ impl PaymentsContract {
         }
 
         storage::update_payment(&env, &payment)?;
-
-        // Update both general and token-specific revenue
         let revenue = storage::get_event_revenue(&env, &payment.event_id);
         storage::set_event_revenue(&env, &payment.event_id, revenue - refund_amt);
 
@@ -850,18 +817,16 @@ impl PaymentsContract {
                     + config.withdrawal_delay_ledgers
                     + config.admin_delay_extension_ledgers;
                 if current_ledger < unlock_ledger {
-                    return Err(PaymentError::EscrowNotExpired); // EscrowNotExpired makes sense here
+                    return Err(PaymentError::EscrowNotExpired);
                 }
             }
             Some(EventStatus::Cancelled) => {
-                // Check dispute window: must wait at least MIN_DISPUTE_WINDOW_LEDGERS after cancellation
                 if let Some(cancel_ledger) = config.cancel_ledger {
                     let min_dispute_unlock = cancel_ledger + MIN_DISPUTE_WINDOW_LEDGERS;
                     if current_ledger < min_dispute_unlock {
                         return Err(PaymentError::EscrowNotExpired);
                     }
                 } else {
-                    // Should never happen if event is Cancelled, but be defensive
                     return Err(PaymentError::EventNotCompleted);
                 }
 
@@ -902,15 +867,11 @@ impl PaymentsContract {
         let fee_bps = storage::get_platform_fee_bps(&env) as i128;
         let fee_amount = total_to_withdraw * fee_bps / 10_000;
         let organizer_amount = total_to_withdraw - fee_amount;
-
-        // Transfer organizer share
         token_client.transfer(
             &env.current_contract_address(),
             &stored_organizer,
             &organizer_amount,
         );
-
-        // Accumulate platform revenue if there is a fee
         if fee_amount > 0 {
             storage::add_platform_revenue(&env, &event_id, fee_amount);
             events::emit_platform_fee_collected(
@@ -1001,8 +962,6 @@ impl PaymentsContract {
         }
         payments
     }
-
-    /// Admin can extend the withdrawal delay.
     pub fn extend_withdrawal_delay(
         env: Env,
         admin: Address,
@@ -1021,8 +980,6 @@ impl PaymentsContract {
         storage::set_event_config(&env, &event_id, &config);
         Ok(())
     }
-
-    /// Handle event cancellation from the event contract.
     pub fn cancel_event(
         env: Env,
         event_id: Symbol,
@@ -1059,8 +1016,6 @@ impl PaymentsContract {
         storage::set_event_status(&env, &event_id, &EventStatus::Cancelled);
         Ok(())
     }
-
-    /// Claim refund for a cancelled event.
     pub fn claim_refund(env: Env, payer: Address, payment_id: u64) -> Result<(), PaymentError> {
         payer.require_auth();
 
@@ -1074,7 +1029,7 @@ impl PaymentsContract {
 
         let status = storage::get_event_status(&env, &payment.event_id);
         if status != Some(EventStatus::Cancelled) {
-            return Err(PaymentError::EventNotActive); // Or appropriate error
+            return Err(PaymentError::EventNotActive);
         }
 
         let config = storage::get_event_config(&env, &payment.event_id)
@@ -1123,14 +1078,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Freeze escrow for a postponed event and open the refund-choice window.
-    ///
-    /// Called by the event contract as part of `event::postpone_event`. Sets the
-    /// payments-side status to `Postponed` (which blocks every withdrawal path —
-    /// `withdraw`, `withdraw_token`, `withdraw_all_tokens` all reject any non-
-    /// `Completed`/`Cancelled` status) and records the choice-window deadline used
-    /// by `request_postponement_refund`.
     pub fn postpone_event(
         env: Env,
         event_id: Symbol,
@@ -1151,11 +1098,6 @@ impl PaymentsContract {
         storage::set_postpone_deadline(&env, &event_id, choice_deadline_ledger);
         Ok(())
     }
-
-    /// Resume a postponed event back to `Active` once its choice window has closed.
-    ///
-    /// Called by the event contract as part of `event::finalize_postponement`.
-    /// Clears the choice-window deadline so the refund path is no longer open.
     pub fn resume_event(
         env: Env,
         event_id: Symbol,
@@ -1179,14 +1121,6 @@ impl PaymentsContract {
         storage::remove_postpone_deadline(&env, &event_id);
         Ok(())
     }
-
-    /// Opt out of a postponed event in exchange for a full refund.
-    ///
-    /// Callable only by the linked event contract, which orchestrates the full
-    /// opt-out (refund here, then registration + ticket revocation on its side) so
-    /// a refunded holder cannot also attend the resumed event. `caller` is the
-    /// ticket owner on whose behalf the event contract is acting; ownership is
-    /// verified here. Refunds 100% of the held amount.
     pub fn request_postponement_refund(
         env: Env,
         caller: Address,
@@ -1255,9 +1189,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Register escrow metadata for an event. Admin only.
-    /// Must be called before release_if_expired can be used.
     pub fn set_event_end_time(
         env: Env,
         admin: Address,
@@ -1280,10 +1211,6 @@ impl PaymentsContract {
         storage::set_escrow_meta(&env, &event_id, &meta);
         Ok(())
     }
-
-    /// Release escrowed funds to the organizer if the event end time has passed.
-    /// Permissionless: anyone can trigger this after expiry.
-    /// Idempotent: calling after already released returns EscrowAlreadyReleased.
     pub fn release_if_expired(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         ensure_no_splits(&env, &event_id)?;
@@ -1292,8 +1219,6 @@ impl PaymentsContract {
         if meta.auto_released {
             return Err(PaymentError::EscrowAlreadyReleased);
         }
-
-        // Escrow is frozen while the event is postponed (refund-choice window open).
         if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
             return Err(PaymentError::EventNotActive);
         }
@@ -1301,13 +1226,6 @@ impl PaymentsContract {
         if env.ledger().timestamp() < meta.event_end_time {
             return Err(PaymentError::EscrowNotExpired);
         }
-
-        // When the event has a ledger schedule (set/rescheduled via the event
-        // contract), the timestamp-based escrow metadata is not authoritative on its
-        // own: a postponed-then-resumed event carries a stale `event_end_time`. Also
-        // require the (possibly rescheduled) ledger end to have passed so escrow
-        // cannot auto-release before the rescheduled event actually ends. Events that
-        // only use the legacy timestamp escrow (no config) are unaffected.
         if let Some(config) = storage::get_event_config(&env, &event_id) {
             if env.ledger().sequence() < config.event_end_ledger {
                 return Err(PaymentError::EscrowNotExpired);
@@ -1366,10 +1284,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Withdraw revenue for an event. Deducts platform fee and sends the rest
-    /// to the specified address. Platform fees are accumulated for later
-    /// withdrawal by the admin.
     pub fn withdraw_revenue(env: Env, event_id: Symbol, to: Address) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1388,18 +1302,12 @@ impl PaymentsContract {
         if revenue <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
-
-        // Calculate platform fee
         let fee_bps = storage::get_platform_fee_bps(&env) as i128;
         let fee_amount = revenue * fee_bps / 10_000;
         let organizer_amount = revenue - fee_amount;
 
         let token_client = token::Client::new(&env, &token_address);
-
-        // Transfer organizer share
         token_client.transfer(&env.current_contract_address(), &to, &organizer_amount);
-
-        // Accumulate platform revenue if there is a fee
         if fee_amount > 0 {
             storage::add_platform_revenue(&env, &event_id, fee_amount);
             events::emit_platform_fee_collected(
@@ -1410,8 +1318,6 @@ impl PaymentsContract {
                 token_address.clone(),
             );
         }
-
-        // Release payments
         let payment_ids = storage::get_event_payments(&env, &event_id);
         for i in 0..payment_ids.len() {
             let pid = payment_ids.get(i).ok_or(PaymentError::PaymentNotFound)?;
@@ -1421,11 +1327,7 @@ impl PaymentsContract {
                 storage::update_payment(&env, &payment)?;
             }
         }
-
-        // Update revenue tracking
         storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
-
-        // Record withdrawal history
         let record = WithdrawalRecord {
             amount: organizer_amount,
             timestamp: env.ledger().timestamp(),
@@ -1445,16 +1347,12 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Get all withdrawal history for an event.
     pub fn get_withdrawal_history(
         env: Env,
         event_id: Symbol,
     ) -> soroban_sdk::Vec<WithdrawalRecord> {
         storage::get_withdrawal_history(&env, &event_id)
     }
-
-    /// Update the platform fee (admin only). Fee is in basis points (0-10000).
     pub fn set_platform_fee(env: Env, fee_bps: u32, wallet: Address) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1472,19 +1370,12 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Get the current platform fee in basis points.
     pub fn get_platform_fee_bps(env: Env) -> u32 {
         storage::get_platform_fee_bps(&env)
     }
-
-    /// Get the accumulated platform revenue for an event.
     pub fn get_platform_revenue(env: Env, event_id: Symbol) -> i128 {
         storage::get_platform_revenue(&env, &event_id)
     }
-
-    /// Withdraw accumulated platform fees for an event (admin only).
-    /// Sends fees to the configured platform wallet.
     pub fn withdraw_platform_revenue(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1517,8 +1408,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Set the privacy level for event emissions. Admin only.
     pub fn set_event_privacy(
         env: Env,
         admin: Address,
@@ -1534,18 +1423,12 @@ impl PaymentsContract {
         storage::set_emission_privacy(&env, &event_id, &level);
         Ok(())
     }
-
-    /// Get the privacy level for event emissions.
     pub fn get_event_privacy(env: Env, event_id: Symbol) -> PrivacyLevel {
         storage::get_emission_privacy(&env, &event_id)
     }
-
-    /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
-
-    /// Migrate the contract to a new version. Only admin can call this.
     pub fn migrate(env: Env, admin: Address) -> Result<u32, PaymentError> {
         require_not_paused(&env)?;
         admin.require_auth();
@@ -1557,19 +1440,14 @@ impl PaymentsContract {
 
         let current_version = storage::get_contract_version(&env);
         let new_version = current_version + 1;
-
-        // Perform any necessary migrations based on version transitions
         match current_version {
             0 => {
-                // First migration: initialize version tracking
                 storage::set_contract_version(&env, 1);
             }
             1 => {
-                // Future migrations can be added here
                 storage::set_contract_version(&env, 2);
             }
             2 => {
-                // v2 -> v3 migration
                 storage::set_contract_version(&env, 3);
             }
             _ => {
@@ -1579,27 +1457,15 @@ impl PaymentsContract {
 
         Ok(new_version)
     }
-
-    /// Get the total revenue for an event and specific token.
     pub fn get_event_token_revenue(env: Env, event_id: Symbol, token_address: Address) -> i128 {
         storage::get_event_token_revenue(&env, &event_id, &token_address)
     }
-
-    /// Get all tokens used for an event.
     pub fn get_event_tokens(env: Env, event_id: Symbol) -> soroban_sdk::Vec<Address> {
         storage::get_event_tokens(&env, &event_id)
     }
-
-    /// Get the number of tickets a user has purchased for a specific event.
-    ///
-    /// This is an on-chain query that can be used to verify per-user purchase
-    /// limits without relying on any off-chain data source or frontend logic.
-    /// Returns 0 if the user has not purchased any tickets for the event.
     pub fn get_user_tickets(env: Env, event_id: Symbol, user: Address) -> u32 {
         storage::get_user_event_tickets(&env, &event_id, &user)
     }
-
-    /// Withdraw revenue for a specific token from an event.
     pub fn withdraw_token(
         env: Env,
         organizer: Address,
@@ -1683,8 +1549,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-
-    /// Withdraw all tokens for an event.
     pub fn withdraw_all_tokens(
         env: Env,
         organizer: Address,
@@ -1765,7 +1629,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    // ── Revenue splits & co-host wallet management ────────────────────────────
+    // -- Revenue splits & co-host wallet management ----------------------------
 
     /// Register the revenue split for an event. Callable only by the linked event
     /// contract, and only once — splits are immutable for the life of the event.
@@ -2021,7 +1885,7 @@ impl PaymentsContract {
         storage::get_split_withdrawn(&env, &event_id, &recipient)
     }
 
-    // ── zkEmail receipt commitments ───────────────────────────────────────────
+    // -- zkEmail receipt commitments ------------------------------------------
 
     /// Bind a zkEmail receipt commitment to an existing payment.
     ///
@@ -2061,14 +1925,6 @@ impl PaymentsContract {
         events::emit_receipt_commitment_bound(&env, payment_id, payment.event_id);
         Ok(())
     }
-
-    /// Read the zkEmail commitment stored for a payment, if any.
-    ///
-    /// Returns `Ok(None)` when the payer opted out. Returns
-    /// `Err(PaymentError::PaymentNotFound)` for an invalid `payment_id`. An
-    /// off-chain relayer reads this to learn the commitment, then recomputes
-    /// `H(email || ticket_id)` from a claimed email to confirm delivery
-    /// eligibility — without the email ever being exposed on-chain.
     pub fn get_payment_commitment(
         env: Env,
         payment_id: u64,
@@ -2076,12 +1932,6 @@ impl PaymentsContract {
         let payment = storage::get_payment(&env, payment_id)?;
         Ok(payment.zk_email_commitment)
     }
-
-    /// Verify a candidate commitment against the one stored for a payment.
-    ///
-    /// Lets a relayer prove delivery eligibility on-chain without revealing the
-    /// email: it supplies a freshly recomputed commitment and gets a boolean.
-    /// Returns `false` if the payment has no stored commitment.
     pub fn verify_email_commitment(
         env: Env,
         payment_id: u64,

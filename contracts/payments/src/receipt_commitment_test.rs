@@ -33,8 +33,6 @@ fn setup(env: &Env, fee_bps: u32) -> World<'_> {
         client,
     }
 }
-
-/// Fund a fresh payer and return its address.
 fn funded_payer(w: &World, amount: i128) -> Address {
     let payer = Address::generate(w.env);
     token::StellarAssetClient::new(w.env, &w.token).mint(&payer, &amount);
@@ -52,15 +50,9 @@ fn pay(w: &World, payer: &Address, event_id: &Symbol, amount: i128) -> u64 {
         &PaymentPrivacy::Standard,
     )
 }
-
-/// Render every emitted event to a debug string. A 32-byte hash, if emitted,
-/// shows up as a contiguous 64-char hex run; absence of that run proves the
-/// hash was never published.
 fn events_debug(env: &Env) -> std::string::String {
     std::format!("{:?}", env.events().all())
 }
-
-/// The hex run that a `BytesN<32>` filled with `byte` produces in event output.
 fn hash_hex_run(byte: u8) -> std::string::String {
     std::format!("{:02x}", byte).repeat(32)
 }
@@ -84,8 +76,6 @@ fn test_pay_with_commitment_stores_and_reads_back() {
         &PaymentPrivacy::Standard,
         &Some(commitment.clone()),
     );
-
-    // Stored on the record and exposed via the getter.
     assert_eq!(
         w.client.get_payment(&pid).zk_email_commitment,
         Some(commitment.clone())
@@ -100,8 +90,6 @@ fn test_commitment_is_optional() {
     let w = setup(&env, 0);
     let event_id = symbol_short!("EVENT1");
     let payer = funded_payer(&w, 100_000_000);
-
-    // Fully anonymous attendee: payment proceeds with no commitment.
     let pid = pay(&w, &payer, &event_id, 100_000_000);
     assert_eq!(w.client.get_payment_commitment(&pid), None);
     assert_eq!(w.client.get_payment(&pid).zk_email_commitment, None);
@@ -114,9 +102,6 @@ fn test_bind_commitment_after_payment() {
     let w = setup(&env, 0);
     let event_id = symbol_short!("EVENT1");
     let payer = funded_payer(&w, 100_000_000);
-
-    // The realistic flow: pay first (ticket_id assigned), then bind a commitment
-    // salted with that ticket_id.
     let pid = pay(&w, &payer, &event_id, 100_000_000);
     assert_eq!(w.client.get_payment_commitment(&pid), None);
 
@@ -140,7 +125,6 @@ fn test_bind_commitment_is_write_once() {
     let second = BytesN::from_array(&env, &[2u8; 32]);
     let res = w.client.try_bind_email_commitment(&payer, &pid, &second);
     assert_eq!(res.err(), Some(Ok(PaymentError::CommitmentAlreadySet)));
-    // Original commitment is unchanged.
     assert_eq!(w.client.get_payment_commitment(&pid), Some(first));
 }
 
@@ -169,8 +153,6 @@ fn test_bind_commitment_rejected_after_refund() {
     let event_id = symbol_short!("EVENT1");
     let payer = funded_payer(&w, 100_000_000);
     let pid = pay(&w, &payer, &event_id, 100_000_000);
-
-    // Admin fully refunds the payment.
     w.client.refund(&w.admin, &pid, &None);
 
     let commitment = BytesN::from_array(&env, &[4u8; 32]);
@@ -191,8 +173,6 @@ fn test_verify_email_commitment_matches_and_mismatches() {
 
     let commitment = BytesN::from_array(&env, &[5u8; 32]);
     w.client.bind_email_commitment(&payer, &pid, &commitment);
-
-    // A relayer recomputes H(email || ticket_id) and verifies it on-chain.
     assert!(w.client.verify_email_commitment(&pid, &commitment));
     let wrong = BytesN::from_array(&env, &[6u8; 32]);
     assert!(!w.client.verify_email_commitment(&pid, &wrong));
@@ -218,9 +198,6 @@ fn test_commitment_is_stored_but_never_emitted() {
     let w = setup(&env, 0);
     let event_id = symbol_short!("EVENT1");
     let payer = funded_payer(&w, 100_000_000);
-
-    // `email_hash` (a legacy receipt hash) IS emitted in PaymentReceiptRequested;
-    // the new zkEmail `commitment` must NOT be.
     let receipt_hash = BytesN::from_array(&env, &[0xAAu8; 32]);
     let commitment = BytesN::from_array(&env, &[0xBBu8; 32]);
 
@@ -236,18 +213,15 @@ fn test_commitment_is_stored_but_never_emitted() {
     );
 
     let dbg = events_debug(&env);
-    // Positive control: the legacy receipt hash IS emitted, so our detector works.
     assert!(
         dbg.contains(&hash_hex_run(0xAA)),
         "receipt hash should appear in events (positive control)"
     );
-    // Guarantee: the zkEmail commitment is never emitted in any event.
     assert!(
         !dbg.contains(&hash_hex_run(0xBB)),
         "zkEmail commitment must not appear in any emitted event"
     );
     let _ = &receipt_hash;
-    // But it is durably stored and retrievable.
     assert_eq!(w.client.get_payment_commitment(&pid), Some(commitment));
 }
 
@@ -272,7 +246,5 @@ fn test_bind_event_does_not_leak_commitment() {
 
     let commitment = BytesN::from_array(&env, &[0xCDu8; 32]);
     w.client.bind_email_commitment(&payer, &pid, &commitment);
-
-    // The ReceiptCommitmentBound event carries only ids/timestamp, never the hash.
     assert!(!events_debug(&env).contains(&hash_hex_run(0xCD)));
 }

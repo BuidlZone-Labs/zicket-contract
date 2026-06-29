@@ -2,8 +2,6 @@ use super::*;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
 use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol, Vec};
-
-// Helper function to create a ticket directly in storage for testing
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
@@ -22,8 +20,6 @@ fn setup_test_ticket(
         true,
     );
 }
-
-// Helper function to create a ticket with custom transferable setting
 fn setup_test_ticket_with_transferable(
     env: &Env,
     contract_id: &Address,
@@ -48,8 +44,6 @@ fn setup_test_ticket_with_transferable(
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-
-        // Add to owner list
         let mut owner_tickets: Vec<u64> = env
             .storage()
             .persistent()
@@ -73,8 +67,6 @@ fn test_happy_path_transfer() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Setup ticket 1 for Alice
     setup_test_ticket(
         &env,
         &contract_id,
@@ -83,15 +75,9 @@ fn test_happy_path_transfer() {
         1,
         TicketStatus::Valid,
     );
-
-    // Alice transfers to Bob
     client.transfer_ticket(&alice, &bob, &1);
-
-    // Verify Bob is owner
     let bob_tickets = client.get_tickets_by_owner(&bob);
     assert_eq!(bob_tickets, vec![&env, 1]);
-
-    // Verify Alice doesn't have it
     let alice_tickets = client.get_tickets_by_owner(&alice);
     assert_eq!(alice_tickets, vec![&env]);
 }
@@ -108,8 +94,6 @@ fn test_transfer_used_ticket() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Setup USED ticket 1 for Alice
     setup_test_ticket(
         &env,
         &contract_id,
@@ -118,8 +102,6 @@ fn test_transfer_used_ticket() {
         1,
         TicketStatus::Used,
     );
-
-    // Alice transfers to Bob - should fail with TicketNotTransferable (11)
     client.transfer_ticket(&alice, &bob, &1);
 }
 
@@ -135,8 +117,6 @@ fn test_transfer_cancelled_ticket() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Setup CANCELLED ticket 1 for Alice
     setup_test_ticket(
         &env,
         &contract_id,
@@ -170,14 +150,14 @@ fn test_transfer_to_self() {
         TicketStatus::Valid,
     );
 
-    client.transfer_ticket(&alice, &alice, &1); // TransferToSelf (12)
+    client.transfer_ticket(&alice, &alice, &1);
 }
 
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #4)")]
 fn test_unauthorized_transfer() {
     let env = Env::default();
-    env.mock_all_auths(); // mock_all_auths bypasses require_auth, but our logic checks `if ticket.owner != from`
+    env.mock_all_auths();
 
     let contract_id = env.register(TicketContract, ());
     let client = TicketContractClient::new(&env, &contract_id);
@@ -195,9 +175,7 @@ fn test_unauthorized_transfer() {
         1,
         TicketStatus::Valid,
     );
-
-    // Bob tries to transfer Alice's ticket to Charlie
-    client.transfer_ticket(&bob, &charlie, &1); // Unauthorized (4)
+    client.transfer_ticket(&bob, &charlie, &1);
 }
 
 #[test]
@@ -250,11 +228,7 @@ fn test_use_ticket_happy_path() {
         ticket_id,
         TicketStatus::Valid,
     );
-
-    // Organizer uses the ticket
     client.use_ticket(&organizer, &ticket_id);
-
-    // Verify ticket status is Used and is_used is true
     let ticket: Ticket = env.as_contract(&contract_id, || {
         env.storage()
             .persistent()
@@ -277,8 +251,6 @@ fn test_use_ticket_double_checkin() {
     let organizer = Address::generate(&env);
     let owner = Address::generate(&env);
     let ticket_id = 1;
-
-    // Create a ticket and mark it as used
     let ticket = Ticket {
         ticket_id,
         event_id: Symbol::new(&env, "event_1"),
@@ -287,7 +259,7 @@ fn test_use_ticket_double_checkin() {
         issued_at: 123456,
         status: TicketStatus::Valid,
         is_transferable: true,
-        is_used: true, // Mark as used
+        is_used: true,
     };
 
     env.as_contract(&contract_id, || {
@@ -295,8 +267,6 @@ fn test_use_ticket_double_checkin() {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
     });
-
-    // Attempt to use already used ticket
     client.use_ticket(&organizer, &ticket_id);
 }
 
@@ -322,8 +292,6 @@ fn test_use_ticket_unauthorized() {
         ticket_id,
         TicketStatus::Valid,
     );
-
-    // Random person attempts to use the ticket
     client.use_ticket(&random_person, &ticket_id);
 }
 
@@ -348,8 +316,6 @@ fn test_use_ticket_cancelled() {
         ticket_id,
         TicketStatus::Cancelled,
     );
-
-    // Attempt to use cancelled ticket
     client.use_ticket(&organizer, &ticket_id);
 }
 
@@ -365,8 +331,6 @@ fn test_transfer_disabled_ticket() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Setup ticket with is_transferable = false
     setup_test_ticket_with_transferable(
         &env,
         &contract_id,
@@ -376,8 +340,6 @@ fn test_transfer_disabled_ticket() {
         TicketStatus::Valid,
         false,
     );
-
-    // Alice tries to transfer a non-transferable ticket - should fail with TicketNotTransferable (11)
     client.transfer_ticket(&alice, &bob, &1);
 }
 
@@ -392,8 +354,6 @@ fn test_transfer_enabled_ticket() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Setup ticket with is_transferable = true (default)
     setup_test_ticket(
         &env,
         &contract_id,
@@ -402,15 +362,9 @@ fn test_transfer_enabled_ticket() {
         1,
         TicketStatus::Valid,
     );
-
-    // Alice transfers to Bob - should succeed
     client.transfer_ticket(&alice, &bob, &1);
-
-    // Verify Bob is now the owner
     let bob_tickets = client.get_tickets_by_owner(&bob);
     assert_eq!(bob_tickets, vec![&env, 1]);
-
-    // Verify Alice no longer owns the ticket
     let alice_tickets = client.get_tickets_by_owner(&alice);
     assert_eq!(alice_tickets, vec![&env]);
 }
@@ -427,8 +381,6 @@ fn test_transfer_used_ticket_via_is_used() {
     let alice = Address::generate(&env);
     let bob = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Create a ticket with is_used = true
     let ticket = Ticket {
         ticket_id: 1,
         event_id: Symbol::new(&env, "event_1"),
@@ -437,14 +389,12 @@ fn test_transfer_used_ticket_via_is_used() {
         issued_at: 123456,
         status: TicketStatus::Valid,
         is_transferable: true,
-        is_used: true, // Mark as used
+        is_used: true,
     };
 
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
-
-    // Alice tries to transfer used ticket - should fail with TicketNotTransferable (11)
     client.transfer_ticket(&alice, &bob, &1);
 }
 
@@ -459,8 +409,6 @@ fn test_cancel_used_ticket_via_is_used() {
 
     let owner = Address::generate(&env);
     let organizer = Address::generate(&env);
-
-    // Create a ticket with is_used = true
     let ticket = Ticket {
         ticket_id: 1,
         event_id: Symbol::new(&env, "event_1"),
@@ -469,14 +417,12 @@ fn test_cancel_used_ticket_via_is_used() {
         issued_at: 123456,
         status: TicketStatus::Valid,
         is_transferable: true,
-        is_used: true, // Mark as used
+        is_used: true,
     };
 
     env.as_contract(&contract_id, || {
         env.storage().persistent().set(&DataKey::Ticket(1), &ticket);
     });
-
-    // Owner tries to cancel used ticket - should fail with TicketAlreadyUsed (13)
     client.cancel_ticket(&1, &owner);
 }
 
@@ -502,8 +448,6 @@ fn test_set_recovery_key() {
 
     let pub_key = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
     client.set_recovery_key(&alice, &1, &pub_key);
-
-    // Verify recovery key is set in storage
     let stored_key: Option<soroban_sdk::BytesN<32>> = env.as_contract(&contract_id, || {
         env.storage().persistent().get(&DataKey::RecoveryKey(1))
     });
@@ -536,7 +480,6 @@ fn test_recover_ticket_invalid_signature() {
     client.set_recovery_key(&alice, &1, &pub_key);
 
     let invalid_signature = soroban_sdk::BytesN::from_array(&env, &[2; 64]);
-    // This should panic because the signature is invalid for the public key and message.
     client.recover_ticket(&1, &bob, &invalid_signature);
 }
 
@@ -563,6 +506,5 @@ fn test_recover_ticket_no_key_set() {
     );
 
     let invalid_signature = soroban_sdk::BytesN::from_array(&env, &[2; 64]);
-    // This should fail with RecoveryKeyNotFound (17) because no key was set.
     client.recover_ticket(&1, &bob, &invalid_signature);
 }

@@ -139,16 +139,12 @@ pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<Symbol> {
         .get(&DataKey::OrganizerEvents(organizer.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-
-/// Get the current contract version from storage.
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
         .persistent()
         .get(&DataKey::ContractVersion)
         .unwrap_or(1)
 }
-
-/// Set the contract version in storage.
 pub fn set_contract_version(env: &Env, version: u32) {
     env.storage()
         .persistent()
@@ -157,8 +153,6 @@ pub fn set_contract_version(env: &Env, version: u32) {
         .persistent()
         .extend_ttl(&DataKey::ContractVersion, TTL_THRESHOLD, TTL_BUMP);
 }
-
-/// Verify that the contract version is supported. Returns error if version is not compatible.
 pub fn verify_version(env: &Env) -> Result<(), FactoryError> {
     let version = get_contract_version(env);
     if version > CURRENT_VERSION {

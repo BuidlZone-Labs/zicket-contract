@@ -32,8 +32,6 @@ fn setup_contracts(
 
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
 }
-
-/// Creates a free, anonymous-enabled event with a given capacity and activates it.
 fn create_anon_free_event(
     env: &Env,
     client: &EventContractClient,
@@ -74,8 +72,6 @@ fn create_anon_free_event(
 fn commitment(env: &Env, byte: u8) -> BytesN<32> {
     BytesN::from_array(env, &[byte; 32])
 }
-
-// ── set_anon_claim_settings ───────────────────────────────────────────────────
 
 #[test]
 fn test_set_anon_claim_settings_by_organizer() {
@@ -134,8 +130,6 @@ fn test_anon_claim_settings_default_unlimited() {
         }
     );
 }
-
-// ── Basic anonymous claim ─────────────────────────────────────────────────────
 
 #[test]
 fn test_anon_claim_basic_success() {
@@ -244,8 +238,6 @@ fn test_anon_claim_paid_tier_fails() {
     assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
 }
 
-// ── Commitment uniqueness (duplicate rejection) ───────────────────────────────
-
 #[test]
 fn test_anon_commitment_reused_fails() {
     let env = setup_env();
@@ -286,8 +278,6 @@ fn test_distinct_commitments_each_accepted_once() {
     assert_eq!(event.sold_count, 5);
 }
 
-// ── Per-ledger-window rate limit ──────────────────────────────────────────────
-
 #[test]
 fn test_anon_window_rate_limit_blocks_excess_claims() {
     let env = setup_env();
@@ -299,8 +289,6 @@ fn test_anon_window_rate_limit_blocks_excess_claims() {
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
-
-    // Allow 2 anonymous claims per 100-ledger window.
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
 
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
@@ -321,29 +309,18 @@ fn test_anon_window_resets_after_ledger_advance() {
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
-
-    // 2 per 100-ledger window; initial sequence = 1_000 → window 10.
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
 
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
-
-    // Window 10 is full. Advance to window 11.
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_100;
     });
-
-    // New window → count resets; claim succeeds.
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 3));
 
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 3);
 }
-
-/// Window-straddle: a claim at the last ledger of window N and a claim at the
-/// first ledger of window N+1 are treated as separate windows. The second claim
-/// succeeds even though the first window was full. Soroban's deterministic ledger
-/// sequence means there is no ambiguity at the boundary.
 #[test]
 fn test_anon_window_straddle_boundary() {
     let env = setup_env();
@@ -355,30 +332,15 @@ fn test_anon_window_straddle_boundary() {
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
-
-    // Window size = 10; sequence 1_000 → window index = 100 (last ledger: 1_009).
     client.set_anon_claim_settings(&organizer, &event_id, &1, &10);
-
-    // Claim at sequence 1_009 — the final ledger of window 100.
     env.ledger().with_mut(|li| li.sequence_number = 1_009);
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
-
-    // Window 100 is now full. One step forward lands in window 101.
     env.ledger().with_mut(|li| li.sequence_number = 1_010);
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
 
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 2);
 }
-
-// ── Per-window rate limit — sybil resistance ─────────────────────────────────
-
-/// The window rate limit caps claims per ledger window, not per transaction or
-/// per commitment. Five distinct commitments submitted within the same window
-/// are all subject to the window quota; only the first N succeed.
-///
-/// Note: this does not prevent claims spread across multiple windows — that
-/// requires a per-event hard cap configured separately.
 #[test]
 fn test_single_source_rate_limited_per_window() {
     let env = setup_env();
@@ -389,8 +351,6 @@ fn test_single_source_rate_limited_per_window() {
     let event_id = Symbol::new(&env, "anon_drain");
 
     setup_contracts(&env, &client, &organizer, &token);
-
-    // Small capacity so the exploit would be devastating if allowed.
     let total_capacity = 5u32;
     create_anon_free_event(
         &env,
@@ -400,18 +360,9 @@ fn test_single_source_rate_limited_per_window() {
         event_id.clone(),
         total_capacity,
     );
-
-    // Rate-limit: max 2 claims per 100-ledger window.
-    // All five claims happen at sequence 1_000 (same window → window index = 10).
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
-
-    // Claims 1 and 2 succeed (within window quota).
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
-
-    // Claims 3–5 are blocked by the window rate limit, even though:
-    //   • each uses a distinct commitment (no reuse detected), and
-    //   • the tier still has 3 remaining slots.
     let r3 = client.try_claim_anonymous_ticket(&event_id, &0, &commitment(&env, 3));
     let r4 = client.try_claim_anonymous_ticket(&event_id, &0, &commitment(&env, 4));
     let r5 = client.try_claim_anonymous_ticket(&event_id, &0, &commitment(&env, 5));
@@ -419,15 +370,11 @@ fn test_single_source_rate_limited_per_window() {
     assert_eq!(r3.err(), Some(Ok(EventError::AnonClaimWindowFull)));
     assert_eq!(r4.err(), Some(Ok(EventError::AnonClaimWindowFull)));
     assert_eq!(r5.err(), Some(Ok(EventError::AnonClaimWindowFull)));
-
-    // Only 2 out of 5 tickets were issued; capacity was not drained.
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 2);
     assert_eq!(event.max_supply, total_capacity);
-    assert_eq!(event.max_supply - event.sold_count, 3); // 3 slots still available
+    assert_eq!(event.max_supply - event.sold_count, 3);
 }
-
-// ── Capacity enforcement ──────────────────────────────────────────────────────
 
 #[test]
 fn test_anon_claim_event_sold_out() {
@@ -440,16 +387,12 @@ fn test_anon_claim_event_sold_out() {
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 2);
-
-    // No rate limit — fill the event across two windows.
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
 
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_100;
     });
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
-
-    // Event is now at max_supply; next claim must fail.
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_200;
     });
@@ -467,9 +410,6 @@ fn test_anon_claim_tier_sold_out() {
     let event_id = Symbol::new(&env, "anon_tso");
 
     setup_contracts(&env, &client, &organizer, &token);
-
-    // Two tiers, each with capacity 1. Total event capacity = 2, so the
-    // event-level check won't fire when only tier 0 is exhausted.
     let params = CreateEventParams {
         organizer: organizer.clone(),
         payout_token: token.clone(),
@@ -502,11 +442,7 @@ fn test_anon_claim_tier_sold_out() {
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-
-    // Fill tier 0.
     client.claim_anonymous_ticket(&event_id, &0, &commitment(&env, 1));
-
-    // Tier 0 is sold out; event still has capacity in tier 1.
     let result = client.try_claim_anonymous_ticket(&event_id, &0, &commitment(&env, 2));
     assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
 }

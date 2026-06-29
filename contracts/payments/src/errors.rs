@@ -35,7 +35,7 @@ pub enum PaymentError {
     EventSoldOut = 29,
     NonceRequired = 30,
     ContractPaused = 31,
-    /// Token transfer failed; no state has been modified
+    /// Token transfer via the Soroban token interface failed unexpectedly.
     TransferFailed = 32,
     PostponementWindowClosed = 33,
     EventNotPostponed = 34,

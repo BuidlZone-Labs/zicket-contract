@@ -107,13 +107,9 @@ impl FactoryContract {
     pub fn get_organizer_events(env: Env, organizer: Address) -> soroban_sdk::Vec<Symbol> {
         storage::get_organizer_events(&env, &organizer)
     }
-
-    /// Get the current contract version.
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
-
-    /// Migrate the contract to a new version. Only admin can call this.
     pub fn migrate(env: Env, admin: Address) -> Result<u32, FactoryError> {
         admin.require_auth();
 
@@ -124,19 +120,14 @@ impl FactoryContract {
 
         let current_version = storage::get_contract_version(&env);
         let new_version = current_version + 1;
-
-        // Perform any necessary migrations based on version transitions
         match current_version {
             0 => {
-                // First migration: initialize version tracking
                 storage::set_contract_version(&env, 1);
             }
             1 => {
-                // Future migrations can be added here
                 storage::set_contract_version(&env, 2);
             }
             2 => {
-                // v2 -> v3 migration
                 storage::set_contract_version(&env, 3);
             }
             _ => {

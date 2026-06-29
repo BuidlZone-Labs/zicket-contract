@@ -1,4 +1,4 @@
-use soroban_sdk::contracterror;
+﻿use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -53,4 +53,19 @@ pub enum EventError {
     /// Revenue split is malformed: wrong basis-point sum, too many recipients,
     /// a zero/duplicate recipient, or index 0 is not the primary organizer.
     InvalidRevenueSplit = 36,
+    // -- zkPassport errors ----------------------------------------------------
+    /// The proof's `expiry_ledger` is less than the current ledger sequence.
+    ZkProofExpired = 37,
+    /// This nullifier has already been recorded for this event -- proof reuse
+    /// is not allowed.
+    ZkNullifierReused = 38,
+    /// The event `requires_verification` is `true` but the ZkVerificationConfig
+    /// has not been enabled by the organizer.
+    ZkVerificationRequired = 39,
+    /// Reserved for future on-chain verifier integration. Currently signals that
+    /// the provided proof bytes are structurally invalid.
+    ZkProofInvalid = 40,
+    /// The submitted `ZkPassportClaim.claim_type` does not match the type
+    /// required by the event's `ZkVerificationConfig`.
+    ZkClaimTypeMismatch = 41,
 }

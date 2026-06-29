@@ -48,8 +48,6 @@ fn create_event_with_privacy(
     client.create_event(&params);
 }
 
-// ── Privacy level is stored and retrievable ───────────────────────────────────
-
 #[test]
 fn test_privacy_level_stored_on_creation() {
     let env = setup_env();
@@ -129,8 +127,6 @@ fn test_set_event_privacy_non_organizer_fails() {
     assert_eq!(result.err(), Some(Ok(EventError::Unauthorized)));
 }
 
-// ── Standard privacy: get_attendees is public ────────────────────────────────
-
 #[test]
 fn test_get_attendees_standard_public() {
     let env = setup_env();
@@ -151,8 +147,6 @@ fn test_get_attendees_standard_public() {
     assert_eq!(attendees.len(), 0);
 }
 
-// ── Anonymous privacy: get_attendees returns empty ───────────────────────────
-
 #[test]
 fn test_get_attendees_anonymous_returns_empty() {
     let env = setup_env();
@@ -172,8 +166,6 @@ fn test_get_attendees_anonymous_returns_empty() {
     let attendees = client.get_attendees(&event_id);
     assert_eq!(attendees.len(), 0);
 }
-
-// ── Private privacy: get_attendees blocks public, organizer can access ───────
 
 #[test]
 fn test_get_attendees_private_blocked_for_public() {
@@ -239,8 +231,6 @@ fn test_get_attendees_as_organizer_non_organizer_fails() {
     assert_eq!(result.err(), Some(Ok(EventError::Unauthorized)));
 }
 
-// ── Organizer can view attendees for Standard and Anonymous too ───────────────
-
 #[test]
 fn test_get_attendees_as_organizer_standard() {
     let env = setup_env();
@@ -280,8 +270,6 @@ fn test_get_attendees_as_organizer_anonymous() {
     let attendees = client.get_attendees_as_organizer(&organizer, &event_id);
     assert_eq!(attendees.len(), 0);
 }
-
-// ── Cancel event emits privacy-respecting organizer address ──────────────────
 
 #[test]
 fn test_cancel_event_succeeds_all_privacy_levels() {

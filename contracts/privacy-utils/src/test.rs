@@ -7,10 +7,6 @@ fn setup_env() -> Env {
     env
 }
 
-// ---------------------------------------------------------------------------
-// Standard mode
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_standard_returns_full_address() {
     let env = setup_env();
@@ -39,10 +35,6 @@ fn test_standard_two_different_addresses_remain_distinct() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Private mode
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_private_returns_partial_bytes() {
     let env = setup_env();
@@ -52,7 +44,6 @@ fn test_private_returns_partial_bytes() {
 
     match masked {
         MaskedAddress::Partial(bytes) => {
-            // Must be non-empty and at most 8 bytes
             assert!(!bytes.is_empty(), "Partial bytes must be non-empty");
             assert!(bytes.len() <= 8, "Partial bytes must not exceed 8 bytes");
         }
@@ -64,8 +55,6 @@ fn test_private_returns_partial_bytes() {
 fn test_private_does_not_expose_full_address() {
     let env = setup_env();
     let address = Address::generate(&env);
-
-    // Full XDR is longer than 8 bytes; partial must be a strict subset.
     let full_xdr = address.clone().to_xdr(&env);
     let masked = mask_address(&env, &address, PrivacyLevel::Private);
 
@@ -96,10 +85,6 @@ fn test_private_same_address_deterministic() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Anonymous mode
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_anonymous_returns_hash() {
     let env = setup_env();
@@ -109,7 +94,6 @@ fn test_anonymous_returns_hash() {
 
     match masked {
         MaskedAddress::Hashed(hash) => {
-            // SHA-256 is always 32 bytes
             let _: BytesN<32> = hash;
         }
         _ => panic!("Expected MaskedAddress::Hashed for Anonymous privacy level"),
@@ -126,8 +110,6 @@ fn test_anonymous_hash_differs_from_raw_xdr() {
 
     match masked {
         MaskedAddress::Hashed(hash) => {
-            // The hash must not equal the raw XDR bytes (different lengths alone
-            // make equality impossible, but we assert it explicitly).
             let hash_bytes: Bytes = hash.into();
             assert_ne!(
                 full_xdr, hash_bytes,
@@ -171,18 +153,12 @@ fn test_anonymous_different_addresses_produce_different_hashes() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Cross-mode: address not leaked in non-Standard modes
-// ---------------------------------------------------------------------------
-
 #[test]
 fn test_no_raw_address_in_anonymous_mode() {
     let env = setup_env();
     let address = Address::generate(&env);
 
     let masked = mask_address(&env, &address, PrivacyLevel::Anonymous);
-
-    // Must NOT be a Full variant (would expose the raw address).
     assert!(
         !matches!(masked, MaskedAddress::Full(_)),
         "Anonymous mode must not return the raw address"
