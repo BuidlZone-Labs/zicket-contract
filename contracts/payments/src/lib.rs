@@ -1288,12 +1288,9 @@ impl PaymentsContract {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
-<<<<<<< HEAD
         ensure_no_splits(&env, &event_id)?;
 
         // Escrow is frozen while the event is postponed (refund-choice window open).
-=======
->>>>>>> 3947472ac48c18cf2e4c01acd249ca199e7009ec
         if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
             return Err(PaymentError::EventNotActive);
         }
@@ -1631,7 +1628,6 @@ impl PaymentsContract {
 
         Ok(())
     }
-<<<<<<< HEAD
 
     // -- Revenue splits & co-host wallet management ----------------------------
 
@@ -1903,9 +1899,6 @@ impl PaymentsContract {
     /// - A refunded payment can no longer accept a commitment.
     /// - Only the salted hash is stored; the raw email never touches the chain
     ///   and the commitment value is never emitted.
-
-=======
->>>>>>> 3947472ac48c18cf2e4c01acd249ca199e7009ec
     pub fn bind_email_commitment(
         env: Env,
         payer: Address,
