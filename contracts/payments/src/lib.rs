@@ -253,6 +253,12 @@ fn require_not_paused(env: &Env) -> Result<(), PaymentError> {
 
 #[allow(clippy::too_many_arguments)]
 fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> {
+    // Privacy note: `require_auth()` runs for all privacy levels because the payer
+    // must authorize the token transfer. This means the submitting wallet address
+    // is visible in the transaction envelope regardless of the selected privacy level.
+    // Anonymous/Private privacy applies at the contract storage and event layer only
+    // (what the contract records on-chain), not at the transaction-submission layer.
+    // True transaction-level anonymity requires a relayer/meta-transaction model.
     params.payer.require_auth();
     require_not_paused(&env)?;
 
@@ -260,7 +266,23 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         return Err(PaymentError::NonceRequired);
     }
 
-    if storage::has_nonce(&env, &params.payer, params.nonce) {
+    // Nonce uniqueness is tracked by raw address only for Standard payments.
+    // Anonymous/Private payments key the nonce by a hash of the payer so the raw
+    // wallet address is never embedded in a ledger key.
+    let already_used = match params.privacy_level {
+        PaymentPrivacy::Standard => storage::has_nonce(&env, &params.payer, params.nonce),
+        PaymentPrivacy::Private => {
+            let payer_hash = private_wallet_hash(&env, &params.payer);
+            storage::has_nonce_hash(&env, &payer_hash, params.nonce)
+        }
+        // Anonymous replay-protection is keyed by the nullifier commitment, never
+        // the payer, so no wallet-linked value is written to a ledger key.
+        PaymentPrivacy::Anonymous => match &params.nullifier_commitment {
+            Some(commitment) => storage::has_nonce_hash(&env, commitment, params.nonce),
+            None => false,
+        },
+    };
+    if already_used {
         return Err(PaymentError::DuplicateRequest);
     }
 
@@ -281,8 +303,20 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         }
 
         if config.max_tickets_per_user > 0 {
-            let current_tickets =
-                storage::get_user_event_tickets(&env, &params.event_id, &params.payer);
+            let current_tickets = match params.privacy_level {
+                PaymentPrivacy::Standard => {
+                    storage::get_user_event_tickets(&env, &params.event_id, &params.payer)
+                }
+                PaymentPrivacy::Private => {
+                    let payer_hash = private_wallet_hash(&env, &params.payer);
+                    storage::get_user_event_tickets_hash(&env, &params.event_id, &payer_hash)
+                }
+                // Anonymous payments carry a unique nullifier commitment per
+                // purchase, so there is no stable per-wallet identity to enforce a
+                // ticket cap against. Wallet-bound limits do not apply; commitment
+                // uniqueness already prevents reuse.
+                PaymentPrivacy::Anonymous => 0,
+            };
             if current_tickets >= config.max_tickets_per_user {
                 return Err(PaymentError::MaxTicketsReached);
             }
