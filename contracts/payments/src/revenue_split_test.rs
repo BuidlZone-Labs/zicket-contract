@@ -82,6 +82,8 @@ fn pay(fx: &SplitFixture, nonce: u64, amount: i128) {
         &None,
         &fx.token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 }
 
@@ -326,6 +328,8 @@ fn test_withdraw_split_respects_withdrawal_delay() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.set_event_status(&admin, &event_id, &EventStatus::Completed);
 
@@ -374,6 +378,8 @@ fn test_rounding_dust_accrues_to_primary_organizer() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.set_event_status(&admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| li.sequence_number = 20_000);
@@ -549,6 +555,8 @@ fn test_cancelled_split_event_distributes_only_withdrawable_ratio() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     // Cancel halfway through the event window (start=0, end=1000) => 50% ratio.
@@ -595,6 +603,8 @@ fn test_cancelled_split_settlement_survives_attendee_refund() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     env.ledger().with_mut(|li| li.sequence_number = 500);
