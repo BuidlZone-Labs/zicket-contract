@@ -1551,6 +1551,8 @@ fn test_privacy_levels_stored_correctly() {
         &None,
         &token,
         &PaymentPrivacy::Anonymous,
+        &Some(BytesN::from_array(&env, &[7u8; 32])),
+        &None,
     );
     let pid_priv = client.pay_for_ticket(
         &2,
@@ -1560,6 +1562,8 @@ fn test_privacy_levels_stored_correctly() {
         &None,
         &token,
         &PaymentPrivacy::Private,
+        &None,
+        &Some(BytesN::from_array(&env, &[9u8; 32])),
     );
     let pid_std = client.pay_for_ticket(
         &3,
@@ -1569,6 +1573,8 @@ fn test_privacy_levels_stored_correctly() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     assert_eq!(
@@ -1608,6 +1614,8 @@ fn test_refund_unauthorized() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let result = client.try_refund(&_not_admin, &payment_id, &None);
     assert_eq!(result.err(), Some(Ok(PaymentError::Unauthorized)));
@@ -1679,6 +1687,8 @@ fn test_withdraw_unauthorized_organizer_rejected() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
 
@@ -1745,6 +1755,8 @@ fn test_double_withdraw_rejected_after_revenue_cleared() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
@@ -1806,6 +1818,8 @@ fn test_withdraw_before_completion_fails() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     env.ledger().with_mut(|li| {
@@ -1838,6 +1852,8 @@ fn test_refund_on_cancelled_event_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Cancelled);
@@ -1868,6 +1884,8 @@ fn test_idempotent_payment() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let contract_id = client.address.clone();
     let has_in_storage = env.as_contract(&contract_id, || storage::has_nonce(&env, &payer, nonce));
@@ -1884,6 +1902,8 @@ fn test_idempotent_payment() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &nonce,
@@ -1893,6 +1913,8 @@ fn test_idempotent_payment() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 }
 
@@ -1928,6 +1950,8 @@ fn test_pay_for_ticket_transfer_failure_no_state_change() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
     assert_eq!(
@@ -1960,6 +1984,8 @@ fn test_pay_for_ticket_partial_funds_no_state_change() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::TransferFailed)));
     assert_eq!(client.get_event_revenue(&event_id), 0);
@@ -2008,6 +2034,8 @@ fn test_max_tickets_per_user_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &2,
@@ -2017,6 +2045,8 @@ fn test_max_tickets_per_user_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let result = client.try_pay_for_ticket(
         &3,
@@ -2026,6 +2056,8 @@ fn test_max_tickets_per_user_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
     client.pay_for_ticket(
@@ -2036,6 +2068,8 @@ fn test_max_tickets_per_user_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     assert_eq!(client.get_owner_tickets(&payer1).len(), 2);
@@ -2087,6 +2121,8 @@ fn test_event_supply_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &1,
@@ -2096,6 +2132,8 @@ fn test_event_supply_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let config = client.get_event_config(&event_id);
@@ -2110,6 +2148,8 @@ fn test_event_supply_enforcement() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::EventSoldOut)));
     assert_eq!(token_client.balance(&payer3), amount);
@@ -2159,6 +2199,8 @@ fn test_withdraw_revenue_with_fee() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let organizer = Address::generate(&env);
     env.ledger().with_mut(|li| {
@@ -2199,6 +2241,8 @@ fn test_withdraw_revenue_zero_fee() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let organizer = Address::generate(&env);
@@ -2231,6 +2275,8 @@ fn test_withdraw_platform_revenue() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let organizer = Address::generate(&env);
     env.ledger().with_mut(|li| {
@@ -2307,6 +2353,8 @@ fn test_organizer_withdraw_with_fee() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
@@ -2342,6 +2390,8 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
@@ -2360,6 +2410,8 @@ fn test_platform_revenue_accumulates_across_withdrawals() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
@@ -2393,6 +2445,8 @@ fn test_replay_attack_rejected_detailed() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let result = client.try_pay_for_ticket(
         &nonce,
@@ -2402,6 +2456,8 @@ fn test_replay_attack_rejected_detailed() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::DuplicateRequest)));
     assert_eq!(client.get_owner_tickets(&payer).len(), 1);
@@ -2434,6 +2490,8 @@ fn test_zero_nonce_rejected() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::NonceRequired)));
 
@@ -2465,6 +2523,8 @@ fn test_partial_refund_success() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(client.get_event_revenue(&event_id), amount);
     let partial_1 = 30_000_000i128;
@@ -2518,6 +2578,8 @@ fn test_partial_refund_exceeds_amount_fails() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let result = client.try_refund(&admin, &payment_id, &Some(amount + 1));
     assert!(result.is_err());
@@ -2561,6 +2623,8 @@ fn test_per_user_limit_within_limit_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(client.get_user_tickets(&event_id, &payer), 1);
     client.pay_for_ticket(
@@ -2571,6 +2635,8 @@ fn test_per_user_limit_within_limit_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(client.get_user_tickets(&event_id, &payer), 2);
     assert_eq!(client.get_owner_tickets(&payer).len(), 2);
@@ -2613,6 +2679,8 @@ fn test_per_user_limit_exceed_is_rejected() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let result = client.try_pay_for_ticket(
         &2,
@@ -2622,6 +2690,8 @@ fn test_per_user_limit_exceed_is_rejected() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
     let result2 = client
@@ -2674,6 +2744,8 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &2,
@@ -2683,6 +2755,8 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &3,
@@ -2692,6 +2766,8 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(client.get_user_tickets(&event_x, &payer_a), 1);
     assert_eq!(client.get_user_tickets(&event_x, &payer_b), 1);
@@ -2705,6 +2781,8 @@ fn test_per_user_limit_counters_are_scoped_per_event_and_user() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::MaxTicketsReached)));
 }
@@ -2735,6 +2813,8 @@ fn test_withdraw_cancelled_event_respects_dispute_window() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|li| {
         li.sequence_number = 1000;
@@ -2781,6 +2861,8 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|li| {
         li.sequence_number = 500;
