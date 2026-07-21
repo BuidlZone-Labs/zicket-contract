@@ -343,39 +343,45 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     let payment_id = storage::get_next_payment_id(&env);
     let paid_at = env.ledger().timestamp();
 
-    let payment = PaymentRecord {
-        payment_id,
-        event_id: params.event_id.clone(),
-        payer: params.payer.clone(),
-        amount: params.amount,
-        token: params.token_address.clone(),
-        status: PaymentStatus::Held,
-        paid_at,
-        privacy_level: params.privacy_level.clone(),
-        refunded_amount: 0,
-        zk_email_commitment: params.zk_email_commitment.clone(),
-    };
+    let payment = build_payment_record(&env, &params, payment_id, paid_at)?;
+
+    // Enforce nullifier uniqueness for Anonymous payments so the same commitment
+    // cannot be spent twice.
+    if let Some(commitment) = &payment.nullifier_commitment {
+        if storage::has_nullifier(&env, commitment) {
+            return Err(PaymentError::DuplicateRequest);
+        }
+        storage::mark_nullifier_spent(&env, commitment);
+    }
 
     storage::save_payment(&env, &payment)?;
     storage::add_event_payment(&env, &params.event_id, payment_id);
-    storage::add_payer_payment(&env, &params.payer, payment_id);
-    storage::set_nonce(&env, &params.payer, params.nonce);
+    // Only Standard payments are indexed by raw address. Indexing Private or
+    // Anonymous payments by their wallet would leak the payer identity.
+    if payment.privacy_level == PaymentPrivacy::Standard {
+        storage::add_payer_payment(&env, &params.payer, payment_id);
+    }
+    match params.privacy_level {
+        PaymentPrivacy::Standard => {
+            storage::set_nonce(&env, &params.payer, params.nonce);
+        }
+        PaymentPrivacy::Private => {
+            let payer_hash = private_wallet_hash(&env, &params.payer);
+            storage::set_nonce_hash(&env, &payer_hash, params.nonce);
+        }
+        PaymentPrivacy::Anonymous => {
+            // Key the nonce by the nullifier commitment, never the payer, so no
+            // wallet-linked value is written to a ledger key.
+            if let Some(commitment) = &payment.nullifier_commitment {
+                storage::set_nonce_hash(&env, commitment, params.nonce);
+            }
+        }
+    }
     storage::add_event_revenue(&env, &params.event_id, params.amount);
     storage::add_event_token_revenue(&env, &params.event_id, &params.token_address, params.amount);
     storage::add_event_token(&env, &params.event_id, &params.token_address);
 
-    let privacy = storage::get_emission_privacy(&env, &params.event_id);
-
-    events::emit_payment_received(
-        &env,
-        payment_id,
-        params.event_id.clone(),
-        params.payer.clone(),
-        params.amount,
-        params.token_address.clone(),
-        paid_at,
-        &privacy,
-    );
+    events::emit_payment_received(&env, &payment);
 
     if let Some(hash) = params.email_hash {
         events::emit_payment_receipt_requested(
@@ -387,26 +393,29 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     }
 
     let ticket_id = storage::get_next_ticket_id(&env);
-    let ticket = Ticket {
-        ticket_id,
-        event_id: payment.event_id.clone(),
-        owner: payment.payer.clone(),
-        payment_id,
-    };
+    let ticket = build_ticket(&payment, ticket_id);
     storage::save_ticket(&env, &ticket)?;
-    storage::add_owner_ticket(&env, &payment.payer, ticket_id);
-    storage::increment_user_event_tickets(&env, &params.event_id, &params.payer);
+    // Only Standard tickets are indexed by owner address; indexing the others
+    // would leak the owner identity for Private/Anonymous purchases.
+    if payment.privacy_level == PaymentPrivacy::Standard {
+        storage::add_owner_ticket(&env, &params.payer, ticket_id);
+    }
+    match params.privacy_level {
+        PaymentPrivacy::Standard => {
+            storage::increment_user_event_tickets(&env, &params.event_id, &params.payer);
+        }
+        PaymentPrivacy::Private => {
+            let payer_hash = private_wallet_hash(&env, &params.payer);
+            storage::increment_user_event_tickets_hash(&env, &params.event_id, &payer_hash);
+        }
+        // Anonymous payments are not counted against a per-wallet ticket cap
+        // (see the read path); nothing wallet-derived is persisted.
+        PaymentPrivacy::Anonymous => {}
+    }
     if storage::get_event_config(&env, &params.event_id).is_some() {
         storage::increment_event_sold_count(&env, &params.event_id)?;
     }
-    events::emit_ticket_issued(
-        &env,
-        ticket_id,
-        payment.event_id,
-        payment.payer,
-        payment_id,
-        &privacy,
-    );
+    events::emit_ticket_issued(&env, &ticket);
 
     Ok(payment_id)
 }
