@@ -722,6 +722,8 @@ impl PaymentsContract {
         email_hash: Option<BytesN<32>>,
         token_address: Address,
         privacy_level: PaymentPrivacy,
+        nullifier_commitment: Option<BytesN<32>>,
+        stealth_delivery_key: Option<BytesN<32>>,
     ) -> Result<u64, PaymentError> {
         create_payment(
             env,
@@ -736,6 +738,8 @@ impl PaymentsContract {
                 privacy_level,
                 email_hash,
                 zk_email_commitment: None,
+                nullifier_commitment,
+                stealth_delivery_key,
             },
         )
     }
@@ -764,6 +768,8 @@ impl PaymentsContract {
                 privacy_level,
                 email_hash,
                 zk_email_commitment,
+                nullifier_commitment: None,
+                stealth_delivery_key: None,
             },
         )
     }
@@ -792,6 +798,8 @@ impl PaymentsContract {
                 privacy_level: PaymentPrivacy::Standard,
                 email_hash: None,
                 zk_email_commitment: None,
+                nullifier_commitment: None,
+                stealth_delivery_key: None,
             },
         )
     }
@@ -913,6 +921,15 @@ impl PaymentsContract {
 
         let mut payment = storage::get_payment(&env, payment_id)?;
 
+        // Anonymous/Private payments cannot be refunded on-chain (no address stored).
+        // Off-chain settlement via stealth key or nullifier commitment is required.
+        match payment.privacy_level {
+            PaymentPrivacy::Anonymous | PaymentPrivacy::Private => {
+                return Err(PaymentError::RefundNotAllowed);
+            }
+            PaymentPrivacy::Standard => {}
+        }
+
         if payment.status == PaymentStatus::Refunded {
             return Err(PaymentError::PaymentAlreadyRefunded);
         }
@@ -927,8 +944,14 @@ impl PaymentsContract {
             return Err(PaymentError::InvalidAmount);
         }
 
-        let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(&env.current_contract_address(), &payment.payer, &refund_amt);
+        // Only Standard payments carry an on-chain payer address to refund to.
+        // Private/Anonymous payments deliberately store no raw address; their
+        // refund settlement is handled off-chain via the stealth delivery key /
+        // nullifier, so no on-chain transfer target is dereferenced here.
+        if let Some(refund_to) = payment.payer.clone() {
+            let token_client = token::Client::new(&env, &payment.token);
+            token_client.transfer(&env.current_contract_address(), &refund_to, &refund_amt);
+        }
 
         payment.refunded_amount += refund_amt;
         if payment.refunded_amount == payment.amount {
@@ -948,15 +971,10 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
 
-        events::emit_payment_refunded(
-            &env,
-            payment_id,
-            payment.event_id.clone(),
-            payment.payer,
-            refund_amt,
-            payment.token.clone(),
-            &storage::get_emission_privacy(&env, &payment.event_id),
-        );
+        // Refund event preserves the original payment's privacy level: the
+        // identity exposed is derived from the stored record, never re-derived
+        // from event-level config.
+        events::emit_payment_refunded(&env, &payment, refund_amt);
 
         Ok(())
     }
@@ -1190,7 +1208,15 @@ impl PaymentsContract {
         payer.require_auth();
 
         let mut payment = storage::get_payment(&env, payment_id)?;
-        if payment.payer != payer {
+        // Only Standard payments carry an on-chain payer address and are
+        // refundable through this path. Anonymous/Private payments store no
+        // address, so an on-chain refund is not possible — settlement happens
+        // off-chain via the stealth key / nullifier commitment.
+        let stored_payer = payment
+            .payer
+            .clone()
+            .ok_or(PaymentError::RefundNotAllowed)?;
+        if stored_payer != payer {
             return Err(PaymentError::Unauthorized);
         }
         if payment.status != PaymentStatus::Held {
