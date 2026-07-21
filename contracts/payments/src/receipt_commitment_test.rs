@@ -48,6 +48,8 @@ fn pay(w: &World, payer: &Address, event_id: &Symbol, amount: i128) -> u64 {
         &None,
         &w.token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     )
 }
 fn events_debug(env: &Env) -> std::string::String {
