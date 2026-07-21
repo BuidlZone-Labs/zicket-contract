@@ -1355,7 +1355,11 @@ impl PaymentsContract {
         }
 
         let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(&env.current_contract_address(), &payment.payer, &refund_amt);
+        token_client.transfer(
+            &env.current_contract_address(),
+            &refund_recipient,
+            &refund_amt,
+        );
 
         payment.refunded_amount += refund_amt;
         payment.status = PaymentStatus::Refunded;
@@ -1373,15 +1377,9 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
 
-        events::emit_payment_refunded(
-            &env,
-            payment.payment_id,
-            payment.event_id.clone(),
-            payment.payer.clone(),
-            refund_amt,
-            payment.token.clone(),
-            &storage::get_emission_privacy(&env, &payment.event_id),
-        );
+        // The refund event derives its masked identity from the stored payment,
+        // preserving the original privacy level.
+        events::emit_payment_refunded(&env, &payment, refund_amt);
 
         Ok(())
     }
@@ -2105,7 +2103,9 @@ impl PaymentsContract {
         payer.require_auth();
 
         let mut payment = storage::get_payment(&env, payment_id)?;
-        if payment.payer != payer {
+        // Only Standard payments expose a payer address to authorize against;
+        // Anonymous/Private payments have no on-chain payer to bind a commitment.
+        if payment.payer.as_ref() != Some(&payer) {
             return Err(PaymentError::Unauthorized);
         }
         if payment.status == PaymentStatus::Refunded {
