@@ -1147,6 +1147,8 @@ impl EventContract {
                 &None::<BytesN<32>>,
                 &token,
                 &PaymentPrivacy::Standard,
+                &None,
+                &None,
             );
         }
         if has_linked_contracts(&env) {
