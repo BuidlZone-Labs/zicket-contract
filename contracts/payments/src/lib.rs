@@ -1,7 +1,9 @@
 #![no_std]
 #[cfg(test)]
 extern crate std;
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, IntoVal, Symbol};
+use soroban_sdk::{
+    contract, contractimpl, token, xdr::ToXdr, Address, Bytes, BytesN, Env, IntoVal, Symbol,
+};
 
 mod errors;
 mod events;
@@ -29,6 +31,124 @@ struct PaymentParams {
     privacy_level: PaymentPrivacy,
     email_hash: Option<BytesN<32>>,
     zk_email_commitment: Option<BytesN<32>>,
+    nullifier_commitment: Option<BytesN<32>>,
+    stealth_delivery_key: Option<BytesN<32>>,
+}
+
+/// Build a privacy-level-aware payment record. Exactly one identity representation
+/// is populated based on the declared privacy level:
+/// - Anonymous: only `nullifier_commitment` (no address, no hash)
+/// - Private:   only `hashed_wallet` + `stealth_delivery_key` (no raw address)
+/// - Standard:  only `payer` address
+///
+/// Privacy material is mutually exclusive: supplying a field that belongs to a
+/// different privacy level is rejected with `PrivacyLevelMismatch`.
+fn build_payment_record(
+    env: &Env,
+    params: &PaymentParams,
+    payment_id: u64,
+    paid_at: u64,
+) -> Result<PaymentRecord, PaymentError> {
+    match params.privacy_level {
+        PaymentPrivacy::Anonymous => {
+            if params.stealth_delivery_key.is_some() {
+                return Err(PaymentError::PrivacyLevelMismatch);
+            }
+            let commitment = params
+                .nullifier_commitment
+                .clone()
+                .ok_or(PaymentError::MissingNullifierCommitment)?;
+            Ok(PaymentRecord {
+                payment_id,
+                event_id: params.event_id.clone(),
+                payer: None,
+                hashed_wallet: None,
+                stealth_delivery_key: None,
+                nullifier_commitment: Some(commitment),
+                amount: params.amount,
+                token: params.token_address.clone(),
+                status: PaymentStatus::Held,
+                paid_at,
+                privacy_level: PaymentPrivacy::Anonymous,
+                refunded_amount: 0,
+                zk_email_commitment: params.zk_email_commitment.clone(),
+            })
+        }
+        PaymentPrivacy::Private => {
+            if params.nullifier_commitment.is_some() {
+                return Err(PaymentError::PrivacyLevelMismatch);
+            }
+            let stealth_key = params
+                .stealth_delivery_key
+                .clone()
+                .ok_or(PaymentError::MissingStealthDeliveryKey)?;
+            // Salt the wallet hash with the stealth key to prevent brute-force
+            // enumeration of the payer address from the stored hash.
+            let mut preimage = params.payer.clone().to_xdr(env);
+            let stealth_array = stealth_key.to_array();
+            let stealth_bytes = Bytes::from_slice(env, stealth_array.as_ref());
+            preimage.append(&stealth_bytes);
+            let hashed: BytesN<32> = env.crypto().sha256(&preimage).into();
+            Ok(PaymentRecord {
+                payment_id,
+                event_id: params.event_id.clone(),
+                payer: None,
+                hashed_wallet: Some(hashed),
+                stealth_delivery_key: Some(stealth_key),
+                nullifier_commitment: None,
+                amount: params.amount,
+                token: params.token_address.clone(),
+                status: PaymentStatus::Held,
+                paid_at,
+                privacy_level: PaymentPrivacy::Private,
+                refunded_amount: 0,
+                zk_email_commitment: params.zk_email_commitment.clone(),
+            })
+        }
+        PaymentPrivacy::Standard => {
+            if params.nullifier_commitment.is_some() || params.stealth_delivery_key.is_some() {
+                return Err(PaymentError::PrivacyLevelMismatch);
+            }
+            Ok(PaymentRecord {
+                payment_id,
+                event_id: params.event_id.clone(),
+                payer: Some(params.payer.clone()),
+                hashed_wallet: None,
+                stealth_delivery_key: None,
+                nullifier_commitment: None,
+                amount: params.amount,
+                token: params.token_address.clone(),
+                status: PaymentStatus::Held,
+                paid_at,
+                privacy_level: PaymentPrivacy::Standard,
+                refunded_amount: 0,
+                zk_email_commitment: params.zk_email_commitment.clone(),
+            })
+        }
+    }
+}
+
+/// Build a privacy-level-aware ticket from a payment record. The ticket exposes
+/// the same identity representation as its payment.
+fn build_ticket(payment: &PaymentRecord, ticket_id: u64) -> Ticket {
+    Ticket {
+        ticket_id,
+        event_id: payment.event_id.clone(),
+        owner: payment.payer.clone(),
+        hashed_owner: payment.hashed_wallet.clone(),
+        nullifier_commitment: payment.nullifier_commitment.clone(),
+        payment_id: payment.payment_id,
+        privacy_level: payment.privacy_level.clone(),
+    }
+}
+
+/// SHA-256 of the payer address, used as the privacy-preserving ledger key for
+/// **Private** payments (nonce replay-protection and per-user ticket counters).
+/// Private payments accept wallet hashing by design; the raw address is never
+/// written to a ledger key.
+fn private_wallet_hash(env: &Env, payer: &Address) -> BytesN<32> {
+    let payer_xdr = payer.clone().to_xdr(env);
+    env.crypto().sha256(&payer_xdr).into()
 }
 
 #[contract]
