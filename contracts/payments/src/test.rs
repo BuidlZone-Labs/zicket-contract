@@ -116,6 +116,8 @@ fn test_pause_unpause_and_blocks_sensitive_actions() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(payment_result.err(), Some(Ok(PaymentError::ContractPaused)));
     assert_eq!(token_client.balance(&payer), amount);
@@ -136,6 +138,8 @@ fn test_pause_unpause_and_blocks_sensitive_actions() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.set_paused(&admin, &true);
@@ -298,12 +302,14 @@ fn test_pay_for_ticket() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.payment_id, payment_id);
     assert_eq!(payment.event_id, event_id);
-    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.payer, Some(payer.clone()));
     assert_eq!(payment.amount, amount);
     assert_eq!(payment.token, token);
     assert_eq!(payment.status, PaymentStatus::Held);
@@ -315,7 +321,7 @@ fn test_pay_for_ticket() {
     let ticket = client.get_ticket(&ticket_id);
     assert_eq!(ticket.ticket_id, ticket_id);
     assert_eq!(ticket.event_id, event_id);
-    assert_eq!(ticket.owner, payer);
+    assert_eq!(ticket.owner, Some(payer.clone()));
     assert_eq!(ticket.payment_id, payment_id);
 
     let contract_balance = token_client.balance(&contract_id);
@@ -350,6 +356,8 @@ fn test_payment_issues_ticket_and_links_payment() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let owner_tickets = client.get_owner_tickets(&payer);
 
@@ -359,7 +367,7 @@ fn test_payment_issues_ticket_and_links_payment() {
     let ticket = client.get_ticket(&ticket_id);
     assert_eq!(ticket.ticket_id, ticket_id);
     assert_eq!(ticket.event_id, event_id);
-    assert_eq!(ticket.owner, payer);
+    assert_eq!(ticket.owner, Some(payer.clone()));
     assert_eq!(ticket.payment_id, payment_id);
 }
 
@@ -386,6 +394,8 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let payment_id_2 = client.pay_for_ticket(
         &2,
@@ -395,6 +405,8 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let owner_tickets = client.get_owner_tickets(&payer);
@@ -404,8 +416,8 @@ fn test_multiple_payments_create_distinct_tickets_for_owner() {
     let ticket_2 = client.get_ticket(&owner_tickets.get(1).unwrap());
 
     assert_ne!(ticket_1.ticket_id, ticket_2.ticket_id);
-    assert_eq!(ticket_1.owner, payer);
-    assert_eq!(ticket_2.owner, payer);
+    assert_eq!(ticket_1.owner, Some(payer.clone()));
+    assert_eq!(ticket_2.owner, Some(payer.clone()));
     assert_eq!(ticket_1.payment_id, payment_id_1);
     assert_eq!(ticket_2.payment_id, payment_id_2);
 }
@@ -427,6 +439,8 @@ fn test_pay_for_ticket_invalid_amount_zero() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidAmount)));
 }
@@ -448,6 +462,8 @@ fn test_pay_for_ticket_invalid_amount_negative() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     assert_eq!(result.err(), Some(Ok(PaymentError::InvalidAmount)));
 }
@@ -545,6 +561,8 @@ fn test_pay_for_ticket_unauthorized() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 }
 
@@ -575,6 +593,8 @@ fn test_pay_for_ticket_multiple_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let payment_id2 = client.pay_for_ticket(
         &2,
@@ -584,6 +604,8 @@ fn test_pay_for_ticket_multiple_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let payment_id3 = client.pay_for_ticket(
         &3,
@@ -593,6 +615,8 @@ fn test_pay_for_ticket_multiple_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     assert_eq!(payment_id1, 1);
@@ -601,19 +625,19 @@ fn test_pay_for_ticket_multiple_payments() {
 
     let payment1 = client.get_payment(&payment_id1);
     assert_eq!(payment1.event_id, event_id1);
-    assert_eq!(payment1.payer, payer1);
+    assert_eq!(payment1.payer, Some(payer1.clone()));
     assert_eq!(payment1.amount, amount1);
     assert_eq!(payment1.status, PaymentStatus::Held);
 
     let payment2 = client.get_payment(&payment_id2);
     assert_eq!(payment2.event_id, event_id2);
-    assert_eq!(payment2.payer, payer2);
+    assert_eq!(payment2.payer, Some(payer2.clone()));
     assert_eq!(payment2.amount, amount2);
     assert_eq!(payment2.status, PaymentStatus::Held);
 
     let payment3 = client.get_payment(&payment_id3);
     assert_eq!(payment3.event_id, event_id1);
-    assert_eq!(payment3.payer, payer1);
+    assert_eq!(payment3.payer, Some(payer1.clone()));
     assert_eq!(payment3.amount, amount3);
     assert_eq!(payment3.status, PaymentStatus::Held);
 
@@ -652,6 +676,8 @@ fn test_pay_for_ticket_query_record() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let payment = env
@@ -660,7 +686,7 @@ fn test_pay_for_ticket_query_record() {
 
     assert_eq!(payment.payment_id, payment_id);
     assert_eq!(payment.event_id, event_id);
-    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.payer, Some(payer.clone()));
     assert_eq!(payment.amount, amount);
     assert_eq!(payment.token, token);
     assert_eq!(payment.status, PaymentStatus::Held);
@@ -690,6 +716,8 @@ fn test_withdraw_revenue_success() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     assert_eq!(token_client.balance(&payer), 0);
@@ -735,6 +763,8 @@ fn test_multiple_withdrawals_tracked() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let _not_admin = Address::generate(&env);
     let result = client.try_refund(&_not_admin, &payment_id, &None);
@@ -763,6 +793,8 @@ fn test_refund_after_withdrawal() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     env.ledger().with_mut(|li| {
         li.sequence_number = 20000;
@@ -778,6 +810,8 @@ fn test_refund_after_withdrawal() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
     env.ledger().with_mut(|li| {
@@ -820,6 +854,8 @@ fn test_withdraw_happy_path() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let pid2 = client.pay_for_ticket(
         &1,
@@ -829,6 +865,8 @@ fn test_withdraw_happy_path() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
@@ -897,6 +935,8 @@ fn test_mixed_refund_then_withdraw() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let pid2 = client.pay_for_ticket(
         &1,
@@ -906,6 +946,8 @@ fn test_mixed_refund_then_withdraw() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let pid3 = client.pay_for_ticket(
         &1,
@@ -915,6 +957,8 @@ fn test_mixed_refund_then_withdraw() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.refund(&admin, &pid2, &None);
     assert_eq!(client.get_event_revenue(&event_id), amount1 + amount3);
@@ -962,6 +1006,8 @@ fn test_refund_reduces_revenue_correctly() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &1,
@@ -971,6 +1017,8 @@ fn test_refund_reduces_revenue_correctly() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     assert_eq!(client.get_event_revenue(&event_id), amount1 + amount2);
@@ -1008,6 +1056,8 @@ fn test_query_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &2,
@@ -1017,6 +1067,8 @@ fn test_query_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &1,
@@ -1026,6 +1078,8 @@ fn test_query_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &2,
@@ -1035,6 +1089,8 @@ fn test_query_payments() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let e1_payments = client.get_payments_by_event(&event1);
     assert_eq!(e1_payments.len(), 2);
@@ -1046,8 +1102,8 @@ fn test_query_payments() {
     );
     let p1_payments = client.get_payments_by_user(&payer1);
     assert_eq!(p1_payments.len(), 2);
-    assert_eq!(p1_payments.get(0).unwrap().payer, payer1);
-    assert_eq!(p1_payments.get(1).unwrap().payer, payer1);
+    assert_eq!(p1_payments.get(0).unwrap().payer, Some(payer1.clone()));
+    assert_eq!(p1_payments.get(1).unwrap().payer, Some(payer1.clone()));
     assert_ne!(
         p1_payments.get(0).unwrap().event_id,
         p1_payments.get(1).unwrap().event_id
@@ -1079,6 +1135,8 @@ fn test_pay_for_ticket_with_email_hash() {
         &Some(email_hash.clone()),
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let payment = client.get_payment(&payment_id);
@@ -1132,6 +1190,8 @@ fn test_release_if_expired_before_deadline_fails() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
@@ -1166,6 +1226,8 @@ fn test_release_if_expired_after_deadline_succeeds() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
@@ -1207,6 +1269,8 @@ fn test_release_if_expired_no_double_payout() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
@@ -1341,11 +1405,18 @@ fn test_pay_for_ticket_anonymous_privacy() {
         &None,
         &token,
         &PaymentPrivacy::Anonymous,
+        &Some(BytesN::from_array(&env, &[7u8; 32])),
+        &None,
     );
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.privacy_level, PaymentPrivacy::Anonymous);
-    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.payer, None);
+    assert_eq!(payment.hashed_wallet, None);
+    assert_eq!(
+        payment.nullifier_commitment,
+        Some(BytesN::from_array(&env, &[7u8; 32]))
+    );
     assert_eq!(payment.amount, amount);
     assert_eq!(payment.status, PaymentStatus::Held);
 }
@@ -1372,11 +1443,19 @@ fn test_pay_for_ticket_private_privacy() {
         &None,
         &token,
         &PaymentPrivacy::Private,
+        &None,
+        &Some(BytesN::from_array(&env, &[9u8; 32])),
     );
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.privacy_level, PaymentPrivacy::Private);
-    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.payer, None);
+    assert!(payment.hashed_wallet.is_some());
+    assert_eq!(
+        payment.stealth_delivery_key,
+        Some(BytesN::from_array(&env, &[9u8; 32]))
+    );
+    assert_eq!(payment.nullifier_commitment, None);
     assert_eq!(payment.amount, amount);
     assert_eq!(payment.status, PaymentStatus::Held);
 }
@@ -1403,11 +1482,15 @@ fn test_pay_for_ticket_standard_privacy() {
         &None,
         &token,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.privacy_level, PaymentPrivacy::Standard);
-    assert_eq!(payment.payer, payer);
+    assert_eq!(payment.payer, Some(payer.clone()));
+    assert_eq!(payment.hashed_wallet, None);
+    assert_eq!(payment.nullifier_commitment, None);
     assert_eq!(payment.amount, amount);
     assert_eq!(payment.status, PaymentStatus::Held);
 }
@@ -1434,10 +1517,15 @@ fn test_anonymous_event_does_not_expose_payer() {
         &None,
         &token,
         &PaymentPrivacy::Anonymous,
+        &Some(BytesN::from_array(&env, &[7u8; 32])),
+        &None,
     );
     let payment = client.get_payment(&payment_id);
     assert_eq!(payment.privacy_level, PaymentPrivacy::Anonymous);
-    assert_eq!(payment.payer, payer);
+    // Anonymous payments store NO raw address on-chain; only the nullifier
+    // commitment is persisted.
+    assert_eq!(payment.payer, None);
+    assert!(payment.nullifier_commitment.is_some());
     assert!(payment_id > 0);
 }
 
