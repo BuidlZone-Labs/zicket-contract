@@ -40,7 +40,11 @@ pub enum PaymentPrivacy {
 pub struct PaymentRecord {
     pub payment_id: u64,
     pub event_id: Symbol,
-    pub payer: Address,
+    // Identity fields — only one set is populated, based on privacy_level:
+    pub payer: Option<Address>,                   // Standard only
+    pub hashed_wallet: Option<BytesN<32>>,        // Private only
+    pub stealth_delivery_key: Option<BytesN<32>>, // Private only
+    pub nullifier_commitment: Option<BytesN<32>>, // Anonymous only
     pub amount: i128,
     pub token: Address,
     pub status: PaymentStatus,
@@ -55,8 +59,11 @@ pub struct PaymentRecord {
 pub struct Ticket {
     pub ticket_id: u64,
     pub event_id: Symbol,
-    pub owner: Address,
+    pub owner: Option<Address>,                   // Standard only
+    pub hashed_owner: Option<BytesN<32>>,         // Private only
+    pub nullifier_commitment: Option<BytesN<32>>, // Anonymous only
     pub payment_id: u64,
+    pub privacy_level: PaymentPrivacy,
 }
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
