@@ -2163,7 +2163,9 @@ impl PaymentsContract {
         seller.require_auth();
 
         let ticket = storage::get_ticket(&env, ticket_id)?;
-        if ticket.owner != seller {
+        // Only Standard tickets are address-owned; Anonymous/Private tickets are
+        // not resale-eligible through this address-based path.
+        if ticket.owner.as_ref() != Some(&seller) {
             return Err(PaymentError::Unauthorized);
         }
 
@@ -2219,7 +2221,7 @@ impl PaymentsContract {
             storage::get_resale_listing(&env, ticket_id).ok_or(PaymentError::TicketNotFound)?;
         let ticket = storage::get_ticket(&env, ticket_id)?;
 
-        if listing.seller != ticket.owner {
+        if ticket.owner.as_ref() != Some(&listing.seller) {
             storage::remove_resale_listing(&env, ticket_id);
             return Err(PaymentError::Unauthorized);
         }
@@ -2273,7 +2275,7 @@ impl PaymentsContract {
         );
 
         let mut new_ticket = ticket.clone();
-        new_ticket.owner = buyer.clone();
+        new_ticket.owner = Some(buyer.clone());
         let key = crate::storage::DataKey::Ticket(ticket_id);
         env.storage().persistent().set(&key, &new_ticket);
 
@@ -2299,3 +2301,5 @@ mod receipt_commitment_test;
 mod revenue_split_test;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_privacy_semantics;
