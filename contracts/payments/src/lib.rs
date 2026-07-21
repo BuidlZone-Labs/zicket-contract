@@ -1244,7 +1244,7 @@ impl PaymentsContract {
         }
 
         let token_client = token::Client::new(&env, &payment.token);
-        token_client.transfer(&env.current_contract_address(), &payment.payer, &remaining);
+        token_client.transfer(&env.current_contract_address(), &stored_payer, &remaining);
 
         payment.refunded_amount += remaining;
         payment.status = PaymentStatus::Refunded;
@@ -1262,15 +1262,9 @@ impl PaymentsContract {
             token_revenue - remaining,
         );
 
-        events::emit_payment_refunded(
-            &env,
-            payment_id,
-            payment.event_id.clone(),
-            payment.payer,
-            remaining,
-            payment.token.clone(),
-            &storage::get_emission_privacy(&env, &payment.event_id),
-        );
+        // The refund event derives its masked identity from the stored payment,
+        // preserving the original privacy level.
+        events::emit_payment_refunded(&env, &payment, remaining);
 
         Ok(())
     }
@@ -1327,11 +1321,17 @@ impl PaymentsContract {
         event_contract.require_auth();
 
         let ticket = storage::get_ticket(&env, ticket_id)?;
-        if ticket.owner != caller {
+        // Only Standard tickets are address-owned and refundable on-chain.
+        let ticket_owner = ticket.owner.clone().ok_or(PaymentError::RefundNotAllowed)?;
+        if ticket_owner != caller {
             return Err(PaymentError::Unauthorized);
         }
 
         let mut payment = storage::get_payment(&env, ticket.payment_id)?;
+        let refund_recipient = payment
+            .payer
+            .clone()
+            .ok_or(PaymentError::RefundNotAllowed)?;
         if payment.status == PaymentStatus::Refunded {
             return Err(PaymentError::PaymentAlreadyRefunded);
         }
