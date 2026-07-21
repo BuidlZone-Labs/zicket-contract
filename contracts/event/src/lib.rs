@@ -842,6 +842,18 @@ impl EventContract {
         let ticket_contract = storage::get_ticket_contract(&env)?;
 
         if tier.price > 0 {
+            // Derive and enforce the event's configured payment privacy. This
+            // cross-contract path can only settle Standard payments — Private and
+            // Anonymous require client-generated privacy material (stealth key /
+            // nullifier commitment) that is not available here. Rejecting is
+            // safer than silently storing the raw attendee under Standard.
+            match storage::get_event_privacy(&env, &event_id) {
+                PrivacyLevel::Standard => {}
+                PrivacyLevel::Private | PrivacyLevel::Anonymous => {
+                    return Err(EventError::PaymentPrivacyUnsupported);
+                }
+            }
+
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
             let token = payments_client.get_accepted_token();
 
@@ -853,6 +865,8 @@ impl EventContract {
                 &_email_hash,
                 &token,
                 &PaymentPrivacy::Standard,
+                &None,
+                &None,
             );
         }
 
