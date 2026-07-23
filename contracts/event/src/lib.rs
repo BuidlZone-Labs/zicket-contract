@@ -768,6 +768,10 @@ impl EventContract {
         if event.status != EventStatus::Active {
             return Err(EventError::EventNotActive);
         }
+        // Enforce the event's configured payment privacy before any state is
+        // mutated. This gates both free and paid registrations, so a
+        // Private/Anonymous event never stores a raw attendee via this path.
+        require_settleable_privacy(&env, &event_id)?;
         {
             let mut req_price: Option<i128> = None;
             for t in event.tiers.iter() {
@@ -842,18 +846,6 @@ impl EventContract {
         let ticket_contract = storage::get_ticket_contract(&env)?;
 
         if tier.price > 0 {
-            // Derive and enforce the event's configured payment privacy. This
-            // cross-contract path can only settle Standard payments — Private and
-            // Anonymous require client-generated privacy material (stealth key /
-            // nullifier commitment) that is not available here. Rejecting is
-            // safer than silently storing the raw attendee under Standard.
-            match storage::get_event_privacy(&env, &event_id) {
-                PrivacyLevel::Standard => {}
-                PrivacyLevel::Private | PrivacyLevel::Anonymous => {
-                    return Err(EventError::PaymentPrivacyUnsupported);
-                }
-            }
-
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
             let token = payments_client.get_accepted_token();
 
@@ -1100,6 +1092,10 @@ impl EventContract {
         if event.status != EventStatus::Active {
             return Err(EventError::EventNotActive);
         }
+        // Same privacy gate as register_for_event: this path settles payments as
+        // Standard, so reject Private/Anonymous events before minting a ticket or
+        // taking payment.
+        require_settleable_privacy(&env, &event_id)?;
         if !event.requires_verification {
             return Err(EventError::ZkVerificationRequired);
         }
@@ -1271,6 +1267,21 @@ impl EventContract {
         payments_client.flag_cohost(&primary_organizer, &event_id, &recipient);
 
         Ok(())
+    }
+}
+
+/// The cross-contract registration paths (`register_for_event`,
+/// `verify_and_attend`) can only settle Standard payments; Private and Anonymous
+/// events require client-generated privacy material (stealth key / nullifier
+/// commitment) that is not available here. Reject those events up front, before
+/// any registration, ticket, or payment state is mutated, rather than silently
+/// storing the raw attendee under Standard.
+fn require_settleable_privacy(env: &Env, event_id: &Symbol) -> Result<(), EventError> {
+    match storage::get_event_privacy(env, event_id) {
+        PrivacyLevel::Standard => Ok(()),
+        PrivacyLevel::Private | PrivacyLevel::Anonymous => {
+            Err(EventError::PaymentPrivacyUnsupported)
+        }
     }
 }
 
