@@ -185,6 +185,35 @@ fn test_free_ticket_no_limit_succeeds() {
 }
 
 #[test]
+fn test_free_registration_rejected_for_non_standard_privacy() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let event_id = Symbol::new(&env, "ev_freepv");
+    let attendee = Address::generate(&env);
+
+    setup_contracts(&env, &client, &organizer, &token_address);
+    // Free (price 0) tier, but the event is configured for Private privacy.
+    create_free_event(&env, &client, &organizer, &token_address, event_id.clone());
+    client.set_event_privacy(&organizer, &event_id, &PrivacyLevel::Private);
+
+    // The free-registration path stores the raw attendee via save_registration
+    // and mint, so a non-Standard event must be rejected before any state is
+    // written — a paid-tier-only gate would let this through.
+    let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+    assert_eq!(
+        result.err(),
+        Some(Ok(EventError::PaymentPrivacyUnsupported))
+    );
+    assert!(!client.is_registered(&event_id, &attendee));
+}
+
+#[test]
 fn test_free_ticket_claim_limit_exceeded() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
