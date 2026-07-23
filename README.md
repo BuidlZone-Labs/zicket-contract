@@ -43,8 +43,8 @@ zicket-contract/
 ## Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup)
-- [Stellar CLI](https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli) (optional, for deployment)
+- [Soroban CLI](http://web.archive.org/web/20240222012504/https://soroban.stellar.org/docs/getting-started/setup)
+- [Stellar CLI](http://web.archive.org/web/20250227044257/https://developers.stellar.org/docs/tools/developer-tools/cli/stellar-cli) (optional, for deployment)
 
 ## Getting Started
 
