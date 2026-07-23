@@ -68,4 +68,9 @@ pub enum EventError {
     /// The submitted `ZkPassportClaim.claim_type` does not match the type
     /// required by the event's `ZkVerificationConfig`.
     ZkClaimTypeMismatch = 41,
+    /// The event is configured for Private/Anonymous payment privacy, which the
+    /// cross-contract `register_for_event` path cannot settle because it has no
+    /// client-generated privacy material (stealth key / nullifier commitment).
+    /// Use the payments contract's privacy-aware entry point directly.
+    PaymentPrivacyUnsupported = 42,
 }

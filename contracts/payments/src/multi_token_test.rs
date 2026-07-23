@@ -72,6 +72,8 @@ fn test_multi_token_payments() {
         &None,
         &token1,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let payment_id2 = client.pay_for_ticket(
         &1,
@@ -81,6 +83,8 @@ fn test_multi_token_payments() {
         &None,
         &token2,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let payment1 = client.get_payment(&payment_id1);
     let payment2 = client.get_payment(&payment_id2);
@@ -137,6 +141,8 @@ fn test_multi_token_refund_updates_only_the_paid_token_bucket() {
         &None,
         &token1,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     client.pay_for_ticket(
         &2,
@@ -146,6 +152,8 @@ fn test_multi_token_refund_updates_only_the_paid_token_bucket() {
         &None,
         &token2,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.refund(&admin, &payment_id1, &None);
@@ -201,6 +209,8 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
         &None,
         &token1,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
     let second_payment_id = client.pay_for_ticket(
         &2,
@@ -210,6 +220,8 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
         &None,
         &token2,
         &PaymentPrivacy::Standard,
+        &None,
+        &None,
     );
 
     client.set_event_status(&admin, &event_id, &EventStatus::Completed);

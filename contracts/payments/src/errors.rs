@@ -58,4 +58,10 @@ pub enum PaymentError {
     /// The payment is in a state that no longer accepts a commitment
     /// (e.g. it has been refunded).
     CommitmentNotAllowed = 42,
+    /// Anonymous payment is missing its required nullifier commitment
+    MissingNullifierCommitment = 43,
+    /// Private payment is missing its required stealth delivery key
+    MissingStealthDeliveryKey = 44,
+    /// The supplied privacy data does not match the declared privacy level
+    PrivacyLevelMismatch = 45,
 }

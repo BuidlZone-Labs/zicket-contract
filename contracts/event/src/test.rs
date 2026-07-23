@@ -728,6 +728,33 @@ fn test_register_for_event_happy_path() {
 }
 
 #[test]
+fn test_register_for_event_rejects_non_standard_privacy() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+
+    let (_payments_contract, token, token_admin) =
+        setup_registration_contracts(&env, &client, &organizer);
+    fund_attendee(&env, &token_admin, &token, &attendee, 100_000_000);
+
+    let event_id = setup_event_with_payout_token(&env, &client, &organizer, &token);
+    client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+    // Configure the event for Private payment privacy.
+    client.set_event_privacy(&organizer, &event_id, &PrivacyLevel::Private);
+
+    // The cross-contract registration path cannot settle Private/Anonymous
+    // payments, so it must reject before storing any attendee or ticket state.
+    let result = client.try_register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+    assert_eq!(
+        result.err(),
+        Some(Ok(EventError::PaymentPrivacyUnsupported))
+    );
+    assert!(!client.is_registered(&event_id, &attendee));
+}
+
+#[test]
 fn test_register_for_event_not_active_fails() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
