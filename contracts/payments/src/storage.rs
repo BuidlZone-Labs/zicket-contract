@@ -84,6 +84,10 @@ pub enum DataKey {
     UserEventTicketsHash(Symbol, BytesN<32>),
     /// Records a spent nullifier commitment to guarantee Anonymous-payment uniqueness.
     SpentNullifier(BytesN<32>),
+    /// Dispute record keyed by ticket id.
+    Dispute(u64),
+    /// List of disputed ticket ids for an event.
+    EventDisputes(Symbol),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -816,4 +820,37 @@ pub fn get_resale_listing(env: &Env, ticket_id: u64) -> Option<crate::types::Res
 pub fn remove_resale_listing(env: &Env, ticket_id: u64) {
     let key = DataKey::ResaleListing(ticket_id);
     env.storage().persistent().remove(&key);
+}
+
+pub fn get_dispute(env: &Env, ticket_id: u64) -> Option<crate::types::DisputeRecord> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Dispute(ticket_id))
+}
+
+pub fn set_dispute(env: &Env, ticket_id: u64, record: &crate::types::DisputeRecord) {
+    let key = DataKey::Dispute(ticket_id);
+    env.storage().persistent().set(&key, record);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn remove_dispute(env: &Env, ticket_id: u64) {
+    env.storage().persistent().remove(&DataKey::Dispute(ticket_id));
+}
+
+pub fn get_event_disputes(env: &Env, event_id: &Symbol) -> soroban_sdk::Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventDisputes(event_id.clone()))
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+pub fn set_event_disputes(env: &Env, event_id: &Symbol, disputes: &soroban_sdk::Vec<u64>) {
+    let key = DataKey::EventDisputes(event_id.clone());
+    env.storage().persistent().set(&key, disputes);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }

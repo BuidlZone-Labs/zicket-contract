@@ -349,3 +349,78 @@ pub fn emit_flagged_share_resolved(
     }
     .publish(env);
 }
+
+#[contractevent(data_format = "vec", topics = ["dispute_raised"])]
+pub struct DisputeRaised {
+    pub event_type: Symbol,
+    pub event_id: Symbol,
+    pub ticket_id: u64,
+    pub payment_id: u64,
+    pub reason_code: u32,
+    pub raised_at: u64,
+}
+
+pub fn emit_dispute_raised(
+    env: &Env,
+    event_id: Symbol,
+    ticket_id: u64,
+    payment_id: u64,
+    reason_code: u32,
+) {
+    DisputeRaised {
+        event_type: event_type(env, "dispute_raised"),
+        event_id,
+        ticket_id,
+        payment_id,
+        reason_code,
+        raised_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+#[contractevent(data_format = "vec", topics = ["dispute_resolved"])]
+pub struct DisputeResolved {
+    pub event_type: Symbol,
+    pub event_id: Symbol,
+    pub ticket_id: u64,
+    pub refund_approved: bool,
+    pub resolved_at: u64,
+}
+
+pub fn emit_dispute_resolved(
+    env: &Env,
+    event_id: Symbol,
+    ticket_id: u64,
+    refund_approved: bool,
+) {
+    DisputeResolved {
+        event_type: event_type(env, "dispute_resolved"),
+        event_id,
+        ticket_id,
+        refund_approved,
+        resolved_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+#[contractevent(data_format = "vec", topics = ["dispute_timed_out"])]
+pub struct DisputeTimedOut {
+    pub event_type: Symbol,
+    pub event_id: Symbol,
+    pub ticket_id: u64,
+    pub timed_out_at: u64,
+}
+
+pub fn emit_dispute_timed_out(
+    env: &Env,
+    event_id: Symbol,
+    ticket_id: u64,
+) {
+    DisputeTimedOut {
+        event_type: event_type(env, "dispute_timed_out"),
+        event_id,
+        ticket_id,
+        timed_out_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}

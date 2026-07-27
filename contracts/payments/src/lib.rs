@@ -18,6 +18,8 @@ pub use events::*;
 pub use storage::*;
 pub use types::*;
 const MIN_DISPUTE_WINDOW_LEDGERS: u32 = 100;
+const ATTENDEE_DISPUTE_WINDOW_LEDGERS: u32 = 17_280 * 7;
+const DISPUTE_TIMEOUT_LEDGERS: u32 = 17_280 * 14;
 
 #[derive(Clone)]
 struct PaymentParams {
@@ -173,14 +175,52 @@ fn validate_payment_privacy(
     Ok(())
 }
 
+fn process_timed_out_disputes(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
+    let disputes = storage::get_event_disputes(env, event_id);
+    if disputes.is_empty() {
+        return Ok(());
+    }
+    let mut remaining = soroban_sdk::Vec::new(env);
+    let mut modified = false;
+    for i in 0..disputes.len() {
+        if let Some(ticket_id) = disputes.get(i) {
+            if let Some(dispute) = storage::get_dispute(env, ticket_id) {
+                if env.ledger().sequence() >= dispute.raised_at_ledger + DISPUTE_TIMEOUT_LEDGERS {
+                    if let Ok(mut payment) = storage::get_payment(env, dispute.payment_id) {
+                        if payment.status == PaymentStatus::Disputed {
+                            payment.status = PaymentStatus::Held;
+                            storage::update_payment(env, &payment)?;
+                            let rev = storage::get_event_revenue(env, event_id);
+                            storage::set_event_revenue(env, event_id, rev + payment.amount);
+                            let token_rev = storage::get_event_token_revenue(env, event_id, &payment.token);
+                            storage::set_event_token_revenue(env, event_id, &payment.token, token_rev + payment.amount);
+                        }
+                    }
+                    storage::remove_dispute(env, ticket_id);
+                    events::emit_dispute_timed_out(env, event_id.clone(), ticket_id);
+                    modified = true;
+                } else {
+                    remaining.push_back(ticket_id);
+                }
+            }
+        }
+    }
+    if modified {
+        storage::set_event_disputes(env, event_id, &remaining);
+    }
+    Ok(())
+}
+
 fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
     if let Some(EventStatus::Cancelled) = storage::get_event_status(env, event_id) {
         return Ok(());
     }
+    process_timed_out_disputes(env, event_id)?;
 
     let payment_ids = storage::get_event_payments(env, event_id);
     let mut total_payments: i128 = 0;
     let mut total_refunds: i128 = 0;
+    let mut total_disputed: i128 = 0;
 
     for i in 0..payment_ids.len() {
         if let Some(pid) = payment_ids.get(i) {
@@ -188,6 +228,8 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
                 total_payments += payment.amount;
                 if payment.status == PaymentStatus::Refunded {
                     total_refunds += payment.amount;
+                } else if payment.status == PaymentStatus::Disputed {
+                    total_disputed += payment.amount;
                 }
             }
         }
@@ -204,7 +246,7 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
 
     let platform_revenue = storage::get_platform_revenue(env, event_id);
 
-    if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue {
+    if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue + total_disputed {
         return Err(PaymentError::AccountingMismatch);
     }
     let tokens = storage::get_event_tokens(env, event_id);
@@ -461,7 +503,7 @@ fn collect_cancellation_organizer_pool(
             .get(index)
             .ok_or(PaymentError::PaymentNotFound)?;
         let payment = storage::get_payment(env, payment_id)?;
-        if payment.token == *token_address && payment.status != PaymentStatus::Released {
+        if payment.token == *token_address && payment.status != PaymentStatus::Released && payment.status != PaymentStatus::Disputed {
             total += payment.amount * (withdrawable_ratio_bps as i128) / 10_000;
         }
     }
@@ -2291,6 +2333,158 @@ impl PaymentsContract {
 
         Ok(())
     }
+
+    pub fn raise_dispute(
+        env: Env,
+        ticket_id: u64,
+        reason_code: u32,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        if reason_code > 2 {
+            return Err(PaymentError::InvalidDisputeReason);
+        }
+
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+        if ticket.privacy_level == PaymentPrivacy::Standard {
+            if let Some(ref owner) = ticket.owner {
+                owner.require_auth();
+            }
+        }
+
+        let config = storage::get_event_config(&env, &ticket.event_id)
+            .ok_or(PaymentError::InvalidOrganizer)?;
+
+        let current_ledger = env.ledger().sequence();
+        if current_ledger < config.event_end_ledger {
+            return Err(PaymentError::DisputeWindowClosed);
+        }
+        if current_ledger >= config.event_end_ledger + ATTENDEE_DISPUTE_WINDOW_LEDGERS {
+            return Err(PaymentError::DisputeWindowClosed);
+        }
+
+        if storage::get_dispute(&env, ticket_id).is_some() {
+            return Err(PaymentError::DisputeAlreadyExists);
+        }
+
+        let mut payment = storage::get_payment(&env, ticket.payment_id)?;
+        if payment.status != PaymentStatus::Held {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        payment.status = PaymentStatus::Disputed;
+        storage::update_payment(&env, &payment)?;
+
+        let rev = storage::get_event_revenue(&env, &ticket.event_id);
+        storage::set_event_revenue(&env, &ticket.event_id, rev - payment.amount);
+        let token_rev = storage::get_event_token_revenue(&env, &ticket.event_id, &payment.token);
+        storage::set_event_token_revenue(&env, &ticket.event_id, &payment.token, token_rev - payment.amount);
+
+        let dispute = DisputeRecord {
+            ticket_id,
+            event_id: ticket.event_id.clone(),
+            payment_id: payment.payment_id,
+            reason_code,
+            raised_at_ledger: current_ledger,
+        };
+        storage::set_dispute(&env, ticket_id, &dispute);
+
+        let mut disputes = storage::get_event_disputes(&env, &ticket.event_id);
+        disputes.push_back(ticket_id);
+        storage::set_event_disputes(&env, &ticket.event_id, &disputes);
+
+        events::emit_dispute_raised(&env, ticket.event_id, ticket_id, payment.payment_id, reason_code);
+        Ok(())
+    }
+
+    pub fn approve_refund(
+        env: Env,
+        ticket_id: u64,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let admin = storage::get_admin(&env)?;
+        admin.require_auth();
+
+        let dispute = storage::get_dispute(&env, ticket_id)
+            .ok_or(PaymentError::DisputeNotFound)?;
+
+        if env.ledger().sequence() >= dispute.raised_at_ledger + DISPUTE_TIMEOUT_LEDGERS {
+            return Err(PaymentError::DisputeExpired);
+        }
+
+        let mut payment = storage::get_payment(&env, dispute.payment_id)?;
+        if payment.status != PaymentStatus::Disputed {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        let remaining = payment.amount - payment.refunded_amount;
+        if let Some(refund_to) = payment.payer.clone() {
+            let token_client = token::Client::new(&env, &payment.token);
+            token_client.transfer(&env.current_contract_address(), &refund_to, &remaining);
+        }
+
+        payment.refunded_amount += remaining;
+        payment.status = PaymentStatus::Refunded;
+        storage::update_payment(&env, &payment)?;
+
+        storage::remove_dispute(&env, ticket_id);
+        let disputes = storage::get_event_disputes(&env, &dispute.event_id);
+        let mut new_disputes = soroban_sdk::Vec::new(&env);
+        for i in 0..disputes.len() {
+            if let Some(tid) = disputes.get(i) {
+                if tid != ticket_id {
+                    new_disputes.push_back(tid);
+                }
+            }
+        }
+        storage::set_event_disputes(&env, &dispute.event_id, &new_disputes);
+
+        events::emit_dispute_resolved(&env, dispute.event_id, ticket_id, true);
+        Ok(())
+    }
+
+    pub fn reject_dispute(
+        env: Env,
+        ticket_id: u64,
+    ) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        let admin = storage::get_admin(&env)?;
+        admin.require_auth();
+
+        let dispute = storage::get_dispute(&env, ticket_id)
+            .ok_or(PaymentError::DisputeNotFound)?;
+
+        let mut payment = storage::get_payment(&env, dispute.payment_id)?;
+        if payment.status != PaymentStatus::Disputed {
+            return Err(PaymentError::PaymentAlreadyProcessed);
+        }
+
+        payment.status = PaymentStatus::Held;
+        storage::update_payment(&env, &payment)?;
+
+        let rev = storage::get_event_revenue(&env, &dispute.event_id);
+        storage::set_event_revenue(&env, &dispute.event_id, rev + payment.amount);
+        let token_rev = storage::get_event_token_revenue(&env, &dispute.event_id, &payment.token);
+        storage::set_event_token_revenue(&env, &dispute.event_id, &payment.token, token_rev + payment.amount);
+
+        storage::remove_dispute(&env, ticket_id);
+        let disputes = storage::get_event_disputes(&env, &dispute.event_id);
+        let mut new_disputes = soroban_sdk::Vec::new(&env);
+        for i in 0..disputes.len() {
+            if let Some(tid) = disputes.get(i) {
+                if tid != ticket_id {
+                    new_disputes.push_back(tid);
+                }
+            }
+        }
+        storage::set_event_disputes(&env, &dispute.event_id, &new_disputes);
+
+        events::emit_dispute_resolved(&env, dispute.event_id, ticket_id, false);
+        Ok(())
+    }
+
+    pub fn process_dispute_timeouts(env: Env, event_id: Symbol) -> Result<(), PaymentError> {
+        process_timed_out_disputes(&env, &event_id)
+    }
 }
 
 #[cfg(test)]
@@ -2303,3 +2497,5 @@ mod revenue_split_test;
 mod test;
 #[cfg(test)]
 mod test_privacy_semantics;
+#[cfg(test)]
+mod test_disputes;
