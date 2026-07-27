@@ -134,6 +134,10 @@ See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descrip
 - before pushing changes, run `cargo build`, `cargo test`, `cargo fmt`, `cargo clippy`.
 - push your changes & create your PR, ensure to link your issue using the `github closing keyword`.
 
+## Community
+
+Join us here for discussions, suggestions & improvements: https://t.me/+nlYw80w3FF1jNGY0
+
 ## License
 
-This project is under active development.
+This project is under active development with the MIT License.
