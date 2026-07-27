@@ -192,8 +192,14 @@ fn process_timed_out_disputes(env: &Env, event_id: &Symbol) -> Result<(), Paymen
                             storage::update_payment(env, &payment)?;
                             let rev = storage::get_event_revenue(env, event_id);
                             storage::set_event_revenue(env, event_id, rev + payment.amount);
-                            let token_rev = storage::get_event_token_revenue(env, event_id, &payment.token);
-                            storage::set_event_token_revenue(env, event_id, &payment.token, token_rev + payment.amount);
+                            let token_rev =
+                                storage::get_event_token_revenue(env, event_id, &payment.token);
+                            storage::set_event_token_revenue(
+                                env,
+                                event_id,
+                                &payment.token,
+                                token_rev + payment.amount,
+                            );
                         }
                     }
                     storage::remove_dispute(env, ticket_id);
@@ -246,7 +252,9 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
 
     let platform_revenue = storage::get_platform_revenue(env, event_id);
 
-    if total_payments != current_revenue + total_refunds + total_withdrawn + platform_revenue + total_disputed {
+    if total_payments
+        != current_revenue + total_refunds + total_withdrawn + platform_revenue + total_disputed
+    {
         return Err(PaymentError::AccountingMismatch);
     }
     let tokens = storage::get_event_tokens(env, event_id);
@@ -503,7 +511,10 @@ fn collect_cancellation_organizer_pool(
             .get(index)
             .ok_or(PaymentError::PaymentNotFound)?;
         let payment = storage::get_payment(env, payment_id)?;
-        if payment.token == *token_address && payment.status != PaymentStatus::Released && payment.status != PaymentStatus::Disputed {
+        if payment.token == *token_address
+            && payment.status != PaymentStatus::Released
+            && payment.status != PaymentStatus::Disputed
+        {
             total += payment.amount * (withdrawable_ratio_bps as i128) / 10_000;
         }
     }
@@ -2334,11 +2345,7 @@ impl PaymentsContract {
         Ok(())
     }
 
-    pub fn raise_dispute(
-        env: Env,
-        ticket_id: u64,
-        reason_code: u32,
-    ) -> Result<(), PaymentError> {
+    pub fn raise_dispute(env: Env, ticket_id: u64, reason_code: u32) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         if reason_code > 2 {
             return Err(PaymentError::InvalidDisputeReason);
@@ -2377,7 +2384,12 @@ impl PaymentsContract {
         let rev = storage::get_event_revenue(&env, &ticket.event_id);
         storage::set_event_revenue(&env, &ticket.event_id, rev - payment.amount);
         let token_rev = storage::get_event_token_revenue(&env, &ticket.event_id, &payment.token);
-        storage::set_event_token_revenue(&env, &ticket.event_id, &payment.token, token_rev - payment.amount);
+        storage::set_event_token_revenue(
+            &env,
+            &ticket.event_id,
+            &payment.token,
+            token_rev - payment.amount,
+        );
 
         let dispute = DisputeRecord {
             ticket_id,
@@ -2392,20 +2404,22 @@ impl PaymentsContract {
         disputes.push_back(ticket_id);
         storage::set_event_disputes(&env, &ticket.event_id, &disputes);
 
-        events::emit_dispute_raised(&env, ticket.event_id, ticket_id, payment.payment_id, reason_code);
+        events::emit_dispute_raised(
+            &env,
+            ticket.event_id,
+            ticket_id,
+            payment.payment_id,
+            reason_code,
+        );
         Ok(())
     }
 
-    pub fn approve_refund(
-        env: Env,
-        ticket_id: u64,
-    ) -> Result<(), PaymentError> {
+    pub fn approve_refund(env: Env, ticket_id: u64) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
 
-        let dispute = storage::get_dispute(&env, ticket_id)
-            .ok_or(PaymentError::DisputeNotFound)?;
+        let dispute = storage::get_dispute(&env, ticket_id).ok_or(PaymentError::DisputeNotFound)?;
 
         if env.ledger().sequence() >= dispute.raised_at_ledger + DISPUTE_TIMEOUT_LEDGERS {
             return Err(PaymentError::DisputeExpired);
@@ -2442,16 +2456,12 @@ impl PaymentsContract {
         Ok(())
     }
 
-    pub fn reject_dispute(
-        env: Env,
-        ticket_id: u64,
-    ) -> Result<(), PaymentError> {
+    pub fn reject_dispute(env: Env, ticket_id: u64) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
         admin.require_auth();
 
-        let dispute = storage::get_dispute(&env, ticket_id)
-            .ok_or(PaymentError::DisputeNotFound)?;
+        let dispute = storage::get_dispute(&env, ticket_id).ok_or(PaymentError::DisputeNotFound)?;
 
         let mut payment = storage::get_payment(&env, dispute.payment_id)?;
         if payment.status != PaymentStatus::Disputed {
@@ -2464,7 +2474,12 @@ impl PaymentsContract {
         let rev = storage::get_event_revenue(&env, &dispute.event_id);
         storage::set_event_revenue(&env, &dispute.event_id, rev + payment.amount);
         let token_rev = storage::get_event_token_revenue(&env, &dispute.event_id, &payment.token);
-        storage::set_event_token_revenue(&env, &dispute.event_id, &payment.token, token_rev + payment.amount);
+        storage::set_event_token_revenue(
+            &env,
+            &dispute.event_id,
+            &payment.token,
+            token_rev + payment.amount,
+        );
 
         storage::remove_dispute(&env, ticket_id);
         let disputes = storage::get_event_disputes(&env, &dispute.event_id);
@@ -2496,6 +2511,6 @@ mod revenue_split_test;
 #[cfg(test)]
 mod test;
 #[cfg(test)]
-mod test_privacy_semantics;
-#[cfg(test)]
 mod test_disputes;
+#[cfg(test)]
+mod test_privacy_semantics;

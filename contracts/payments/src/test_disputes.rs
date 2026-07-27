@@ -26,7 +26,14 @@ fn setup(
     client.initialize(&admin, &token, &0, &platform_wallet, &event_contract_id);
 
     let token_client = token::StellarAssetClient::new(env, &token);
-    (admin, token, client, contract_id, token_client, event_contract_id)
+    (
+        admin,
+        token,
+        client,
+        contract_id,
+        token_client,
+        event_contract_id,
+    )
 }
 
 fn fund(env: &Env, admin: &Address, payer: &Address, token: &Address, amount: i128) {
@@ -73,7 +80,15 @@ fn test_raise_dispute_success_and_window_rules() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     env.ledger().with_mut(|l| l.sequence_number = 500);
@@ -120,7 +135,15 @@ fn test_dispute_window_expiration() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     client.pay_for_ticket(
@@ -137,7 +160,8 @@ fn test_dispute_window_expiration() {
     let ticket_id = 1u64;
 
     // 7 days in ledgers = 17280 * 7 = 120960. At end_ledger + 120960 window is closed.
-    env.ledger().with_mut(|l| l.sequence_number = end_ledger + 120_960);
+    env.ledger()
+        .with_mut(|l| l.sequence_number = end_ledger + 120_960);
     let res = client.try_raise_dispute(&ticket_id, &1);
     assert_eq!(res, Err(Ok(PaymentError::DisputeWindowClosed)));
 }
@@ -152,7 +176,15 @@ fn test_invalid_dispute_reason_code() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
@@ -182,7 +214,15 @@ fn test_admin_approve_refund() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     client.pay_for_ticket(
@@ -221,7 +261,15 @@ fn test_admin_reject_dispute() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     client.pay_for_ticket(
@@ -259,7 +307,15 @@ fn test_dispute_14_day_timeout_auto_releases_to_organizer() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, false, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        false,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     client.pay_for_ticket(
@@ -280,7 +336,8 @@ fn test_dispute_14_day_timeout_auto_releases_to_organizer() {
     assert_eq!(client.get_event_revenue(&event_id), 0);
 
     // Advance 14 days in ledgers (17280 * 14 = 241920)
-    env.ledger().with_mut(|l| l.sequence_number = end_ledger + 241_920);
+    env.ledger()
+        .with_mut(|l| l.sequence_number = end_ledger + 241_920);
 
     client.process_dispute_timeouts(&event_id);
 
@@ -299,7 +356,15 @@ fn test_anonymous_ticket_dispute() {
     let event_id = symbol_short!("EV");
     let end_ledger = 1000u32;
 
-    bind_event(&client, &event_contract, &event_id, &organizer, &token, true, end_ledger);
+    bind_event(
+        &client,
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token,
+        true,
+        end_ledger,
+    );
     fund(&env, &admin, &payer, &token, 2000);
 
     let commitment = BytesN::from_array(&env, &[7u8; 32]);

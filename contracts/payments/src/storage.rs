@@ -823,9 +823,7 @@ pub fn remove_resale_listing(env: &Env, ticket_id: u64) {
 }
 
 pub fn get_dispute(env: &Env, ticket_id: u64) -> Option<crate::types::DisputeRecord> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::Dispute(ticket_id))
+    env.storage().persistent().get(&DataKey::Dispute(ticket_id))
 }
 
 pub fn set_dispute(env: &Env, ticket_id: u64, record: &crate::types::DisputeRecord) {
@@ -837,7 +835,9 @@ pub fn set_dispute(env: &Env, ticket_id: u64, record: &crate::types::DisputeReco
 }
 
 pub fn remove_dispute(env: &Env, ticket_id: u64) {
-    env.storage().persistent().remove(&DataKey::Dispute(ticket_id));
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Dispute(ticket_id));
 }
 
 pub fn get_event_disputes(env: &Env, event_id: &Symbol) -> soroban_sdk::Vec<u64> {

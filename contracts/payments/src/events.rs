@@ -387,12 +387,7 @@ pub struct DisputeResolved {
     pub resolved_at: u64,
 }
 
-pub fn emit_dispute_resolved(
-    env: &Env,
-    event_id: Symbol,
-    ticket_id: u64,
-    refund_approved: bool,
-) {
+pub fn emit_dispute_resolved(env: &Env, event_id: Symbol, ticket_id: u64, refund_approved: bool) {
     DisputeResolved {
         event_type: event_type(env, "dispute_resolved"),
         event_id,
@@ -411,11 +406,7 @@ pub struct DisputeTimedOut {
     pub timed_out_at: u64,
 }
 
-pub fn emit_dispute_timed_out(
-    env: &Env,
-    event_id: Symbol,
-    ticket_id: u64,
-) {
+pub fn emit_dispute_timed_out(env: &Env, event_id: Symbol, ticket_id: u64) {
     DisputeTimedOut {
         event_type: event_type(env, "dispute_timed_out"),
         event_id,

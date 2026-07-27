@@ -125,4 +125,3 @@ pub struct DisputeRecord {
     pub reason_code: u32,
     pub raised_at_ledger: u32,
 }
-
