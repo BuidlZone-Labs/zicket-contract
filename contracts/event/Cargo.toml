@@ -16,3 +16,5 @@ privacy-utils = { path = "../privacy-utils" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+ed25519-dalek = { version = "2.0", features = ["rand_core"] }
+rand = "0.8"
