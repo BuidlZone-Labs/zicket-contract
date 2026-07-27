@@ -73,4 +73,7 @@ pub enum EventError {
     /// client-generated privacy material (stealth key / nullifier commitment).
     /// Use the payments contract's privacy-aware entry point directly.
     PaymentPrivacyUnsupported = 42,
+    /// The caller did not provide a valid Ed25519 signature for the claimed
+    /// anonymous ticket commitment.
+    InvalidSignature = 43,
 }
