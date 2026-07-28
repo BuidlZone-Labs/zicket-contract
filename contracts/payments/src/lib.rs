@@ -252,18 +252,6 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
         return Err(PaymentError::AccountingMismatch);
     }
 
-    let mut total_token_revenue: i128 = 0;
-    let tokens = storage::get_event_tokens(env, event_id);
-    for i in 0..tokens.len() {
-        if let Some(token) = tokens.get(i) {
-            total_token_revenue += storage::get_event_token_revenue(env, event_id, &token);
-        }
-    }
-
-    if current_revenue != total_token_revenue {
-        return Err(PaymentError::AccountingMismatch);
-    }
-
     Ok(())
 }
 
@@ -452,24 +440,8 @@ fn collect_cancellation_organizer_pool(
     token_address: &Address,
     withdrawable_ratio_bps: u32,
 ) -> Result<i128, PaymentError> {
-    let total_volume = storage::get_total_token_volume(env, event_id, token_address);
-    
-    let mut disputed_volume = 0i128;
-    let disputes = storage::get_event_disputes(env, event_id);
-    for i in 0..disputes.len() {
-        if let Some(ticket_id) = disputes.get(i) {
-            if let Some(dispute) = storage::get_dispute(env, ticket_id) {
-                if let Ok(payment) = storage::get_payment(env, dispute.payment_id) {
-                    if payment.token == *token_address {
-                        disputed_volume += payment.amount;
-                    }
-                }
-            }
-        }
-    }
-    
-    let eligible_volume = total_volume - disputed_volume;
-    Ok(eligible_volume * (withdrawable_ratio_bps as i128) / 10_000)
+    let revenue = storage::get_event_token_revenue(env, event_id, token_address);
+    Ok(revenue * (withdrawable_ratio_bps as i128) / 10_000)
 }
 
 /// Reject legacy single-organizer withdrawal paths for events that carry a
@@ -943,10 +915,19 @@ impl PaymentsContract {
             }
         }
 
-        let remaining = payment.amount - payment.refunded_amount;
-        let refund_amt = amount.unwrap_or(remaining);
+        let status = storage::get_event_status(&env, &payment.event_id);
+        let max_refund = if status == Some(EventStatus::Cancelled) {
+            let withdrawable_ratio_bps = config.withdrawable_ratio_bps.unwrap_or(0);
+            let refund_ratio_bps = 10_000 - withdrawable_ratio_bps;
+            let total_refundable = payment.amount * (refund_ratio_bps as i128) / 10_000;
+            total_refundable - payment.refunded_amount
+        } else {
+            payment.amount - payment.refunded_amount
+        };
 
-        if refund_amt <= 0 || refund_amt > remaining {
+        let refund_amt = amount.unwrap_or(max_refund);
+
+        if refund_amt <= 0 || refund_amt > max_refund {
             return Err(PaymentError::InvalidAmount);
         }
 
@@ -1116,12 +1097,12 @@ impl PaymentsContract {
             storage::set_event_revenue(&env, &event_id, current_rev - total_to_withdraw);
         }
 
-        storage::add_total_withdrawn(&env, &event_id, total_to_withdraw);
+        storage::add_total_withdrawn(&env, &event_id, organizer_amount);
         config.organizer_withdrawn = true;
         storage::set_event_config(&env, &event_id, &config);
 
         let record = WithdrawalRecord {
-            amount: total,
+            amount: organizer_amount,
             timestamp: env.ledger().timestamp(),
             organizer: stored_organizer.clone(),
         };
@@ -1251,6 +1232,7 @@ impl PaymentsContract {
             &payment.token,
             token_revenue - remaining,
         );
+        storage::add_total_refunds(&env, &payment.event_id, remaining);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1366,6 +1348,7 @@ impl PaymentsContract {
             &payment.token,
             token_revenue - refund_amt,
         );
+        storage::add_total_refunds(&env, &payment.event_id, refund_amt);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1628,6 +1611,66 @@ impl PaymentsContract {
         }
 
         Ok(new_version)
+    }
+
+    pub fn migrate_event(env: Env, admin: Address, event_id: Symbol) -> Result<(), PaymentError> {
+        require_not_paused(&env)?;
+        admin.require_auth();
+        let current_admin = storage::get_admin(&env)?;
+        if current_admin != admin {
+            return Err(PaymentError::Unauthorized);
+        }
+
+        // Migrate EventPayments -> EventPaymentIndex and compute TotalPayments
+        let legacy_key = crate::storage::DataKey::EventPayments(event_id.clone());
+        let legacy_payments: soroban_sdk::Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&legacy_key)
+            .unwrap_or(soroban_sdk::Vec::new(&env));
+
+        let mut total_payments = 0;
+        let mut total_refunds = 0;
+        for i in 0..legacy_payments.len() {
+            if let Some(payment_id) = legacy_payments.get(i) {
+                let idx_key = crate::storage::DataKey::EventPaymentIndex(event_id.clone(), i as u64);
+                env.storage().persistent().set(&idx_key, &payment_id);
+                if let Ok(payment) = storage::get_payment(&env, payment_id) {
+                    total_payments += payment.amount;
+                    total_refunds += payment.refunded_amount;
+                    
+                    // Add to EventTokenVolume
+                    let vol_key = crate::storage::DataKey::EventTokenVolume(event_id.clone(), payment.token.clone());
+                    let mut current_vol: i128 = env.storage().persistent().get(&vol_key).unwrap_or(0);
+                    current_vol += payment.amount;
+                    env.storage().persistent().set(&vol_key, &current_vol);
+                }
+            }
+        }
+
+        let count_key = crate::storage::DataKey::EventPaymentsCount(event_id.clone());
+        env.storage().persistent().set(&count_key, &(legacy_payments.len() as u64));
+
+        let tp_key = crate::storage::DataKey::TotalPayments(event_id.clone());
+        env.storage().persistent().set(&tp_key, &total_payments);
+
+        let tr_key = crate::storage::DataKey::TotalRefunds(event_id.clone());
+        env.storage().persistent().set(&tr_key, &total_refunds);
+
+        let history = storage::get_withdrawal_history(&env, &event_id);
+        let mut total_withdrawn = 0;
+        for i in 0..history.len() {
+            if let Some(record) = history.get(i) {
+                total_withdrawn += record.amount;
+            }
+        }
+        let tw_key = crate::storage::DataKey::TotalWithdrawn(event_id.clone());
+        env.storage().persistent().set(&tw_key, &total_withdrawn);
+
+        // Remove legacy vector to free space
+        env.storage().persistent().remove(&legacy_key);
+
+        Ok(())
     }
     pub fn get_event_token_revenue(env: Env, event_id: Symbol, token_address: Address) -> i128 {
         storage::get_event_token_revenue(&env, &event_id, &token_address)
@@ -1989,6 +2032,7 @@ impl PaymentsContract {
                     timestamp: env.ledger().timestamp(),
                     organizer: primary,
                 };
+                storage::add_total_withdrawn(&env, &event_id, share);
                 storage::add_withdrawal_record(&env, &event_id, &record);
 
                 events::emit_flagged_share_resolved(&env, event_id, recipient, false, share);

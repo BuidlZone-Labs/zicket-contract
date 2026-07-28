@@ -116,7 +116,8 @@ pub fn get_attendees_paginated(
 ) -> Vec<Address> {
     let count = get_attendees_count(env, event_id);
     let mut attendees = Vec::new(env);
-    let end = count.min(start.saturating_add(limit));
+    let actual_limit = limit.min(100);
+    let end = count.min(start.saturating_add(actual_limit));
     for i in start..end {
         if let Some(attendee) = env
             .storage()
@@ -281,22 +282,50 @@ pub fn remove_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
         .persistent()
         .remove(&DataKey::Registration(event_id.clone(), attendee.clone()));
 
-    let attendees_key = DataKey::EventAttendees(event_id.clone());
-    let attendees: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get(&attendees_key)
-        .unwrap_or(Vec::new(env));
-    let mut remaining = Vec::new(env);
-    for a in attendees.iter() {
-        if a != *attendee {
-            remaining.push_back(a);
+    let count = get_attendees_count(env, event_id);
+    if count == 0 {
+        return;
+    }
+
+    let mut target_index = None;
+    for i in 0..count {
+        if let Some(a) = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::EventAttendeeIndex(event_id.clone(), i))
+        {
+            if a == *attendee {
+                target_index = Some(i);
+                break;
+            }
         }
     }
-    env.storage().persistent().set(&attendees_key, &remaining);
-    env.storage()
-        .persistent()
-        .extend_ttl(&attendees_key, TTL_THRESHOLD, TTL_BUMP);
+
+    if let Some(idx) = target_index {
+        let last_idx = count - 1;
+        if idx != last_idx {
+            if let Some(last_attendee) = env
+                .storage()
+                .persistent()
+                .get::<_, Address>(&DataKey::EventAttendeeIndex(event_id.clone(), last_idx))
+            {
+                let target_key = DataKey::EventAttendeeIndex(event_id.clone(), idx);
+                env.storage().persistent().set(&target_key, &last_attendee);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&target_key, TTL_THRESHOLD, TTL_BUMP);
+            }
+        }
+        env.storage()
+            .persistent()
+            .remove(&DataKey::EventAttendeeIndex(event_id.clone(), last_idx));
+
+        let count_key = DataKey::EventAttendeesCount(event_id.clone());
+        env.storage().persistent().set(&count_key, &last_idx);
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+    }
 }
 
 pub fn get_claim_settings(env: &Env, event_id: &Symbol) -> ClaimSettings {

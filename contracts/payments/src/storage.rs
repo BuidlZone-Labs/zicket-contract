@@ -304,7 +304,6 @@ pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentErr
     env.storage()
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-    add_total_payments(env, &payment.event_id, payment.amount);
     Ok(())
 }
 pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
@@ -515,7 +514,6 @@ pub fn add_withdrawal_record(
     env.storage()
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-    add_total_withdrawn(env, event_id, record.amount);
 }
 
 pub fn get_withdrawal_history(env: &Env, event_id: &Symbol) -> Vec<crate::types::WithdrawalRecord> {
