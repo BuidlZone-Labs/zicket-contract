@@ -146,7 +146,7 @@ fn test_get_attendees_standard_public() {
         PrivacyLevel::Standard,
     );
 
-    let attendees = client.get_attendees(&event_id);
+    let attendees = client.get_attendees_paginated(&event_id, &0, &100);
     assert_eq!(attendees.len(), 0);
 }
 
@@ -166,7 +166,7 @@ fn test_get_attendees_anonymous_returns_empty() {
         PrivacyLevel::Anonymous,
     );
 
-    let attendees = client.get_attendees(&event_id);
+    let attendees = client.get_attendees_paginated(&event_id, &0, &100);
     assert_eq!(attendees.len(), 0);
 }
 
@@ -186,7 +186,7 @@ fn test_get_attendees_private_blocked_for_public() {
         PrivacyLevel::Private,
     );
 
-    let result = client.try_get_attendees(&event_id);
+    let result = client.try_get_attendees_paginated(&event_id, &0, &100);
     assert_eq!(
         result.err(),
         Some(Ok(EventError::UnauthorizedPrivateAccess))
@@ -209,7 +209,7 @@ fn test_get_attendees_as_organizer_private_succeeds() {
         PrivacyLevel::Private,
     );
 
-    let attendees = client.get_attendees_as_organizer(&organizer, &event_id);
+    let attendees = client.get_org_attendees_paginated(&organizer, &event_id, &0, &100);
     assert_eq!(attendees.len(), 0);
 }
 
@@ -230,7 +230,7 @@ fn test_get_attendees_as_organizer_non_organizer_fails() {
         PrivacyLevel::Private,
     );
 
-    let result = client.try_get_attendees_as_organizer(&intruder, &event_id);
+    let result = client.try_get_org_attendees_paginated(&intruder, &event_id, &0, &100);
     assert_eq!(result.err(), Some(Ok(EventError::Unauthorized)));
 }
 
@@ -250,7 +250,7 @@ fn test_get_attendees_as_organizer_standard() {
         PrivacyLevel::Standard,
     );
 
-    let attendees = client.get_attendees_as_organizer(&organizer, &event_id);
+    let attendees = client.get_org_attendees_paginated(&organizer, &event_id, &0, &100);
     assert_eq!(attendees.len(), 0);
 }
 
@@ -270,7 +270,7 @@ fn test_get_attendees_as_organizer_anonymous() {
         PrivacyLevel::Anonymous,
     );
 
-    let attendees = client.get_attendees_as_organizer(&organizer, &event_id);
+    let attendees = client.get_org_attendees_paginated(&organizer, &event_id, &0, &100);
     assert_eq!(attendees.len(), 0);
 }
 

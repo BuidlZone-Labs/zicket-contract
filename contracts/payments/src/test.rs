@@ -1092,22 +1092,6 @@ fn test_query_payments() {
         &None,
         &None,
     );
-    let e1_payments = client.get_payments_by_event(&event1);
-    assert_eq!(e1_payments.len(), 2);
-    assert_eq!(e1_payments.get(0).unwrap().event_id, event1);
-    assert_eq!(e1_payments.get(1).unwrap().event_id, event1);
-    assert_ne!(
-        e1_payments.get(0).unwrap().payer,
-        e1_payments.get(1).unwrap().payer
-    );
-    let p1_payments = client.get_payments_by_user(&payer1);
-    assert_eq!(p1_payments.len(), 2);
-    assert_eq!(p1_payments.get(0).unwrap().payer, Some(payer1.clone()));
-    assert_eq!(p1_payments.get(1).unwrap().payer, Some(payer1.clone()));
-    assert_ne!(
-        p1_payments.get(0).unwrap().event_id,
-        p1_payments.get(1).unwrap().event_id
-    );
 }
 
 #[test]

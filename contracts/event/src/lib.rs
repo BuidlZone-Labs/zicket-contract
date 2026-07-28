@@ -896,29 +896,39 @@ impl EventContract {
         storage::get_event(&env, &event_id)?;
         Ok(storage::is_registered(&env, &event_id, &attendee))
     }
-    pub fn get_attendees(
+
+    pub fn get_attendees_paginated(
         env: Env,
         event_id: Symbol,
+        start: u64,
+        limit: u64,
     ) -> Result<soroban_sdk::Vec<Address>, EventError> {
         storage::get_event(&env, &event_id)?;
         let privacy = storage::get_event_privacy(&env, &event_id);
         match privacy {
-            PrivacyLevel::Standard => Ok(storage::get_attendees(&env, &event_id)),
+            PrivacyLevel::Standard => Ok(storage::get_attendees_paginated(
+                &env, &event_id, start, limit,
+            )),
             PrivacyLevel::Private => Err(EventError::UnauthorizedPrivateAccess),
             PrivacyLevel::Anonymous => Ok(soroban_sdk::Vec::new(&env)),
         }
     }
-    pub fn get_attendees_as_organizer(
+
+    pub fn get_org_attendees_paginated(
         env: Env,
         organizer: Address,
         event_id: Symbol,
+        start: u64,
+        limit: u64,
     ) -> Result<soroban_sdk::Vec<Address>, EventError> {
         organizer.require_auth();
         let event = storage::get_event(&env, &event_id)?;
         if event.organizer != organizer {
             return Err(EventError::Unauthorized);
         }
-        Ok(storage::get_attendees(&env, &event_id))
+        Ok(storage::get_attendees_paginated(
+            &env, &event_id, start, limit,
+        ))
     }
     pub fn withdraw_revenue(
         env: Env,
