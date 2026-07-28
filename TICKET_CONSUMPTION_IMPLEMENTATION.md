@@ -16,12 +16,13 @@ This document describes the complete implementation of ticket consumption functi
 ### Core Function: `use_ticket`
 
 ```rust
-pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), TicketError>
+pub fn use_ticket(env: Env, organizer: Address, owner: Address, ticket_id: u64) -> Result<(), TicketError>
 ```
 
 **Parameters:**
 - `env`: Soroban environment
 - `organizer`: Address of the event organizer (must be authorized)
+- `owner`: Address of the ticket holder presenting for check-in (must be authorized)
 - `ticket_id`: Unique identifier of the ticket to consume
 
 **Return:**
@@ -30,15 +31,23 @@ pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Ti
 ### Validation Logic
 
 1. **Organizer Authorization**: `organizer.require_auth()`
-   - Only the event organizer can call this function
-   
-2. **Ticket Existence**: Retrieves ticket from persistent storage
+   - The event organizer must co-sign the check-in
+
+2. **Owner Authorization**: `owner.require_auth()`
+   - The ticket holder must also authorize the check-in, so an organizer can
+     no longer unilaterally mark a ticket used without the holder's presence
+     or consent (see issue #144)
+
+3. **Ticket Existence**: Retrieves ticket from persistent storage
    - Returns `TicketNotFound` if ticket doesn't exist
    
-3. **Organizer Verification**: Verifies caller is the ticket's organizer
+4. **Organizer Verification**: Verifies caller is the ticket's organizer
    - Returns `Unauthorized` if caller is not the organizer
-   
-4. **Usage Validation**: Checks `is_used` field and status
+
+5. **Owner Verification**: Verifies `owner` matches the ticket's `owner`
+   - Returns `Unauthorized` if the presented owner does not match
+
+6. **Usage Validation**: Checks `is_used` field and status
    - Returns `TicketAlreadyUsed` if `is_used` is true
    - Returns `EventNotActive` if status is `Cancelled`
    - Returns `TicketAlreadyUsed` if status is `Used`
@@ -127,6 +136,11 @@ pub struct TicketUsed {
    - Non-organizer attempts to use ticket
    - Expects `Unauthorized` error
 
+3b. **Wrong Owner Rejected** (`test_use_ticket_wrong_owner_rejected`)
+   - Organizer attempts check-in against an address that is not the real
+     ticket owner
+   - Expects `Unauthorized` error, since the real owner never consented
+
 4. **Cancelled Ticket Usage** (`test_use_ticket_cancelled`)
    - Attempts to use cancelled ticket
    - Expects `EventNotActive` error
@@ -146,14 +160,20 @@ pub struct TicketUsed {
 - Initialized to `false` in `mint_ticket`
 - Set to `true` in `use_ticket`
 
-✅ **Entry function use_ticket(env, organizer, ticket_id)**
+✅ **Entry function use_ticket(env, organizer, owner, ticket_id)**
 - Function already implemented
 - Enhanced with `is_used` field validation
+- Enhanced with owner presentation/authorization (issue #144)
 - Maintains backward compatibility with `status` field
 
 ✅ **Validation: Only organizer can call**
 - Implemented via `organizer.require_auth()`
 - Additional organizer verification check
+
+✅ **Validation: Ticket owner must consent to check-in**
+- Implemented via `owner.require_auth()` plus a `ticket.owner == owner` check
+- An organizer alone can no longer force a check-in for a ticket they don't
+  hold; the holder must be present and sign the transaction too
 
 ✅ **Validation: Reject already used**
 - Implemented via `is_used` field check
@@ -179,10 +199,11 @@ pub struct TicketUsed {
 ## Usage Example
 
 ```rust
-// Organizer checks in a ticket
+// Organizer and ticket owner jointly check in a ticket
 let result = ticket_contract.use_ticket(
     &env,
     &organizer_address,
+    &owner_address,
     ticket_id
 );
 
@@ -206,6 +227,8 @@ match result {
 ## Security Considerations
 
 - Organizer authorization prevents unauthorized check-ins
+- Owner authorization prevents an organizer from unilaterally marking a
+  ticket used without the holder's presence or consent (issue #144)
 - `is_used` field validation prevents ticket reuse
 - Status validation provides additional protection
 - Immutable status transitions prevent fraud

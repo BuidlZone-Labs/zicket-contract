@@ -228,7 +228,7 @@ fn test_use_ticket_happy_path() {
         ticket_id,
         TicketStatus::Valid,
     );
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
     let ticket: Ticket = env.as_contract(&contract_id, || {
         env.storage()
             .persistent()
@@ -267,7 +267,7 @@ fn test_use_ticket_double_checkin() {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
     });
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
 }
 
 #[test]
@@ -292,7 +292,34 @@ fn test_use_ticket_unauthorized() {
         ticket_id,
         TicketStatus::Valid,
     );
-    client.use_ticket(&random_person, &ticket_id);
+    client.use_ticket(&random_person, &owner, &ticket_id);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #4)")]
+fn test_use_ticket_wrong_owner_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let impostor_owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
+    // The organizer alone cannot check the ticket in for someone other than
+    // its actual owner -- the real owner never authorized this check-in.
+    client.use_ticket(&organizer, &impostor_owner, &ticket_id);
 }
 
 #[test]
@@ -316,7 +343,7 @@ fn test_use_ticket_cancelled() {
         ticket_id,
         TicketStatus::Cancelled,
     );
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
 }
 
 #[test]

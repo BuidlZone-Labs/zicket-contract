@@ -149,14 +149,23 @@ impl TicketContract {
             .unwrap_or(vec![&env])
     }
 
-    pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), TicketError> {
+    pub fn use_ticket(
+        env: Env,
+        organizer: Address,
+        owner: Address,
+        ticket_id: u64,
+    ) -> Result<(), TicketError> {
         organizer.require_auth();
+        owner.require_auth();
         let mut ticket: Ticket = env
             .storage()
             .persistent()
             .get(&DataKey::Ticket(ticket_id))
             .ok_or(TicketError::TicketNotFound)?;
         if ticket.organizer != organizer {
+            return Err(TicketError::Unauthorized);
+        }
+        if ticket.owner != owner {
             return Err(TicketError::Unauthorized);
         }
         if ticket.is_used {

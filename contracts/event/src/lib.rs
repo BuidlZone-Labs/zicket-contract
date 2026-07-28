@@ -996,10 +996,16 @@ impl EventContract {
     }
     pub fn claim_anonymous_ticket(
         env: Env,
+        claimant: Address,
         event_id: Symbol,
         tier_id: u32,
         commitment: BytesN<32>,
     ) -> Result<(), EventError> {
+        // Require the claimant's signature so a third party who observes the
+        // commitment in the mempool cannot front-run or replay it: they can copy
+        // the (public) commitment bytes but cannot produce this signer's auth.
+        claimant.require_auth();
+
         let mut event = storage::get_event(&env, &event_id)?;
 
         if event.status != EventStatus::Active {
