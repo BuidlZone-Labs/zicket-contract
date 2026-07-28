@@ -106,12 +106,12 @@ fn test_raise_dispute_success_and_window_rules() {
     let ticket_id = 1u64;
 
     // Before event_end_ledger should fail
-    let res = client.try_raise_dispute(&ticket_id, &0);
+    let res = client.try_raise_dispute(&ticket_id, &0, &None);
     assert_eq!(res, Err(Ok(PaymentError::DisputeWindowClosed)));
 
     // At event_end_ledger should succeed
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
-    client.raise_dispute(&ticket_id, &0);
+    client.raise_dispute(&ticket_id, &0, &None);
 
     let ticket = client.get_ticket(&ticket_id);
     let payment = client.get_payment(&ticket.payment_id);
@@ -121,7 +121,7 @@ fn test_raise_dispute_success_and_window_rules() {
     assert_eq!(client.get_event_revenue(&event_id), 0);
 
     // Raising dispute again on same ticket should fail
-    let res = client.try_raise_dispute(&ticket_id, &0);
+    let res = client.try_raise_dispute(&ticket_id, &0, &None);
     assert_eq!(res, Err(Ok(PaymentError::DisputeAlreadyExists)));
 }
 
@@ -162,7 +162,7 @@ fn test_dispute_window_expiration() {
     // 7 days in ledgers = 17280 * 7 = 120960. At end_ledger + 120960 window is closed.
     env.ledger()
         .with_mut(|l| l.sequence_number = end_ledger + 120_960);
-    let res = client.try_raise_dispute(&ticket_id, &1);
+    let res = client.try_raise_dispute(&ticket_id, &1, &None);
     assert_eq!(res, Err(Ok(PaymentError::DisputeWindowClosed)));
 }
 
@@ -200,7 +200,7 @@ fn test_invalid_dispute_reason_code() {
         &None,
     );
 
-    let res = client.try_raise_dispute(&1u64, &3);
+    let res = client.try_raise_dispute(&1u64, &3, &None);
     assert_eq!(res, Err(Ok(PaymentError::InvalidDisputeReason)));
 }
 
@@ -239,7 +239,7 @@ fn test_admin_approve_refund() {
     let ticket_id = 1u64;
 
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
-    client.raise_dispute(&ticket_id, &2);
+    client.raise_dispute(&ticket_id, &2, &None);
 
     let tc = token::Client::new(&env, &token);
     let balance_before = tc.balance(&payer);
@@ -286,7 +286,7 @@ fn test_admin_reject_dispute() {
     let ticket_id = 1u64;
 
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
-    client.raise_dispute(&ticket_id, &1);
+    client.raise_dispute(&ticket_id, &1, &None);
 
     assert_eq!(client.get_event_revenue(&event_id), 0);
 
@@ -332,7 +332,7 @@ fn test_dispute_14_day_timeout_auto_releases_to_organizer() {
     let ticket_id = 1u64;
 
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
-    client.raise_dispute(&ticket_id, &0);
+    client.raise_dispute(&ticket_id, &0, &None);
     assert_eq!(client.get_event_revenue(&event_id), 0);
 
     // Advance 14 days in ledgers (17280 * 14 = 241920)
@@ -367,7 +367,8 @@ fn test_anonymous_ticket_dispute() {
     );
     fund(&env, &admin, &payer, &token, 2000);
 
-    let commitment = BytesN::from_array(&env, &[7u8; 32]);
+    let preimage = soroban_sdk::Bytes::from_slice(&env, &[1u8; 32]);
+    let commitment: BytesN<32> = env.crypto().sha256(&preimage).into();
     client.pay_for_ticket(
         &1,
         &payer,
@@ -383,7 +384,7 @@ fn test_anonymous_ticket_dispute() {
 
     env.ledger().with_mut(|l| l.sequence_number = end_ledger);
     // Raise dispute on anonymous ticket via ticket_id only
-    client.raise_dispute(&ticket_id, &2);
+    client.raise_dispute(&ticket_id, &2, &Some(preimage));
 
     let payment = client.get_payment(&1u64);
     assert_eq!(payment.status, PaymentStatus::Disputed);

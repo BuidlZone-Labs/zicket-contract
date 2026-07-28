@@ -74,4 +74,6 @@ pub enum PaymentError {
     DisputeExpired = 49,
     /// Invalid reason code provided for dispute.
     InvalidDisputeReason = 50,
+    /// Organizer cannot withdraw while disputes are active.
+    ActiveDisputes = 51,
 }
