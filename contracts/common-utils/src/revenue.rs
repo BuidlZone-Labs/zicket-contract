@@ -30,26 +30,33 @@ pub fn calculate_net_amount(gross_amount: i128, platform_fee_bps: u32) -> i128 {
 
 /// Calculate all recipient shares from a revenue split.
 ///
+/// For empty splits (legacy single-organizer mode), returns a single entry
+/// with the organizer receiving the full net_amount.
+///
 /// # Arguments
 /// * `splits` - Vector of (Address, basis_points) tuples
+/// * `organizer` - The primary organizer address
 /// * `net_amount` - The net amount to distribute (after platform fees)
 ///
 /// # Returns
 /// * Vector of (Address, amount) tuples
 pub fn calculate_all_shares(
     splits: &soroban_sdk::Vec<(Address, u32)>,
+    organizer: &Address,
     net_amount: i128,
 ) -> soroban_sdk::Vec<(Address, i128)> {
     let env = splits.env();
     let mut result = soroban_sdk::Vec::new(env);
     
     if splits.is_empty() {
+        // Empty splits: single entry for organizer
+        result.push_back((organizer.clone(), net_amount));
         return result;
     }
     
     for i in 0..splits.len() {
         if let Some((recipient, _)) = splits.get(i) {
-            let share = calculate_recipient_share(splits, &recipient, net_amount);
+            let share = calculate_recipient_share(splits, &recipient, organizer, net_amount);
             result.push_back((recipient, share));
         }
     }

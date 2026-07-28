@@ -114,9 +114,13 @@ pub fn validate_revenue_splits(
 /// (index 0) receives the remainder to ensure all dust goes to them and
 /// the sum of shares equals the net amount.
 ///
+/// For empty splits (legacy single-organizer mode), only the organizer receives
+/// the full net_amount; other addresses receive 0.
+///
 /// # Arguments
 /// * `splits` - Vector of (Address, basis_points) tuples
 /// * `recipient` - The recipient to calculate share for
+/// * `organizer` - The primary organizer (used for empty split validation)
 /// * `net_amount` - The total net amount to distribute
 ///
 /// # Returns
@@ -124,10 +128,16 @@ pub fn validate_revenue_splits(
 pub fn calculate_recipient_share(
     splits: &soroban_sdk::Vec<(Address, u32)>,
     recipient: &Address,
+    organizer: &Address,
     net_amount: i128,
 ) -> i128 {
     if splits.is_empty() {
-        return net_amount;
+        // Empty splits: only organizer receives the full amount
+        if recipient == organizer {
+            return net_amount;
+        } else {
+            return 0;
+        }
     }
     
     let (primary, _) = match splits.get(0) {

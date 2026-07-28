@@ -34,6 +34,41 @@ fn test_revenue_split_validation_empty() {
 }
 
 #[test]
+fn test_empty_split_organizer_gets_full_amount() {
+    let env = Env::default();
+    let organizer = Address::generate(&env);
+    let splits = soroban_sdk::Vec::new(&env);
+    
+    let share = validation::calculate_recipient_share(&splits, &organizer, &organizer, 1000);
+    assert_eq!(share, 1000);
+}
+
+#[test]
+fn test_empty_split_non_organizer_gets_zero() {
+    let env = Env::default();
+    let organizer = Address::generate(&env);
+    let non_organizer = Address::generate(&env);
+    let splits = soroban_sdk::Vec::new(&env);
+    
+    let share = validation::calculate_recipient_share(&splits, &non_organizer, &organizer, 1000);
+    assert_eq!(share, 0);
+}
+
+#[test]
+fn test_empty_split_all_shares_single_entry() {
+    let env = Env::default();
+    let organizer = Address::generate(&env);
+    let splits = soroban_sdk::Vec::new(&env);
+    
+    let shares = revenue::calculate_all_shares(&splits, &organizer, 1000);
+    assert_eq!(shares.len(), 1);
+    
+    let (recipient, amount) = shares.get(0).unwrap();
+    assert_eq!(recipient, organizer);
+    assert_eq!(amount, 1000);
+}
+
+#[test]
 fn test_revenue_split_validation_valid() {
     let env = Env::default();
     let organizer = Address::generate(&env);
@@ -139,14 +174,14 @@ fn test_calculate_recipient_share() {
     
     let net = 1000_i128;
     
-    let share2 = validation::calculate_recipient_share(&splits, &recipient2, net);
+    let share2 = validation::calculate_recipient_share(&splits, &recipient2, &primary, net);
     assert_eq!(share2, 300); // 30%
     
-    let share3 = validation::calculate_recipient_share(&splits, &recipient3, net);
+    let share3 = validation::calculate_recipient_share(&splits, &recipient3, &primary, net);
     assert_eq!(share3, 200); // 20%
     
     // Primary gets remainder (includes dust)
-    let share1 = validation::calculate_recipient_share(&splits, &primary, net);
+    let share1 = validation::calculate_recipient_share(&splits, &primary, &primary, net);
     assert_eq!(share1, 500); // 50%
     
     // Verify total
@@ -167,9 +202,9 @@ fn test_calculate_recipient_share_with_dust() {
     
     let net = 1000_i128;
     
-    let share2 = validation::calculate_recipient_share(&splits, &recipient2, net);
-    let share3 = validation::calculate_recipient_share(&splits, &recipient3, net);
-    let share1 = validation::calculate_recipient_share(&splits, &primary, net);
+    let share2 = validation::calculate_recipient_share(&splits, &recipient2, &primary, net);
+    let share3 = validation::calculate_recipient_share(&splits, &recipient3, &primary, net);
+    let share1 = validation::calculate_recipient_share(&splits, &primary, &primary, net);
     
     // Verify total equals net (no dust leakage)
     assert_eq!(share1 + share2 + share3, net);
@@ -204,7 +239,7 @@ fn test_calculate_all_shares() {
     splits.push_back((primary.clone(), 7000));
     splits.push_back((recipient2.clone(), 3000));
     
-    let shares = revenue::calculate_all_shares(&splits, 10_000);
+    let shares = revenue::calculate_all_shares(&splits, &primary, 10_000);
     
     assert_eq!(shares.len(), 2);
     

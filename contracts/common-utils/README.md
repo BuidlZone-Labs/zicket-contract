@@ -23,9 +23,10 @@ Common validation utilities for contract inputs and business rules:
     - Index 0 must be the primary organizer
 
 - **Revenue Share Calculation**
-  - `calculate_recipient_share(splits, recipient, net_amount)` - Calculates individual share
+  - `calculate_recipient_share(splits, recipient, organizer, net_amount)` - Calculates individual share
     - Uses floor division for non-primary recipients
     - Primary organizer (index 0) receives remainder (captures dust)
+    - For empty splits, only the organizer receives the full amount; others receive 0
     - Ensures sum of shares equals net amount (no dust leakage)
   - `find_recipient_basis_points(splits, recipient)` - Finds allocation for a recipient
   - `is_split_recipient(splits, address)` - Checks if address is a recipient
@@ -39,7 +40,8 @@ Revenue calculation and distribution utilities:
   - `calculate_net_amount(gross_amount, platform_fee_bps)` - Net after fee deduction
 
 - **Share Distribution**
-  - `calculate_all_shares(splits, net_amount)` - Calculates all recipient shares
+  - `calculate_all_shares(splits, organizer, net_amount)` - Calculates all recipient shares
+    - For empty splits, returns single entry with organizer receiving full amount
   - `verify_shares_sum(shares, expected_total)` - Verifies no dust leakage
 
 ### `errors`
@@ -96,9 +98,10 @@ use common_utils::validation;
 fn calculate_shares(
     splits: &soroban_sdk::Vec<(Address, u32)>,
     recipient: &Address,
+    organizer: &Address,
     net_revenue: i128,
 ) -> i128 {
-    validation::calculate_recipient_share(splits, recipient, net_revenue)
+    validation::calculate_recipient_share(splits, recipient, organizer, net_revenue)
 }
 ```
 
@@ -120,6 +123,14 @@ The revenue share calculation uses a specific strategy to handle integer divisio
 - This ensures the sum of all shares always equals the net amount
 - No revenue is ever stranded due to rounding
 
+### Empty Split Safety
+
+For empty splits (legacy single-organizer mode):
+- `calculate_recipient_share()` requires an explicit organizer parameter
+- Only the organizer receives the full amount; other addresses receive 0
+- `calculate_all_shares()` returns a single entry with the organizer
+- This prevents accidental miscalculation in edge cases
+
 ### Error Code Standardization
 
 Contract-specific error enums retain their existing numeric codes for backward compatibility, but now include comments mapping to `CommonErrorCode` categories. This provides:
@@ -137,6 +148,7 @@ cargo test -p common-utils
 The test suite includes:
 - Basis points validation edge cases
 - Revenue split validation (empty, valid, invalid configurations)
+- Empty split safety (organizer-only, non-organizer, all-shares behavior)
 - Share calculation with and without dust
 - Platform fee calculations
 - Share sum verification

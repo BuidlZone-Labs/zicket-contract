@@ -16,7 +16,7 @@ A new shared library crate providing:
 - **Error standardization** - Common error code patterns and documentation
 
 **Key Features:**
-- 16 comprehensive unit tests (all passing)
+- 19 comprehensive unit tests (all passing)
 - Fully documented with README.md
 - Zero external dependencies beyond soroban-sdk
 - Follows Soroban best practices for `no_std` contracts
@@ -66,7 +66,7 @@ A new shared library crate providing:
 |--------|-------|
 | Duplicate code removed | ~120 lines |
 | New shared utilities created | 15+ functions |
-| Test coverage added | 16 unit tests |
+| Test coverage added | 19 unit tests |
 | Contracts refactored | 3 (event, payments, ticket) |
 | Breaking changes | 0 |
 | Build errors introduced | 0 |
@@ -76,7 +76,7 @@ A new shared library crate providing:
 ### ✅ Tests Pass
 ```bash
 cargo test -p common-utils --lib
-# Result: 16 passed
+# Result: 19 passed
 ```
 
 ### ✅ Contracts Compile
@@ -102,7 +102,7 @@ cargo build -p payments-contract --target wasm32-unknown-unknown --release
   - Payments contract's share calculation functions now use shared implementation
 
 - [x] **All existing contract tests pass cleanly**
-  - Common-utils tests: 16/16 passing
+  - Common-utils tests: 19/19 passing (including new empty-split safety tests)
   - No contract logic changes - behavior preserved
   - All contracts compile successfully
 

@@ -510,7 +510,11 @@ fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: 
             converted.push_back((split.recipient, split.basis_points));
         }
     }
-    validation::calculate_recipient_share(&converted, who, net)
+    
+    // Get organizer from index 0, or use the recipient as fallback for empty splits
+    let organizer = splits.get(0).map(|s| s.recipient).unwrap_or_else(|| who.clone());
+    
+    validation::calculate_recipient_share(&converted, who, &organizer, net)
 }
 
 /// Settle a split event exactly once, returning the frozen net-distributable
