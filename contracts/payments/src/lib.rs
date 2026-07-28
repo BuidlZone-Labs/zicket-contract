@@ -17,6 +17,10 @@ pub use errors::*;
 pub use events::*;
 pub use storage::*;
 pub use types::*;
+
+// Import common utilities
+use common_utils::validation;
+
 const MIN_DISPUTE_WINDOW_LEDGERS: u32 = 100;
 
 #[derive(Clone)]
@@ -481,14 +485,15 @@ fn ensure_no_splits(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
 
 /// Look up a recipient's basis-point allocation within a split configuration.
 fn find_split_bps(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address) -> Option<u32> {
+    // Convert RevenueSplit vec to (Address, u32) vec for common utility
+    let env = splits.env();
+    let mut converted = soroban_sdk::Vec::new(env);
     for i in 0..splits.len() {
         if let Some(split) = splits.get(i) {
-            if split.recipient == *who {
-                return Some(split.basis_points);
-            }
+            converted.push_back((split.recipient, split.basis_points));
         }
     }
-    None
+    validation::find_recipient_basis_points(&converted, who)
 }
 
 /// Compute a recipient's payout from the frozen net-distributable amount.
@@ -497,25 +502,15 @@ fn find_split_bps(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address) -> Opt
 /// organizer (index 0) receives the remainder, so integer-division dust is never
 /// stranded and the sum of all shares always equals `net`.
 fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: i128) -> i128 {
-    let primary = match splits.get(0) {
-        Some(s) => s.recipient,
-        None => return 0,
-    };
-
-    if *who == primary {
-        let mut others_total: i128 = 0;
-        for i in 1..splits.len() {
-            if let Some(split) = splits.get(i) {
-                others_total += net * (split.basis_points as i128) / 10_000;
-            }
-        }
-        net - others_total
-    } else {
-        match find_split_bps(splits, who) {
-            Some(bps) => net * (bps as i128) / 10_000,
-            None => 0,
+    // Convert RevenueSplit vec to (Address, u32) vec for common utility
+    let env = splits.env();
+    let mut converted = soroban_sdk::Vec::new(env);
+    for i in 0..splits.len() {
+        if let Some(split) = splits.get(i) {
+            converted.push_back((split.recipient, split.basis_points));
         }
     }
+    validation::calculate_recipient_share(&converted, who, net)
 }
 
 /// Settle a split event exactly once, returning the frozen net-distributable
