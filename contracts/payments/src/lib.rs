@@ -185,7 +185,11 @@ fn process_timed_out_disputes(env: &Env, event_id: &Symbol) -> Result<(), Paymen
     for i in 0..disputes.len() {
         if let Some(ticket_id) = disputes.get(i) {
             if let Some(dispute) = storage::get_dispute(env, ticket_id) {
-                if env.ledger().sequence() >= dispute.raised_at_ledger.saturating_add(DISPUTE_TIMEOUT_LEDGERS) {
+                if env.ledger().sequence()
+                    >= dispute
+                        .raised_at_ledger
+                        .saturating_add(DISPUTE_TIMEOUT_LEDGERS)
+                {
                     if let Ok(mut payment) = storage::get_payment(env, dispute.payment_id) {
                         if payment.status == PaymentStatus::Disputed {
                             payment.status = PaymentStatus::Held;
@@ -615,7 +619,7 @@ fn ensure_split_settled(env: &Env, event_id: &Symbol) -> Result<SplitSettlement,
     validate_revenue_invariant(env, event_id)?;
 
     let disputes = storage::get_event_disputes(env, event_id);
-    if disputes.len() > 0 {
+    if !disputes.is_empty() {
         return Err(PaymentError::ActiveDisputes);
     }
 
@@ -1090,7 +1094,7 @@ impl PaymentsContract {
         validate_revenue_invariant(&env, &event_id)?;
 
         let disputes = storage::get_event_disputes(&env, &event_id);
-        if disputes.len() > 0 {
+        if !disputes.is_empty() {
             return Err(PaymentError::ActiveDisputes);
         }
 
@@ -2355,7 +2359,12 @@ impl PaymentsContract {
         Ok(())
     }
 
-    pub fn raise_dispute(env: Env, ticket_id: u64, reason_code: u32, proof: Option<Bytes>) -> Result<(), PaymentError> {
+    pub fn raise_dispute(
+        env: Env,
+        ticket_id: u64,
+        reason_code: u32,
+        proof: Option<Bytes>,
+    ) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         if reason_code > 2 {
             return Err(PaymentError::InvalidDisputeReason);
@@ -2376,13 +2385,18 @@ impl PaymentsContract {
             }
         } else if ticket.privacy_level == PaymentPrivacy::Private {
             let signature = proof.ok_or(PaymentError::Unauthorized)?;
-            let pub_key = ticket.stealth_delivery_key.ok_or(PaymentError::Unauthorized)?;
+            let payment = storage::get_payment(&env, ticket.payment_id)?;
+            let pub_key = payment
+                .stealth_delivery_key
+                .ok_or(PaymentError::Unauthorized)?;
             let mut msg = Bytes::new(&env);
             msg.append(&ticket_id.to_xdr(&env));
             if signature.len() != 64 {
                 return Err(PaymentError::Unauthorized);
             }
-            let sig_bytes: BytesN<64> = signature.try_into().map_err(|_| PaymentError::Unauthorized)?;
+            let sig_bytes: BytesN<64> = signature
+                .try_into()
+                .map_err(|_| PaymentError::Unauthorized)?;
             env.crypto().ed25519_verify(&pub_key, &msg, &sig_bytes);
         }
 
@@ -2393,7 +2407,11 @@ impl PaymentsContract {
         if current_ledger < config.event_end_ledger {
             return Err(PaymentError::DisputeWindowClosed);
         }
-        if current_ledger >= config.event_end_ledger.saturating_add(ATTENDEE_DISPUTE_WINDOW_LEDGERS) {
+        if current_ledger
+            >= config
+                .event_end_ledger
+                .saturating_add(ATTENDEE_DISPUTE_WINDOW_LEDGERS)
+        {
             return Err(PaymentError::DisputeWindowClosed);
         }
 
@@ -2449,7 +2467,11 @@ impl PaymentsContract {
 
         let dispute = storage::get_dispute(&env, ticket_id).ok_or(PaymentError::DisputeNotFound)?;
 
-        if env.ledger().sequence() >= dispute.raised_at_ledger.saturating_add(DISPUTE_TIMEOUT_LEDGERS) {
+        if env.ledger().sequence()
+            >= dispute
+                .raised_at_ledger
+                .saturating_add(DISPUTE_TIMEOUT_LEDGERS)
+        {
             return Err(PaymentError::DisputeExpired);
         }
 
