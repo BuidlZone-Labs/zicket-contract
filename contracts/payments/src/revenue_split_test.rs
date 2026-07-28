@@ -623,3 +623,180 @@ fn test_cancelled_split_settlement_survives_attendee_refund() {
     assert_eq!(tc.balance(&organizer), 60_000_000);
     assert_eq!(tc.balance(&contract_id), 0);
 }
+
+// ── #145: multi-token settlements, mid-event flagging, delay extensions ──────
+
+#[test]
+fn test_cohost_flagged_mid_event_before_completion_blocks_withdrawal_after_settlement() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, _cid, event_contract) = make_payments(&env, 0);
+    let organizer = Address::generate(&env);
+    let cohost = Address::generate(&env);
+    let event_id = symbol_short!("MIDFLAG");
+    bind(&client, &event_contract, &event_id, &organizer, &token);
+
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (organizer.clone(), 6000u32),
+        (cohost.clone(), 4000u32),
+    ];
+    client.sync_revenue_splits(&event_contract, &event_id, &splits);
+
+    let payer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token).mint(&payer, &100_000_000);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &100_000_000,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    // Event is still active (not yet completed) when the primary flags the co-host.
+    client.flag_cohost(&organizer, &event_id, &cohost);
+    assert!(client.is_recipient_flagged(&event_id, &cohost));
+
+    // Completion and settlement happen afterwards.
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| li.sequence_number = 20_000);
+
+    // The flag set before settlement still blocks withdrawal once settled.
+    assert_eq!(
+        client.try_withdraw_split(&cohost, &event_id).err(),
+        Some(Ok(PaymentError::RecipientFlagged))
+    );
+    client.withdraw_split(&organizer, &event_id);
+    assert_eq!(
+        token::Client::new(&env, &token).balance(&organizer),
+        60_000_000
+    );
+}
+
+#[test]
+fn test_revenue_split_settlement_ignores_non_payout_token_revenue() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, contract_id, event_contract) = make_payments(&env, 0);
+    let organizer = Address::generate(&env);
+    let cohost = Address::generate(&env);
+    let event_id = symbol_short!("MULTITOK");
+    bind(&client, &event_contract, &event_id, &organizer, &token);
+
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (organizer.clone(), 6000u32),
+        (cohost.clone(), 4000u32),
+    ];
+    client.sync_revenue_splits(&event_contract, &event_id, &splits);
+
+    // Payout-token revenue that participates in the split.
+    let payer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token).mint(&payer, &100_000_000);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &100_000_000,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    // A second token used for the same event (e.g. a stray/legacy payment in a
+    // different currency). It must not inflate or shrink the split payout.
+    let admin2 = Address::generate(&env);
+    let other_token_contract = env.register_stellar_asset_contract_v2(admin2.clone());
+    let other_token = other_token_contract.address();
+    let payer2 = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &other_token).mint(&payer2, &500_000_000);
+    client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &500_000_000,
+        &None,
+        &other_token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    client.flag_cohost(&organizer, &event_id, &cohost);
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| li.sequence_number = 20_000);
+
+    client.resolve_flagged_share(&event_id, &cohost, &FlagResolution::ReleaseToRecipient);
+    client.withdraw_split(&cohost, &event_id);
+    client.withdraw_split(&organizer, &event_id);
+
+    let tc = token::Client::new(&env, &token);
+    assert_eq!(tc.balance(&cohost), 40_000_000);
+    assert_eq!(tc.balance(&organizer), 60_000_000);
+    assert_eq!(tc.balance(&contract_id), 0);
+
+    // The other token's revenue is untouched by the split settlement.
+    assert_eq!(client.get_event_token_revenue(&event_id, &other_token), 500_000_000);
+    let other_tc = token::Client::new(&env, &other_token);
+    assert_eq!(other_tc.balance(&contract_id), 500_000_000);
+    assert_eq!(other_tc.balance(&cohost), 0);
+    assert_eq!(other_tc.balance(&organizer), 0);
+}
+
+#[test]
+fn test_withdraw_split_respects_admin_delay_extension_after_multiple_extensions() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (admin, token, client, _cid, event_contract) = make_payments(&env, 0);
+    let organizer = Address::generate(&env);
+    let cohost = Address::generate(&env);
+    let event_id = symbol_short!("DELAYX");
+    bind(&client, &event_contract, &event_id, &organizer, &token);
+
+    let splits: Vec<(Address, u32)> = vec![
+        &env,
+        (organizer.clone(), 6000u32),
+        (cohost.clone(), 4000u32),
+    ];
+    client.sync_revenue_splits(&event_contract, &event_id, &splits);
+
+    let payer = Address::generate(&env);
+    token::StellarAssetClient::new(&env, &token).mint(&payer, &100_000_000);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &100_000_000,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+    client.set_event_status(&admin, &event_id, &EventStatus::Completed);
+
+    // Base unlock is event_end_ledger(1000) + withdrawal_delay(17280) = 18280.
+    // Admin extends the delay twice (simulating repeated dispute holds).
+    client.extend_withdrawal_delay(&admin, &event_id, &5_000);
+    client.extend_withdrawal_delay(&admin, &event_id, &3_000);
+    // New unlock: 18280 + 5000 + 3000 = 26280.
+
+    env.ledger().with_mut(|li| li.sequence_number = 20_000);
+    assert_eq!(
+        client.try_withdraw_split(&cohost, &event_id).err(),
+        Some(Ok(PaymentError::EscrowNotExpired))
+    );
+
+    env.ledger().with_mut(|li| li.sequence_number = 26_281);
+    client.withdraw_split(&cohost, &event_id);
+    assert_eq!(
+        token::Client::new(&env, &token).balance(&cohost),
+        40_000_000
+    );
+}

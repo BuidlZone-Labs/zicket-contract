@@ -975,3 +975,214 @@ fn test_event_flag_cohost_through_front_door() {
     // Co-host's share remains escrowed.
     assert_eq!(w.token_client.balance(&w.payments_contract_id), 40_000_000);
 }
+
+// ── #145: postponement choice-deadline boundary & resale royalty edge case ──
+
+#[test]
+fn test_postponement_refund_exactly_at_choice_deadline_ledger_still_succeeds() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        _ticket_client,
+        token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_boundary");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+    // choice_deadline_ledger = 100 + MIN_WINDOW.
+
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+
+    // At exactly the deadline ledger the choice window is still open (`<=`).
+    env.ledger()
+        .with_mut(|li| li.sequence_number = 100 + MIN_WINDOW);
+    event_client.request_postponement_refund(&attendee, &t);
+
+    assert_eq!(token_client.balance(&attendee), PRICE);
+    assert_eq!(token_client.balance(&payments_id), 0);
+    assert!(!event_client.is_registered(&event_id, &attendee));
+}
+
+#[test]
+fn test_postponement_refund_one_ledger_past_deadline_fails() {
+    let env = setup_env();
+    env.ledger().with_mut(|li| li.sequence_number = 100);
+
+    let (
+        event_client,
+        payments_client,
+        _ticket_client,
+        _token_client,
+        token_admin_client,
+        token_address,
+        organizer,
+        _payments_id,
+    ) = setup_linked(&env);
+
+    let attendee = Address::generate(&env);
+    fund(&token_admin_client, &attendee, PRICE);
+
+    let event_id = Symbol::new(&env, "evt_pp_boundary2");
+    create_active_event(
+        &env,
+        &event_client,
+        &organizer,
+        &token_address,
+        event_id.clone(),
+    );
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    let new_date = 100 + MIN_WINDOW as u64 + 10_000;
+    event_client.postpone_event(&organizer, &event_id, &new_date, &MIN_WINDOW);
+
+    let t = payments_client.get_owner_tickets(&attendee).get(0).unwrap();
+
+    // One ledger past the deadline the window is closed.
+    env.ledger()
+        .with_mut(|li| li.sequence_number = 100 + MIN_WINDOW + 1);
+    let res = payments_client.try_request_postponement_refund(&attendee, &t);
+    assert_eq!(
+        res.err(),
+        Some(Ok(
+            payments_contract::PaymentError::PostponementWindowClosed
+        ))
+    );
+}
+
+#[test]
+fn test_resale_royalty_exceeding_proceeds_leaves_seller_unpaid() {
+    let env = setup_env();
+
+    let organizer = Address::generate(&env);
+    let attendee = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    let event_contract_id = env.register(EventContract, ());
+    let event_client = EventContractClient::new(&env, &event_contract_id);
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let ticket_client = ticket_contract::TicketContractClient::new(&env, &ticket_contract_id);
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+
+    let token_admin = Address::generate(&env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+    let token_admin_client = token::StellarAssetClient::new(&env, &token_address);
+    let token_client = token::Client::new(&env, &token_address);
+
+    let platform_wallet = Address::generate(&env);
+    payments_client.initialize(
+        &organizer,
+        &token_address,
+        &0,
+        &platform_wallet,
+        &event_contract_id,
+    );
+    event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+    ticket_client.set_payments_contract(&organizer, &payments_contract_id);
+    payments_client.set_ticket_contract(&organizer, &ticket_contract_id);
+
+    let event_id = Symbol::new(&env, "evt_resale_royalty");
+    let params = CreateEventParams {
+        organizer: organizer.clone(),
+        payout_token: token_address.clone(),
+        event_id: event_id.clone(),
+        name: String::from_str(&env, "Resale Royalty Event"),
+        description: String::from_str(&env, "Edge case"),
+        venue: String::from_str(&env, "Main Hall"),
+        event_date: env.ledger().timestamp() + 86_401,
+        initial_tiers: soroban_sdk::vec![
+            &env,
+            TicketTierParams {
+                name: String::from_str(&env, "General"),
+                price: 100_000_000,
+                capacity: 10,
+            },
+        ],
+        allow_anonymous: true,
+        requires_verification: false,
+        privacy_level: PrivacyLevel::Standard,
+        max_tickets_per_user: 0,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(&env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
+    };
+    event_client.create_event(&params);
+    event_client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    let price = 100_000_000i128;
+    token_admin_client.mint(&attendee, &price);
+    event_client.register_for_event(&1, &attendee, &event_id, &0, &false, &None);
+
+    // The event contract's front door caps resale_royalty_bps at 2000 (20%),
+    // but `sync_event_config` on the payments contract itself has no such
+    // guard. A misconfigured or malicious sync can push the royalty above
+    // 10_000 bps, i.e. above the resale price itself.
+    payments_client.sync_event_config(
+        &event_contract_id,
+        &event_id,
+        &organizer,
+        &token_address,
+        &true,
+        &false,
+        &0,
+        &0,
+        &0,
+        &1000,
+        &17280,
+        &15_000, // 150% royalty: exceeds total resale proceeds.
+        &None,
+        &false,
+    );
+
+    let owner_tickets = payments_client.get_owner_tickets(&attendee);
+    let ticket_id = owner_tickets.get(0).unwrap();
+
+    let resale_price = 50_000_000i128;
+    payments_client.list_ticket_for_resale(&attendee, &ticket_id, &resale_price);
+
+    token_admin_client.mint(&buyer, &resale_price);
+    payments_client.buy_resale_ticket(&buyer, &ticket_id);
+
+    // royalty = 50_000_000 * 15_000 / 10_000 = 75_000_000, which alone exceeds
+    // the 50_000_000 the buyer paid. seller_proceeds computes negative and the
+    // `> 0` guard means the seller is paid nothing at all, while the buyer's
+    // full resale payment is now held by the contract alongside the original
+    // ticket price (100_000_000) still escrowed from registration.
+    assert_eq!(token_client.balance(&attendee), 0);
+    assert_eq!(token_client.balance(&buyer), 0);
+    assert_eq!(
+        token_client.balance(&payments_contract_id),
+        price + resale_price
+    );
+
+    // Ownership still transfers even though the seller received no proceeds.
+    let ticket = payments_client.get_ticket(&ticket_id);
+    assert_eq!(ticket.owner, Some(buyer));
+}
