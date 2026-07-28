@@ -25,5 +25,5 @@ pub enum TicketError {
     MigrationFailed = 15,           // CommonErrorCode::MigrationFailed
     UnsupportedVersion = 16,        // CommonErrorCode::UnsupportedVersion
     RecoveryKeyNotFound = 17,       // CommonErrorCode::NotFound
-    InvalidRecoverySignature = 18,
+    InvalidRecoverySignature = 18,  // CommonErrorCode::InvalidInput
 }

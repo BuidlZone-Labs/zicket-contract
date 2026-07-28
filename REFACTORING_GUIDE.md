@@ -30,7 +30,7 @@ Before refactoring, the codebase had:
 New crate: `contracts/common-utils/`
 
 **Structure:**
-```
+```text
 common-utils/
 ├── src/
 │   ├── lib.rs           # Module exports

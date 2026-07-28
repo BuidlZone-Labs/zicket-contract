@@ -16,7 +16,7 @@ A new shared library crate providing:
 - **Error standardization** - Common error code patterns and documentation
 
 **Key Features:**
-- 17 comprehensive unit tests (all passing)
+- 16 comprehensive unit tests (all passing)
 - Fully documented with README.md
 - Zero external dependencies beyond soroban-sdk
 - Follows Soroban best practices for `no_std` contracts
@@ -49,8 +49,8 @@ A new shared library crate providing:
 ### 4. Ticket Contract Enhancement
 
 **File:** `contracts/ticket/src/errors.rs`
-- Added comments mapping error codes to `CommonErrorCode` patterns
-- Maintained all existing numeric values (no breaking changes)
+- Added comments mapping error codes (including existing `InvalidRecoverySignature = 18`) to `CommonErrorCode` patterns
+- All existing numeric values maintained for backward compatibility
 - **Result:** Complete error standardization across all contracts
 
 ### 5. Documentation
@@ -66,7 +66,7 @@ A new shared library crate providing:
 |--------|-------|
 | Duplicate code removed | ~120 lines |
 | New shared utilities created | 15+ functions |
-| Test coverage added | 17 unit tests |
+| Test coverage added | 16 unit tests |
 | Contracts refactored | 3 (event, payments, ticket) |
 | Breaking changes | 0 |
 | Build errors introduced | 0 |
@@ -119,7 +119,8 @@ cargo build -p payments-contract --target wasm32-unknown-unknown --release
   - In-code documentation for all public APIs
 
 - [x] **No regressions introduced**
-  - All error codes unchanged (backward compatible)
+  - All existing error codes unchanged (backward compatible)
+  - Documentation comments added to existing error variants (including `InvalidRecoverySignature`)
   - No public API changes to contracts
   - No storage layout changes
   - Validation logic behaves identically
@@ -134,7 +135,7 @@ cargo build -p payments-contract --target wasm32-unknown-unknown --release
 ### Quality
 - **Better Testing** - Comprehensive test coverage for shared utilities
 - **Consistent Behavior** - All contracts use identical validation logic
-- **No Drift Risk** - Impossible for validation logic to diverge across contracts
+- **Reduced Drift Risk** - Shared utilities significantly reduce the risk of validation logic diverging across contracts, though contract-specific adapters or local validation may still vary
 
 ### Developer Experience
 - **Standardized Errors** - SDK developers can recognize patterns across contracts

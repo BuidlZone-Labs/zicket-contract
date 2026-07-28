@@ -10,7 +10,7 @@ Common validation utilities for contract inputs and business rules:
 
 - **Basis Points Validation**
   - `is_valid_basis_points(bps)` - Validates basis points are in range 0-10000
-  - `validate_basis_points_sum(values)` - Validates multiple values sum correctly
+  - `validate_basis_points_sum(values)` - Sums values with overflow detection; returns `Some(total)` on success or `None` on overflow. Callers must verify the result equals `TOTAL_BASIS_POINTS` (10,000) for complete allocation validation.
   - Constants: `TOTAL_BASIS_POINTS = 10_000`, `MAX_REVENUE_SPLIT_RECIPIENTS = 5`
 
 - **Revenue Split Validation**
