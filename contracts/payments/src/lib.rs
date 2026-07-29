@@ -493,6 +493,11 @@ fn find_split_bps(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address) -> Opt
 /// organizer (index 0) receives the remainder, so integer-division dust is never
 /// stranded and the sum of all shares always equals `net`.
 fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: i128) -> i128 {
+    // Return 0 immediately if splits is empty
+    if splits.is_empty() {
+        return 0;
+    }
+
     // Convert RevenueSplit vec to (Address, u32) vec for common utility
     let env = splits.env();
     let mut converted = soroban_sdk::Vec::new(env);
@@ -502,11 +507,8 @@ fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: 
         }
     }
 
-    // Get organizer from index 0, or use the recipient as fallback for empty splits
-    let organizer = splits
-        .get(0)
-        .map(|s| s.recipient)
-        .unwrap_or_else(|| who.clone());
+    // Get organizer from index 0
+    let organizer = splits.get(0).unwrap().recipient;
 
     validation::calculate_recipient_share(&converted, who, &organizer, net)
 }
