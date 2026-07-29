@@ -307,8 +307,17 @@ impl TicketContract {
     pub fn contract_version(env: Env) -> u32 {
         storage::get_contract_version(&env)
     }
+    /// Migrate contract storage to the next version.
+    ///
+    /// Only the stored admin (set via `set_payments_contract`) may call this;
+    /// any other caller is rejected with `TicketError::Unauthorized`.
     pub fn migrate(env: Env, caller: Address) -> Result<u32, TicketError> {
         caller.require_auth();
+
+        let admin = storage::get_admin(&env)?;
+        if caller != admin {
+            return Err(TicketError::Unauthorized);
+        }
 
         let current_version = storage::get_contract_version(&env);
         let new_version = current_version + 1;
