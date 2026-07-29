@@ -26,6 +26,9 @@ pub enum DataKey {
     Postponement(Symbol),
     PostponeCount(Symbol),
     AnonCommitment(Symbol, Address, BytesN<32>),
+    /// Pre-per-claimant-scoping commitment key, kept read-only for replay
+    /// protection against entries written before this key shape changed.
+    LegacyAnonCommitment(Symbol, BytesN<32>),
     EventAnonWindow(Symbol),
     EventAnonSettings(Symbol),
     ZkNullifier(Symbol, BytesN<32>),
@@ -321,8 +324,19 @@ pub fn has_anon_commitment(
         env.storage()
             .persistent()
             .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+        return true;
     }
-    exists
+
+    // Fall back to the pre-per-claimant-scoping key so commitments saved
+    // before this schema change still count as reused.
+    let legacy_key = DataKey::LegacyAnonCommitment(event_id.clone(), commitment.clone());
+    let legacy_exists = env.storage().persistent().has(&legacy_key);
+    if legacy_exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&legacy_key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    legacy_exists
 }
 
 pub fn save_anon_commitment(
