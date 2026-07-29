@@ -31,13 +31,19 @@ pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), Ti
 
 1. **Organizer Authorization**: `organizer.require_auth()`
    - Only the event organizer can call this function
-   
+
 2. **Ticket Existence**: Retrieves ticket from persistent storage
    - Returns `TicketNotFound` if ticket doesn't exist
-   
+
 3. **Organizer Verification**: Verifies caller is the ticket's organizer
    - Returns `Unauthorized` if caller is not the organizer
-   
+
+3a. **Owner Authorization**: `ticket.owner.require_auth()`
+   - The ticket owner must also authorize the transaction (co-sign),
+     so an organizer can no longer mark a ticket used without the
+     holder's presence/consent (see issue #144). Traps if the owner
+     hasn't authorized.
+
 4. **Usage Validation**: Checks `is_used` field and status
    - Returns `TicketAlreadyUsed` if `is_used` is true
    - Returns `EventNotActive` if status is `Cancelled`
@@ -131,6 +137,10 @@ pub struct TicketUsed {
    - Attempts to use cancelled ticket
    - Expects `EventNotActive` error
 
+5. **Forced Check-in Without Owner Consent** (`test_use_ticket_requires_owner_consent`)
+   - Organizer is authorized but the ticket owner never signed
+   - Expects the owner's `require_auth()` to trap
+
 5. **Transfer Used Ticket** (`test_transfer_used_ticket_via_is_used`)
    - Attempts to transfer a ticket with `is_used = true`
    - Expects `TicketNotTransferable` error
@@ -179,7 +189,8 @@ pub struct TicketUsed {
 ## Usage Example
 
 ```rust
-// Organizer checks in a ticket
+// Organizer checks in a ticket. The ticket owner must also authorize
+// this transaction (co-sign) for check-in to succeed.
 let result = ticket_contract.use_ticket(
     &env,
     &organizer_address,

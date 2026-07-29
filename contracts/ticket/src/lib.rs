@@ -159,6 +159,7 @@ impl TicketContract {
         if ticket.organizer != organizer {
             return Err(TicketError::Unauthorized);
         }
+        ticket.owner.require_auth();
         if ticket.is_used {
             return Err(TicketError::TicketAlreadyUsed);
         }

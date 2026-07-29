@@ -1,7 +1,10 @@
 use super::*;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    vec, Address, Env, IntoVal, Symbol, Vec,
+};
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
@@ -293,6 +296,43 @@ fn test_use_ticket_unauthorized() {
         TicketStatus::Valid,
     );
     client.use_ticket(&random_person, &ticket_id);
+}
+
+#[test]
+#[should_panic(expected = "Unauthorized")]
+fn test_use_ticket_requires_owner_consent() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
+
+    // Only the organizer's auth is mocked, simulating a forced check-in
+    // attempt where the owner never signed. use_ticket must still require
+    // the owner's auth and trap.
+    env.mock_auths(&[MockAuth {
+        address: &organizer,
+        invoke: &MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "use_ticket",
+            args: (organizer.clone(), ticket_id).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    client.use_ticket(&organizer, &ticket_id);
 }
 
 #[test]
