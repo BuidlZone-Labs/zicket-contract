@@ -1,4 +1,4 @@
-﻿use soroban_sdk::contracterror;
+use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -64,4 +64,16 @@ pub enum PaymentError {
     MissingStealthDeliveryKey = 44,
     /// The supplied privacy data does not match the declared privacy level
     PrivacyLevelMismatch = 45,
+    /// The dispute window is closed or not open yet.
+    DisputeWindowClosed = 46,
+    /// A dispute already exists for this ticket.
+    DisputeAlreadyExists = 47,
+    /// No dispute record was found for this ticket.
+    DisputeNotFound = 48,
+    /// The dispute resolution timeout has expired.
+    DisputeExpired = 49,
+    /// Invalid reason code provided for dispute.
+    InvalidDisputeReason = 50,
+    /// Organizer cannot withdraw while disputes are active.
+    ActiveDisputes = 51,
 }
