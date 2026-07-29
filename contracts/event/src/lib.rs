@@ -1001,9 +1001,11 @@ impl EventContract {
         tier_id: u32,
         commitment: BytesN<32>,
     ) -> Result<(), EventError> {
-        // Require the claimant's signature so a third party who observes the
-        // commitment in the mempool cannot front-run or replay it: they can copy
-        // the (public) commitment bytes but cannot produce this signer's auth.
+        // The claimant's signature stops a third party who observes the commitment
+        // in the mempool from submitting it under their own auth as a hijack of
+        // the real claimant's slot: the commitment is scoped to `claimant` below,
+        // so a copied commitment can only ever be reused under the copier's own
+        // address, never collide with (and block) the original claimant's claim.
         claimant.require_auth();
 
         let mut event = storage::get_event(&env, &event_id)?;
@@ -1027,7 +1029,7 @@ impl EventContract {
             }
         }
         let index = tier_index.ok_or(EventError::TierNotFound)?;
-        if storage::has_anon_commitment(&env, &event_id, &commitment) {
+        if storage::has_anon_commitment(&env, &event_id, &claimant, &commitment) {
             return Err(EventError::AnonCommitmentReused);
         }
         let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
@@ -1052,7 +1054,7 @@ impl EventContract {
         if tier.sold + tier.reserved >= tier.capacity {
             return Err(EventError::TierSoldOut);
         }
-        storage::save_anon_commitment(&env, &event_id, &commitment);
+        storage::save_anon_commitment(&env, &event_id, &claimant, &commitment);
 
         tier.sold += 1;
         event.sold_count += 1;

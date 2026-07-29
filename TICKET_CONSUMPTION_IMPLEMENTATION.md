@@ -52,12 +52,12 @@ pub fn use_ticket(env: Env, organizer: Address, owner: Address, ticket_id: u64) 
    - Returns `EventNotActive` if status is `Cancelled`
    - Returns `TicketAlreadyUsed` if status is `Used`
 
-5. **Status Update**: Sets both `is_used` and `status`
+7. **Status Update**: Sets both `is_used` and `status`
    - Sets `is_used = true`
    - Sets `status = TicketStatus::Used`
    - Persists the updated ticket to storage
 
-6. **Event Emission**: Emits `TicketUsed` event with timestamp
+8. **Event Emission**: Emits `TicketUsed` event with timestamp
 
 ### Ticket Struct Enhancement
 
@@ -102,7 +102,7 @@ Cancelled → (no transitions allowed)
 | Error Code | Error Type | Description |
 |------------|------------|-------------|
 | 1 | `TicketNotFound` | Ticket ID doesn't exist |
-| 4 | `Unauthorized` | Caller is not the organizer |
+| 4 | `Unauthorized` | Caller is not the organizer, or `owner` does not match the ticket's recorded owner |
 | 11 | `TicketNotTransferable` | Ticket cannot be transferred (used or disabled) |
 | 13 | `TicketAlreadyUsed` | Ticket already consumed |
 | 14 | `EventNotActive` | Ticket is cancelled |
@@ -136,20 +136,20 @@ pub struct TicketUsed {
    - Non-organizer attempts to use ticket
    - Expects `Unauthorized` error
 
-3b. **Wrong Owner Rejected** (`test_use_ticket_wrong_owner_rejected`)
+4. **Wrong Owner Rejected** (`test_use_ticket_wrong_owner_rejected`)
    - Organizer attempts check-in against an address that is not the real
      ticket owner
    - Expects `Unauthorized` error, since the real owner never consented
 
-4. **Cancelled Ticket Usage** (`test_use_ticket_cancelled`)
+5. **Cancelled Ticket Usage** (`test_use_ticket_cancelled`)
    - Attempts to use cancelled ticket
    - Expects `EventNotActive` error
 
-5. **Transfer Used Ticket** (`test_transfer_used_ticket_via_is_used`)
+6. **Transfer Used Ticket** (`test_transfer_used_ticket_via_is_used`)
    - Attempts to transfer a ticket with `is_used = true`
    - Expects `TicketNotTransferable` error
 
-6. **Cancel Used Ticket** (`test_cancel_used_ticket_via_is_used`)
+7. **Cancel Used Ticket** (`test_cancel_used_ticket_via_is_used`)
    - Attempts to cancel a ticket with `is_used = true`
    - Expects `TicketAlreadyUsed` error
 
@@ -166,7 +166,7 @@ pub struct TicketUsed {
 - Enhanced with owner presentation/authorization (issue #144)
 - Maintains backward compatibility with `status` field
 
-✅ **Validation: Only organizer can call**
+✅ **Validation: Organizer must authorize and match**
 - Implemented via `organizer.require_auth()`
 - Additional organizer verification check
 
@@ -201,10 +201,9 @@ pub struct TicketUsed {
 ```rust
 // Organizer and ticket owner jointly check in a ticket
 let result = ticket_contract.use_ticket(
-    &env,
     &organizer_address,
     &owner_address,
-    ticket_id
+    &ticket_id,
 );
 
 match result {

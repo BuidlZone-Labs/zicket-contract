@@ -471,13 +471,13 @@ fn test_anon_claim_tier_sold_out() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Auth, InvalidAction)")]
 fn test_front_running_commitment_theft_fails() {
     // A bot watches the mempool, copies the (public) commitment bytes from a
-    // real user's pending claim, and tries to submit them first as its own
-    // transaction, naming itself as claimant. Without the real claimant's
-    // signature this must fail auth -- it must not be enough to merely know
-    // the commitment.
+    // real user's pending claim, and submits them first as its own,
+    // fully-authorized transaction. The attacker is authorized to claim under
+    // its own address, but the commitment is scoped per-claimant, so this
+    // cannot hijack or block the real claimant's slot: the real claimant's
+    // later claim with the same commitment bytes still succeeds.
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
@@ -485,15 +485,34 @@ fn test_front_running_commitment_theft_fails() {
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_front");
     let attacker_bot = Address::generate(&env);
+    let real_claimant = Address::generate(&env);
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
 
     let stolen_commitment = commitment(&env, 7);
 
-    // The attacker has no signature from the real claimant and cannot forge
-    // one, so clearing mocked auths means `require_auth` on the bot's own
-    // claim fails.
-    env.set_auths(&[]);
     client.claim_anonymous_ticket(&attacker_bot, &event_id, &0, &stolen_commitment);
+    client.claim_anonymous_ticket(&real_claimant, &event_id, &0, &stolen_commitment);
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.sold_count, 2);
+}
+
+#[test]
+#[should_panic(expected = "Error(Auth, InvalidAction)")]
+fn test_anon_claim_without_claimant_auth_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_noauth");
+    let claimant = Address::generate(&env);
+
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
+
+    env.set_auths(&[]);
+    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
 }
