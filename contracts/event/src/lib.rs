@@ -20,6 +20,10 @@ use events::{
     emit_event_resumed, emit_event_updated, emit_registration, emit_status_changed,
     emit_zk_verified_attendance,
 };
+
+// Import common utilities
+use common_utils::validation;
+
 const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 const MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 51_840;
 const MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 518_400;
@@ -1311,41 +1315,8 @@ fn validate_revenue_splits(
     splits: &soroban_sdk::Vec<(Address, u32)>,
     organizer: &Address,
 ) -> Result<(), EventError> {
-    let len = splits.len();
-    if len == 0 {
-        return Ok(());
-    }
-    if len > 5 {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    let (first, _) = splits.get(0).ok_or(EventError::InvalidRevenueSplit)?;
-    if first != *organizer {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    let mut total: u32 = 0;
-    for i in 0..len {
-        let (recipient, bps) = splits.get(i).ok_or(EventError::InvalidRevenueSplit)?;
-        if bps == 0 {
-            return Err(EventError::InvalidRevenueSplit);
-        }
-        total = total
-            .checked_add(bps)
-            .ok_or(EventError::InvalidRevenueSplit)?;
-        for j in 0..i {
-            let (other, _) = splits.get(j).ok_or(EventError::InvalidRevenueSplit)?;
-            if other == recipient {
-                return Err(EventError::InvalidRevenueSplit);
-            }
-        }
-    }
-
-    if total != 10_000 {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    Ok(())
+    validation::validate_revenue_splits(splits, organizer)
+        .map_err(|_| EventError::InvalidRevenueSplit)
 }
 
 fn has_valid_ticket_for_event(
