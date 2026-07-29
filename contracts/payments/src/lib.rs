@@ -1784,41 +1784,47 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
-        // Get the payout token from event config
-        let token_address = storage::get_event_payout_token(&env, &event_id)?;
-        let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
+        // Enumerate all tokens and drain revenue for every event token
+        let tokens = storage::get_event_tokens(&env, &event_id);
+        let mut has_revenue = false;
 
-        if revenue == 0 {
-            return Err(PaymentError::NoRevenue);
+        for i in 0..tokens.len() {
+            let token_address = tokens.get(i).ok_or(PaymentError::PaymentNotFound)?;
+            let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
+
+            if revenue > 0 {
+                has_revenue = true;
+                let token_client = token::Client::new(&env, &token_address);
+                let total = revenue;
+
+                token_client.transfer(&env.current_contract_address(), &organizer, &total);
+
+                storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+                storage::add_total_withdrawn(&env, &event_id, total);
+
+                let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
+
+                let record = WithdrawalRecord {
+                    amount: total,
+                    timestamp: env.ledger().timestamp(),
+                    organizer: organizer.clone(),
+                };
+                storage::add_withdrawal_record(&env, &event_id, &record);
+                events::emit_revenue_withdrawn(
+                    &env,
+                    event_id.clone(),
+                    organizer.clone(),
+                    total,
+                    token_address.clone(),
+                    organizer.clone(),
+                    &storage::get_emission_privacy(&env, &event_id),
+                );
+            }
         }
 
-        if revenue > 0 {
-            let token_client = token::Client::new(&env, &token_address);
-            let total = revenue;
-
-            token_client.transfer(&env.current_contract_address(), &organizer, &total);
-
-            storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
-            storage::add_total_withdrawn(&env, &event_id, total);
-
-            let current_event_revenue = storage::get_event_revenue(&env, &event_id);
-            storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
-
-            let record = WithdrawalRecord {
-                amount: total,
-                timestamp: env.ledger().timestamp(),
-                organizer: organizer.clone(),
-            };
-            storage::add_withdrawal_record(&env, &event_id, &record);
-            events::emit_revenue_withdrawn(
-                &env,
-                event_id.clone(),
-                organizer.clone(),
-                total,
-                token_address.clone(),
-                organizer.clone(),
-                &storage::get_emission_privacy(&env, &event_id),
-            );
+        if !has_revenue {
+            return Err(PaymentError::NoRevenue);
         }
 
         Ok(())

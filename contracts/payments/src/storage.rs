@@ -398,10 +398,18 @@ pub fn remove_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
                 env.storage()
                     .persistent()
                     .set(&current_key, &last_ticket_id);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&current_key, TTL_THRESHOLD, TTL_BUMP);
 
                 // Update the membership entry of the moved ticket to reflect its new index
                 let moved_membership_key = DataKey::OwnerTicket(owner.clone(), last_ticket_id);
                 env.storage().persistent().set(&moved_membership_key, &idx);
+                env.storage().persistent().extend_ttl(
+                    &moved_membership_key,
+                    TTL_THRESHOLD,
+                    TTL_BUMP,
+                );
             }
         }
 
@@ -412,6 +420,9 @@ pub fn remove_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
         // Decrement count
         let count_key = DataKey::OwnerTicketsCount(owner.clone());
         env.storage().persistent().set(&count_key, &last_idx);
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
     }
 }
 
