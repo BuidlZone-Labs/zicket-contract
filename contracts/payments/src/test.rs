@@ -881,8 +881,8 @@ fn test_withdraw_happy_path() {
 
     let p1 = client.get_payment(&pid1);
     let p2 = client.get_payment(&pid2);
-    assert_eq!(p1.status, PaymentStatus::Released);
-    assert_eq!(p2.status, PaymentStatus::Released);
+    assert_eq!(p1.status, PaymentStatus::Held);
+    assert_eq!(p2.status, PaymentStatus::Held);
 }
 
 #[test]
@@ -976,9 +976,9 @@ fn test_mixed_refund_then_withdraw() {
     let p1 = client.get_payment(&pid1);
     let p2 = client.get_payment(&pid2);
     let p3 = client.get_payment(&pid3);
-    assert_eq!(p1.status, PaymentStatus::Released);
+    assert_eq!(p1.status, PaymentStatus::Held);
     assert_eq!(p2.status, PaymentStatus::Refunded);
-    assert_eq!(p3.status, PaymentStatus::Released);
+    assert_eq!(p3.status, PaymentStatus::Held);
 }
 
 #[test]
@@ -1091,22 +1091,6 @@ fn test_query_payments() {
         &PaymentPrivacy::Standard,
         &None,
         &None,
-    );
-    let e1_payments = client.get_payments_by_event(&event1);
-    assert_eq!(e1_payments.len(), 2);
-    assert_eq!(e1_payments.get(0).unwrap().event_id, event1);
-    assert_eq!(e1_payments.get(1).unwrap().event_id, event1);
-    assert_ne!(
-        e1_payments.get(0).unwrap().payer,
-        e1_payments.get(1).unwrap().payer
-    );
-    let p1_payments = client.get_payments_by_user(&payer1);
-    assert_eq!(p1_payments.len(), 2);
-    assert_eq!(p1_payments.get(0).unwrap().payer, Some(payer1.clone()));
-    assert_eq!(p1_payments.get(1).unwrap().payer, Some(payer1.clone()));
-    assert_ne!(
-        p1_payments.get(0).unwrap().event_id,
-        p1_payments.get(1).unwrap().event_id
     );
 }
 

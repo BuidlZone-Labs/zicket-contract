@@ -20,6 +20,10 @@ use events::{
     emit_event_resumed, emit_event_updated, emit_registration, emit_status_changed,
     emit_zk_verified_attendance,
 };
+
+// Import common utilities
+use common_utils::validation;
+
 const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 const MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 51_840;
 const MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 518_400;
@@ -896,29 +900,39 @@ impl EventContract {
         storage::get_event(&env, &event_id)?;
         Ok(storage::is_registered(&env, &event_id, &attendee))
     }
-    pub fn get_attendees(
+
+    pub fn get_attendees_paginated(
         env: Env,
         event_id: Symbol,
+        start: u64,
+        limit: u64,
     ) -> Result<soroban_sdk::Vec<Address>, EventError> {
         storage::get_event(&env, &event_id)?;
         let privacy = storage::get_event_privacy(&env, &event_id);
         match privacy {
-            PrivacyLevel::Standard => Ok(storage::get_attendees(&env, &event_id)),
+            PrivacyLevel::Standard => Ok(storage::get_attendees_paginated(
+                &env, &event_id, start, limit,
+            )),
             PrivacyLevel::Private => Err(EventError::UnauthorizedPrivateAccess),
             PrivacyLevel::Anonymous => Ok(soroban_sdk::Vec::new(&env)),
         }
     }
-    pub fn get_attendees_as_organizer(
+
+    pub fn get_org_attendees_paginated(
         env: Env,
         organizer: Address,
         event_id: Symbol,
+        start: u64,
+        limit: u64,
     ) -> Result<soroban_sdk::Vec<Address>, EventError> {
         organizer.require_auth();
         let event = storage::get_event(&env, &event_id)?;
         if event.organizer != organizer {
             return Err(EventError::Unauthorized);
         }
-        Ok(storage::get_attendees(&env, &event_id))
+        Ok(storage::get_attendees_paginated(
+            &env, &event_id, start, limit,
+        ))
     }
     pub fn withdraw_revenue(
         env: Env,
@@ -996,10 +1010,18 @@ impl EventContract {
     }
     pub fn claim_anonymous_ticket(
         env: Env,
+        claimant: Address,
         event_id: Symbol,
         tier_id: u32,
         commitment: BytesN<32>,
     ) -> Result<(), EventError> {
+        // The claimant's signature stops a third party who observes the commitment
+        // in the mempool from submitting it under their own auth as a hijack of
+        // the real claimant's slot: the commitment is scoped to `claimant` below,
+        // so a copied commitment can only ever be reused under the copier's own
+        // address, never collide with (and block) the original claimant's claim.
+        claimant.require_auth();
+
         let mut event = storage::get_event(&env, &event_id)?;
 
         if event.status != EventStatus::Active {
@@ -1021,7 +1043,7 @@ impl EventContract {
             }
         }
         let index = tier_index.ok_or(EventError::TierNotFound)?;
-        if storage::has_anon_commitment(&env, &event_id, &commitment) {
+        if storage::has_anon_commitment(&env, &event_id, &claimant, &commitment) {
             return Err(EventError::AnonCommitmentReused);
         }
         let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
@@ -1046,7 +1068,7 @@ impl EventContract {
         if tier.sold + tier.reserved >= tier.capacity {
             return Err(EventError::TierSoldOut);
         }
-        storage::save_anon_commitment(&env, &event_id, &commitment);
+        storage::save_anon_commitment(&env, &event_id, &claimant, &commitment);
 
         tier.sold += 1;
         event.sold_count += 1;
@@ -1293,41 +1315,8 @@ fn validate_revenue_splits(
     splits: &soroban_sdk::Vec<(Address, u32)>,
     organizer: &Address,
 ) -> Result<(), EventError> {
-    let len = splits.len();
-    if len == 0 {
-        return Ok(());
-    }
-    if len > 5 {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    let (first, _) = splits.get(0).ok_or(EventError::InvalidRevenueSplit)?;
-    if first != *organizer {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    let mut total: u32 = 0;
-    for i in 0..len {
-        let (recipient, bps) = splits.get(i).ok_or(EventError::InvalidRevenueSplit)?;
-        if bps == 0 {
-            return Err(EventError::InvalidRevenueSplit);
-        }
-        total = total
-            .checked_add(bps)
-            .ok_or(EventError::InvalidRevenueSplit)?;
-        for j in 0..i {
-            let (other, _) = splits.get(j).ok_or(EventError::InvalidRevenueSplit)?;
-            if other == recipient {
-                return Err(EventError::InvalidRevenueSplit);
-            }
-        }
-    }
-
-    if total != 10_000 {
-        return Err(EventError::InvalidRevenueSplit);
-    }
-
-    Ok(())
+    validation::validate_revenue_splits(splits, organizer)
+        .map_err(|_| EventError::InvalidRevenueSplit)
 }
 
 fn has_valid_ticket_for_event(

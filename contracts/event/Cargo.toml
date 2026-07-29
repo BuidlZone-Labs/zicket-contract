@@ -13,6 +13,7 @@ soroban-sdk = { workspace = true }
 payments-contract = { path = "../payments" }
 ticket-contract = { path = "../ticket" }
 privacy-utils = { path = "../privacy-utils" }
+common-utils = { path = "../common-utils" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

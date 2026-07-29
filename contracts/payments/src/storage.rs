@@ -91,6 +91,18 @@ pub enum DataKey {
     UserEventTicketsHash(Symbol, BytesN<32>),
     /// Records a spent nullifier commitment to guarantee Anonymous-payment uniqueness.
     SpentNullifier(BytesN<32>),
+    /// Dispute record keyed by ticket id.
+    Dispute(u64),
+    /// List of disputed ticket ids for an event.
+    EventDisputes(Symbol),
+    TotalPayments(Symbol),
+    TotalRefunds(Symbol),
+    TotalWithdrawn(Symbol),
+    EventPaymentIndex(Symbol, u64),
+    EventPaymentsCount(Symbol),
+    PayerPaymentIndex(Address, u64),
+    PayerPaymentsCount(Address),
+    EventTokenVolume(Symbol, Address),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -353,7 +365,7 @@ pub fn add_event_payment_map(env: &Env, event_id: &Symbol, payment_id: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Add event payment using map-based approach
@@ -374,7 +386,7 @@ pub fn add_payer_payment_map(env: &Env, payer: &Address, payment_id: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Add payer payment using map-based approach
@@ -869,4 +881,96 @@ pub fn get_resale_listing(env: &Env, ticket_id: u64) -> Option<crate::types::Res
 pub fn remove_resale_listing(env: &Env, ticket_id: u64) {
     let key = DataKey::ResaleListing(ticket_id);
     env.storage().persistent().remove(&key);
+}
+
+pub fn get_dispute(env: &Env, ticket_id: u64) -> Option<crate::types::DisputeRecord> {
+    env.storage().persistent().get(&DataKey::Dispute(ticket_id))
+}
+
+pub fn set_dispute(env: &Env, ticket_id: u64, record: &crate::types::DisputeRecord) {
+    let key = DataKey::Dispute(ticket_id);
+    env.storage().persistent().set(&key, record);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_payments(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalPayments(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_payments(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_payments(env, event_id);
+    let key = DataKey::TotalPayments(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+pub fn get_total_refunds(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalRefunds(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_refunds(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_refunds(env, event_id);
+    let key = DataKey::TotalRefunds(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+pub fn get_total_withdrawn(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalWithdrawn(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_withdrawn(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_withdrawn(env, event_id);
+    let key = DataKey::TotalWithdrawn(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn remove_dispute(env: &Env, ticket_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::Dispute(ticket_id));
+}
+
+pub fn get_event_disputes(env: &Env, event_id: &Symbol) -> soroban_sdk::Vec<u64> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventDisputes(event_id.clone()))
+        .unwrap_or_else(|| soroban_sdk::Vec::new(env))
+}
+
+pub fn set_event_disputes(env: &Env, event_id: &Symbol, disputes: &soroban_sdk::Vec<u64>) {
+    let key = DataKey::EventDisputes(event_id.clone());
+    env.storage().persistent().set(&key, disputes);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_volume(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokenVolume(event_id.clone(), token.clone()))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_volume(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_volume(env, event_id, token);
+    let key = DataKey::EventTokenVolume(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }

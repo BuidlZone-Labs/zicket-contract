@@ -17,6 +17,7 @@ pub enum PaymentStatus {
     Held = 0,
     Released = 1,
     Refunded = 2,
+    Disputed = 3,
 }
 
 #[contracttype]
@@ -113,4 +114,14 @@ pub enum FlagResolution {
 pub struct ResaleListing {
     pub price: i128,
     pub seller: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisputeRecord {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub payment_id: u64,
+    pub reason_code: u32,
+    pub raised_at_ledger: u32,
 }

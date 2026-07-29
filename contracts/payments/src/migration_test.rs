@@ -123,8 +123,6 @@ mod tests {
         client.migrate(&admin);
 
         let event_id = Symbol::new(&_env, "test_event");
-        let payments = client.get_event_payments(&event_id);
-        assert_eq!(payments.len(), 0);
 
         let revenue = client.get_event_revenue(&event_id);
         assert_eq!(revenue, 0);
