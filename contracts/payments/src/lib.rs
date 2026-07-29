@@ -1471,6 +1471,15 @@ impl PaymentsContract {
 
         Ok(())
     }
+    /// Admin settlement path: pay an event's escrowed revenue out to `to`,
+    /// bypassing the status/timing rules enforced by
+    /// [`PaymentsContract::withdraw`]. The platform fee is deducted exactly as it
+    /// is on the organizer path.
+    ///
+    /// Settlement is one-shot per event and shared with
+    /// [`PaymentsContract::withdraw`]: both flip `EventConfig::organizer_withdrawn`,
+    /// so calling this after either path has settled returns
+    /// [`PaymentError::PaymentAlreadyProcessed`].
     pub fn withdraw_revenue(env: Env, event_id: Symbol, to: Address) -> Result<(), PaymentError> {
         require_not_paused(&env)?;
         let admin = storage::get_admin(&env)?;
@@ -1480,6 +1489,20 @@ impl PaymentsContract {
         // Escrow is frozen while the event is postponed (refund-choice window open).
         if storage::get_event_status(&env, &event_id) == Some(EventStatus::Postponed) {
             return Err(PaymentError::EventNotActive);
+        }
+
+        // This admin path and [`PaymentsContract::withdraw`] settle the *same*
+        // escrow balance, so they share the `organizer_withdrawn` latch: whichever
+        // runs first closes the other. Without it an admin withdrawal followed by
+        // (or following) an organizer withdrawal drains escrow held for refunds and
+        // for other events. Events with no synced config predate the flag and keep
+        // the legacy repeat-withdrawal behaviour — `withdraw` is unreachable for
+        // them anyway (it requires a config), so no double-withdrawal path exists.
+        let mut config = storage::get_event_config(&env, &event_id);
+        if let Some(config) = &config {
+            if config.organizer_withdrawn {
+                return Err(PaymentError::PaymentAlreadyProcessed);
+            }
         }
 
         validate_revenue_invariant(&env, &event_id)?;
@@ -1510,6 +1533,13 @@ impl PaymentsContract {
         storage::set_event_revenue(&env, &event_id, current_event_revenue - revenue);
 
         storage::add_total_withdrawn(&env, &event_id, organizer_amount);
+
+        // Latch the event as settled so the organizer path can no longer withdraw.
+        if let Some(config) = config.as_mut() {
+            config.organizer_withdrawn = true;
+            storage::set_event_config(&env, &event_id, config);
+        }
+
         let record = WithdrawalRecord {
             amount: organizer_amount,
             timestamp: env.ledger().timestamp(),

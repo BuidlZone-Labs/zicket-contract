@@ -114,6 +114,33 @@ The `ticket` contract handles the ticket lifecycle and ownership:
 - **Used** — ticket has been validated at the door and cannot be reused or transferred
 - **Cancelled** — ticket has been invalidated (e.g., due to event cancellation) and cannot be used or transferred
 
+## Payments Contract — Revenue Withdrawal
+
+Several public functions can transfer escrowed event revenue. They differ in who may call them, whether the platform fee is deducted, and which double-payout latch (if any) they respect:
+
+| Path | Caller | Platform fee | Latch |
+|---|---|---|---|
+| `withdraw` | the event's stored organizer | deducted | `EventConfig::organizer_withdrawn` |
+| `withdraw_revenue` | contract admin | deducted | `EventConfig::organizer_withdrawn` |
+| `withdraw_split` | a configured split recipient | deducted once, at settlement | per-recipient `split_withdrawn` |
+| `withdraw_token` | caller-supplied address (see note) | **not** deducted | none |
+| `withdraw_all_tokens` | caller-supplied address (see note) | **not** deducted | none |
+| `release_if_expired` | permissionless | **not** deducted | `EscrowMetadata::auto_released` |
+
+- **`withdraw`** — organizer path. Honours the event status and timing rules: a `Completed` event unlocks after `withdrawal_delay_ledgers` (plus any admin extension), a `Cancelled` event unlocks after the minimum dispute window and pays out only the time-based `withdrawable_ratio_bps` share, leaving the remainder escrowed for attendee refunds via `claim_refund`. Pays the event's stored organizer.
+- **`withdraw_revenue`** — admin path. Settles an event to an arbitrary recipient without the status/timing rules, for support and recovery cases.
+- **`withdraw_split`** — the only path for events configured with a revenue split; each recipient claims its own share once. Every other path here rejects split events via `ensure_no_splits`.
+- **`withdraw_token` / `withdraw_all_tokens`** — multi-token payout for `Completed` events, one token or every token the event accepted. They pay the full token balance with no fee deduction. **Note:** both authorize the caller-supplied `organizer` argument with `require_auth()` but do not check it against the event's stored organizer, so any caller can direct a completed event's escrow to an address they control.
+- **`release_if_expired`** — permissionless auto-release once the escrow deadline and the event's end ledger have both passed. Pays `EscrowMetadata::organizer` the full balance of every event token, with no fee deduction.
+
+**`withdraw` and `withdraw_revenue` are one-shot per event.** They draw on the same escrow balance, so they share the `EventConfig::organizer_withdrawn` latch: whichever runs first marks the event settled and the other is rejected — `NoRevenue` from `withdraw`, `PaymentAlreadyProcessed` from `withdraw_revenue`. This holds even if later ticket sales re-fund the escrow. Without the shared latch an admin withdrawal followed by (or following) an organizer withdrawal would pay the same event out twice, draining balances held for refunds and for other events.
+
+The remaining paths do **not** participate in that latch. They zero the event's token revenue as they pay out, so a latched path that runs afterwards finds nothing to withdraw and returns `NoRevenue` — but the reverse ordering is not blocked, and none of them mark the event settled.
+
+Legacy events that have never been synced from the `event` contract have no `EventConfig` and therefore no `organizer_withdrawn` latch; `withdraw` is unreachable for them, so only the admin path applies.
+
+Where a platform fee applies it is taken at `platform_fee_bps` and accrued to the event's platform revenue, claimable separately by the admin via `withdraw_platform_revenue`. Every path appends to the event's withdrawal history (`get_withdrawal_history`) and to its `total_withdrawn` accounting total. Withdrawals of every kind are frozen while an event is `Postponed` or the contract is paused.
+
 ## Roadmap
 
 See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descriptions covering upcoming work:

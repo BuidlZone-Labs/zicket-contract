@@ -2863,3 +2863,267 @@ fn test_withdraw_cancelled_event_after_dispute_window_succeeds() {
     let config = client.get_event_config(&event_id);
     assert!(config.organizer_withdrawn);
 }
+
+// ── Double-withdrawal regression (#159) ───────────────────────────────────────
+//
+// `withdraw` and the admin `withdraw_revenue` path settle the same escrow
+// balance, so they share the `organizer_withdrawn` latch. These tests pin both
+// orderings plus the repeat-call case.
+
+#[test]
+fn test_withdraw_revenue_sets_organizer_withdrawn() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, _contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVTDW1");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    assert!(!client.get_event_config(&event_id).organizer_withdrawn);
+    client.withdraw_revenue(&event_id, &organizer);
+    assert!(client.get_event_config(&event_id).organizer_withdrawn);
+    assert_eq!(token_client.balance(&organizer), amount);
+}
+
+#[test]
+fn test_withdraw_revenue_then_organizer_withdraw_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVTDW2");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 2));
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    // Admin settles the event early, bypassing the withdrawal delay.
+    client.withdraw_revenue(&event_id, &organizer);
+    assert_eq!(token_client.balance(&organizer), amount);
+    assert_eq!(token_client.balance(&contract_id), 0);
+
+    // A later ticket sale re-funds the escrow. Before the fix the organizer path
+    // still saw `organizer_withdrawn == false` and paid this balance out a second
+    // time on top of the admin withdrawal.
+    client.pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20000;
+    });
+
+    let result = client.try_withdraw(&organizer, &event_id);
+    assert_eq!(result.err(), Some(Ok(PaymentError::NoRevenue)));
+    assert_eq!(token_client.balance(&organizer), amount);
+    assert_eq!(token_client.balance(&contract_id), amount);
+}
+
+#[test]
+fn test_organizer_withdraw_then_withdraw_revenue_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVTDW3");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Completed);
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 20000;
+    });
+
+    client.withdraw(&organizer, &event_id);
+    assert_eq!(token_client.balance(&organizer), amount);
+
+    let recipient = Address::generate(&env);
+    let result = client.try_withdraw_revenue(&event_id, &recipient);
+    assert_eq!(
+        result.err(),
+        Some(Ok(PaymentError::PaymentAlreadyProcessed))
+    );
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+#[test]
+fn test_withdraw_revenue_twice_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVTDW4");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &(amount * 2));
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &(amount * 2));
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    client.withdraw_revenue(&event_id, &organizer);
+
+    // Fresh revenue does not re-open the settled event.
+    client.pay_for_ticket(
+        &2,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+    let result = client.try_withdraw_revenue(&event_id, &organizer);
+    assert_eq!(
+        result.err(),
+        Some(Ok(PaymentError::PaymentAlreadyProcessed))
+    );
+    assert_eq!(token_client.balance(&organizer), amount);
+    assert_eq!(token_client.balance(&contract_id), amount);
+    assert_eq!(client.get_withdrawal_history(&event_id).len(), 1);
+}
+
+#[test]
+fn test_withdraw_revenue_cannot_drain_cancellation_refund_pool() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token, client, contract_id, token_contract, event_contract) =
+        setup_contract_with_token_and_event(&env);
+    let payer = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVTDW5");
+    let amount = 100_000_000i128;
+
+    token_contract.mint(&admin, &amount);
+    let token_client = token::Client::new(&env, &token);
+    token_client.transfer(&admin, &payer, &amount);
+
+    bind_event(&client, &event_contract, &event_id, &organizer, &token);
+    set_event_status_for_test(&client, &admin, &event_id, &EventStatus::Active);
+    let payment_id = client.pay_for_ticket(
+        &1,
+        &payer,
+        &event_id,
+        &amount,
+        &None,
+        &token,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    // Cancelling halfway through the event window leaves a 50/50 split: half is
+    // withdrawable by the organizer, half stays escrowed for attendee refunds.
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 500;
+    });
+    client.cancel_event(&event_id, &organizer);
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 601;
+    });
+
+    client.withdraw(&organizer, &event_id);
+    let organizer_share = amount / 2;
+    assert_eq!(token_client.balance(&organizer), organizer_share);
+    assert_eq!(token_client.balance(&contract_id), amount - organizer_share);
+
+    // The refund pool is not admin-withdrawable revenue.
+    let recipient = Address::generate(&env);
+    let result = client.try_withdraw_revenue(&event_id, &recipient);
+    assert_eq!(
+        result.err(),
+        Some(Ok(PaymentError::PaymentAlreadyProcessed))
+    );
+    assert_eq!(token_client.balance(&recipient), 0);
+    assert_eq!(token_client.balance(&contract_id), amount - organizer_share);
+
+    // The attendee can still claim the refund share the pool was holding.
+    client.claim_refund(&payer, &payment_id);
+    assert_eq!(token_client.balance(&payer), amount - organizer_share);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
