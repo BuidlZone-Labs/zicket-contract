@@ -742,7 +742,10 @@ fn test_revenue_split_settlement_ignores_non_payout_token_revenue() {
     assert_eq!(tc.balance(&contract_id), 0);
 
     // The other token's revenue is untouched by the split settlement.
-    assert_eq!(client.get_event_token_revenue(&event_id, &other_token), 500_000_000);
+    assert_eq!(
+        client.get_event_token_revenue(&event_id, &other_token),
+        500_000_000
+    );
     let other_tc = token::Client::new(&env, &other_token);
     assert_eq!(other_tc.balance(&contract_id), 500_000_000);
     assert_eq!(other_tc.balance(&cohost), 0);
