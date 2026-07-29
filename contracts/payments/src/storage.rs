@@ -475,16 +475,13 @@ pub fn get_payer_payments(env: &Env, _payer: &Address) -> Vec<u64> {
     Vec::new(env)
 }
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
-    let tokens = get_event_tokens(env, event_id);
-    let mut total = 0i128;
-
-    for index in 0..tokens.len() {
-        if let Some(token_address) = tokens.get(index) {
-            total += get_event_token_revenue(env, event_id, &token_address);
-        }
+    // Get the payout token from event config and return its revenue
+    // This works with map-based storage without needing to iterate all tokens
+    if let Ok(payout_token) = get_event_payout_token(env, event_id) {
+        get_event_token_revenue(env, event_id, &payout_token)
+    } else {
+        0
     }
-
-    total
 }
 pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     let current_revenue = get_event_revenue(env, event_id);
@@ -582,11 +579,9 @@ pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
     let key = DataKey::EventRevenue(event_id.clone());
     env.storage().persistent().set(&key, &0i128);
 
-    let tokens = get_event_tokens(env, event_id);
-    for index in 0..tokens.len() {
-        if let Some(token_address) = tokens.get(index) {
-            set_event_token_revenue(env, event_id, &token_address, 0);
-        }
+    // Reset the payout token revenue specifically
+    if let Ok(payout_token) = get_event_payout_token(env, event_id) {
+        set_event_token_revenue(env, event_id, &payout_token, 0);
     }
 }
 pub fn get_platform_fee_bps(env: &Env) -> u32 {

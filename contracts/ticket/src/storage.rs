@@ -21,6 +21,9 @@ pub enum DataKey {
     Admin,
     RecoveryKey(u64),
     PaymentsContract,
+    /// Indexed storage for owner tickets
+    OwnerTicketIndex(Address, u64),
+    OwnerTicketsCount(Address),
 }
 
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, TicketError> {
@@ -46,6 +49,20 @@ pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
         TTL_THRESHOLD,
         TTL_BUMP,
     );
+
+    // Also add to indexed list for retrieval
+    let count = get_owner_tickets_count(env, owner);
+    let idx_key = DataKey::OwnerTicketIndex(owner.clone(), count);
+    env.storage().persistent().set(&idx_key, &ticket_id);
+    env.storage()
+        .persistent()
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::OwnerTicketsCount(owner.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Check if an owner has a specific ticket (map-based lookup)
@@ -61,6 +78,47 @@ pub fn remove_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::OwnerTicket(owner.clone(), ticket_id));
+
+    // Remove from indexed list (swap with last element)
+    let count = get_owner_tickets_count(env, owner);
+    if count == 0 {
+        return;
+    }
+
+    // Find the index of the ticket to remove
+    let mut found_index: Option<u64> = None;
+    for i in 0..count {
+        let idx_key = DataKey::OwnerTicketIndex(owner.clone(), i);
+        if let Some(tid) = env.storage().persistent().get::<DataKey, u64>(&idx_key) {
+            if tid == ticket_id {
+                found_index = Some(i);
+                break;
+            }
+        }
+    }
+
+    if let Some(idx) = found_index {
+        // Swap with last element
+        let last_idx = count - 1;
+        if idx < last_idx {
+            let last_key = DataKey::OwnerTicketIndex(owner.clone(), last_idx);
+            if let Some(last_ticket_id) = env.storage().persistent().get::<DataKey, u64>(&last_key)
+            {
+                let current_key = DataKey::OwnerTicketIndex(owner.clone(), idx);
+                env.storage()
+                    .persistent()
+                    .set(&current_key, &last_ticket_id);
+            }
+        }
+
+        // Remove the last element
+        let last_key = DataKey::OwnerTicketIndex(owner.clone(), last_idx);
+        env.storage().persistent().remove(&last_key);
+
+        // Decrement count
+        let count_key = DataKey::OwnerTicketsCount(owner.clone());
+        env.storage().persistent().set(&count_key, &last_idx);
+    }
 }
 
 /// Add an event-ticket relationship (map-based)
@@ -83,12 +141,25 @@ pub fn has_event_ticket(env: &Env, event_id: &Symbol, ticket_id: u64) -> bool {
         .has(&DataKey::EventTicket(event_id.clone(), ticket_id))
 }
 
-/// Get all tickets by owner
-/// Note: This returns an empty vector since map-based storage requires full scanning
-/// which is expensive and should be avoided in production.
-/// Consider tracking tickets in a separate collection if listing is required.
-pub fn get_tickets_by_owner(env: &Env, _owner: Address) -> Vec<u64> {
-    Vec::new(env)
+/// Get the count of tickets owned by an address
+pub fn get_owner_tickets_count(env: &Env, owner: &Address) -> u64 {
+    let key = DataKey::OwnerTicketsCount(owner.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Get all tickets by owner using indexed storage
+pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
+    let count = get_owner_tickets_count(env, &owner);
+    let mut tickets = Vec::new(env);
+
+    for i in 0..count {
+        let idx_key = DataKey::OwnerTicketIndex(owner.clone(), i);
+        if let Some(ticket_id) = env.storage().persistent().get(&idx_key) {
+            tickets.push_back(ticket_id);
+        }
+    }
+
+    tickets
 }
 
 /// Get all tickets by event
