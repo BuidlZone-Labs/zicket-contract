@@ -995,68 +995,88 @@ impl EventContract {
         storage::get_claim_settings(&env, &event_id)
     }
     pub fn claim_anonymous_ticket(
-        env: Env,
-        event_id: Symbol,
-        tier_id: u32,
-        commitment: BytesN<32>,
-    ) -> Result<(), EventError> {
-        let mut event = storage::get_event(&env, &event_id)?;
+    env: Env,
+    event_id: Symbol,
+    tier_id: u32,
+    public_key: BytesN<32>,   // Ed25519 public key (also used as commitment/nullifier)
+    signature: BytesN<64>,    // Ed25519 signature
+) -> Result<(), EventError> {
+    let mut event = storage::get_event(&env, &event_id)?;
 
-        if event.status != EventStatus::Active {
-            return Err(EventError::EventNotActive);
-        }
-
-        if !event.allow_anonymous {
-            return Err(EventError::AnonymousClaimsNotEnabled);
-        }
-        let mut tier_index = None;
-        for i in 0..event.tiers.len() {
-            let t = event.tiers.get(i).ok_or(EventError::TierNotFound)?;
-            if t.tier_id == tier_id {
-                if t.price != 0 {
-                    return Err(EventError::InvalidInput);
-                }
-                tier_index = Some(i);
-                break;
-            }
-        }
-        let index = tier_index.ok_or(EventError::TierNotFound)?;
-        if storage::has_anon_commitment(&env, &event_id, &commitment) {
-            return Err(EventError::AnonCommitmentReused);
-        }
-        let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
-        if anon_settings.max_anon_claims_per_window > 0 && anon_settings.anon_window_size > 0 {
-            let current_window = env.ledger().sequence() / anon_settings.anon_window_size;
-            let mut state = storage::get_anon_window_state(&env, &event_id);
-            if state.window_index != current_window {
-                state.window_index = current_window;
-                state.count = 0;
-            }
-            if state.count >= anon_settings.max_anon_claims_per_window {
-                return Err(EventError::AnonClaimWindowFull);
-            }
-            state.count += 1;
-            storage::set_anon_window_state(&env, &event_id, &state);
-        }
-        let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
-
-        if event.sold_count >= event.max_supply {
-            return Err(EventError::EventSoldOut);
-        }
-        if tier.sold + tier.reserved >= tier.capacity {
-            return Err(EventError::TierSoldOut);
-        }
-        storage::save_anon_commitment(&env, &event_id, &commitment);
-
-        tier.sold += 1;
-        event.sold_count += 1;
-        event.tiers.set(index, tier.clone());
-        storage::update_event(&env, &event_id, &event)?;
-
-        emit_anon_registration(&env, &event_id, tier_id, tier.sold);
-
-        Ok(())
+    if event.status != EventStatus::Active {
+        return Err(EventError::EventNotActive);
     }
+    if !event.allow_anonymous {
+        return Err(EventError::AnonymousClaimsNotEnabled);
+    }
+
+    // Find the tier and ensure it's free (as before)
+    let mut tier_index = None;
+    for i in 0..event.tiers.len() {
+        let t = event.tiers.get(i).ok_or(EventError::TierNotFound)?;
+        if t.tier_id == tier_id {
+            if t.price != 0 {
+                return Err(EventError::InvalidInput);
+            }
+            tier_index = Some(i);
+            break;
+        }
+    }
+    let index = tier_index.ok_or(EventError::TierNotFound)?;
+
+    // Verify the signature: sign (event_id || tier_id || public_key)
+    let mut msg = Vec::new(&env);
+    msg.append(&event_id.to_bytes());   // Symbol -> bytes
+    msg.append(&tier_id.to_le_bytes());
+    msg.append(&public_key.to_array());
+    let msg_hash = env.crypto().sha256(&msg).to_array(); // or use the raw message; ed25519 can verify raw
+    // Ed25519 signature verification
+    if !env.crypto().ed25519_verify(&public_key, &msg_hash, &signature) {
+        return Err(EventError::InvalidSignature);
+    }
+
+    // Check that this public key hasn't been used before (nullifier)
+    if storage::has_anon_commitment(&env, &event_id, &public_key) {
+        return Err(EventError::AnonCommitmentReused);
+    }
+
+    // Apply rate‑limit (global window) – unchanged
+    let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
+    if anon_settings.max_anon_claims_per_window > 0 && anon_settings.anon_window_size > 0 {
+        let current_window = env.ledger().sequence() / anon_settings.anon_window_size;
+        let mut state = storage::get_anon_window_state(&env, &event_id);
+        if state.window_index != current_window {
+            state.window_index = current_window;
+            state.count = 0;
+        }
+        if state.count >= anon_settings.max_anon_claims_per_window {
+            return Err(EventError::AnonClaimWindowFull);
+        }
+        state.count += 1;
+        storage::set_anon_window_state(&env, &event_id, &state);
+    }
+
+    // Update tier and event (same as before)
+    let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
+    if event.sold_count >= event.max_supply {
+        return Err(EventError::EventSoldOut);
+    }
+    if tier.sold + tier.reserved >= tier.capacity {
+        return Err(EventError::TierSoldOut);
+    }
+
+    // Store the public key as a used commitment (nullifier)
+    storage::save_anon_commitment(&env, &event_id, &public_key);
+
+    tier.sold += 1;
+    event.sold_count += 1;
+    event.tiers.set(index, tier.clone());
+    storage::update_event(&env, &event_id, &event)?;
+
+    emit_anon_registration(&env, &event_id, tier_id, tier.sold);
+
+    Ok(())
+}
     pub fn set_anon_claim_settings(
         env: Env,
         organizer: Address,
