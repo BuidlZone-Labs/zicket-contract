@@ -496,14 +496,14 @@ pub fn add_withdrawal_record_map(
 ) {
     // Get current count
     let count = get_withdrawal_count(env, event_id);
-    
+
     // Store record at index
     let key = DataKey::WithdrawalRecord(event_id.clone(), count);
     env.storage().persistent().set(&key, record);
     env.storage()
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-    
+
     // Increment count
     let count_key = DataKey::WithdrawalCount(event_id.clone());
     env.storage().persistent().set(&count_key, &(count + 1));
@@ -756,9 +756,10 @@ pub fn set_event_token_revenue(
 }
 /// Map-based: Check if an event has a specific token
 pub fn has_event_token(env: &Env, event_id: &Symbol, token_address: &Address) -> bool {
-    env.storage()
-        .persistent()
-        .has(&DataKey::EventToken(event_id.clone(), token_address.clone()))
+    env.storage().persistent().has(&DataKey::EventToken(
+        event_id.clone(),
+        token_address.clone(),
+    ))
 }
 
 /// Map-based: Add a token to an event
@@ -778,7 +779,7 @@ pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
     if has_event_token(env, event_id, token_address) {
         return; // Already exists in map-based storage
     }
-    
+
     // Also maintain legacy vector for backward compatibility
     let key = DataKey::EventTokens(event_id.clone());
     let mut tokens: Vec<Address> = env
@@ -799,7 +800,7 @@ pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
     env.storage()
         .persistent()
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-    
+
     // Also add to map-based storage
     add_event_token_map(env, event_id, token_address);
 }

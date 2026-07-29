@@ -98,7 +98,7 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-        
+
         // Use map-based indexing: remove from old owner, add to new owner
         storage::remove_owner_ticket(&env, &from, ticket_id);
         storage::add_owner_ticket(&env, &to, ticket_id);
@@ -233,7 +233,7 @@ impl TicketContract {
         let old_owner = ticket.owner.clone();
         ticket.owner = new_owner.clone();
         storage::update_ticket(&env, &ticket);
-        
+
         // Use map-based indexing: remove from old owner, add to new owner
         storage::remove_owner_ticket(&env, &old_owner, ticket_id);
         storage::add_owner_ticket(&env, &new_owner, ticket_id);

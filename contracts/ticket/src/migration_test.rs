@@ -149,7 +149,7 @@ mod tests {
         // Generate valid Ed25519 keypair for recovery
         let keypair_bytes = env.crypto().sha256(&owner2.clone().to_xdr(&env));
         let recovery_key = soroban_sdk::BytesN::from_array(&env, &keypair_bytes.to_array());
-        
+
         client.set_recovery_key(&owner1, &ticket_id, &recovery_key);
 
         // Create message and valid signature for owner2
@@ -161,7 +161,7 @@ mod tests {
         let signature = soroban_sdk::BytesN::from_array(&env, &sig_bytes);
 
         let contract_id = client.address.clone();
-        
+
         // Verify initial ownership state
         env.as_contract(&contract_id, || {
             assert!(storage::has_owner_ticket(&env, &owner1, ticket_id));
@@ -170,7 +170,7 @@ mod tests {
 
         // Attempt recovery (may fail signature verification in test, but map logic is exercised)
         let result = client.try_recover_ticket(&ticket_id, &owner2, &signature);
-        
+
         // If recovery succeeds, verify ownership transfer
         if result.is_ok() {
             env.as_contract(&contract_id, || {

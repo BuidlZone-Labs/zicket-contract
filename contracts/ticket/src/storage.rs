@@ -54,9 +54,11 @@ pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::OwnerTicket(owner.clone(), ticket_id), &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&DataKey::OwnerTicket(owner.clone(), ticket_id), TTL_THRESHOLD, TTL_BUMP);
+    env.storage().persistent().extend_ttl(
+        &DataKey::OwnerTicket(owner.clone(), ticket_id),
+        TTL_THRESHOLD,
+        TTL_BUMP,
+    );
 }
 
 /// Remove an owner-ticket relationship (map-based)
@@ -78,9 +80,11 @@ pub fn add_event_ticket(env: &Env, event_id: &Symbol, ticket_id: u64) {
     env.storage()
         .persistent()
         .set(&DataKey::EventTicket(event_id.clone(), ticket_id), &true);
-    env.storage()
-        .persistent()
-        .extend_ttl(&DataKey::EventTicket(event_id.clone(), ticket_id), TTL_THRESHOLD, TTL_BUMP);
+    env.storage().persistent().extend_ttl(
+        &DataKey::EventTicket(event_id.clone(), ticket_id),
+        TTL_THRESHOLD,
+        TTL_BUMP,
+    );
 }
 
 /// Legacy: Get all tickets by owner (requires full scan - expensive!)
@@ -88,13 +92,14 @@ pub fn add_event_ticket(env: &Env, event_id: &Symbol, ticket_id: u64) {
 #[allow(deprecated)]
 pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
     // Try to read from legacy storage first
-    if let Some(tickets) = env.storage()
+    if let Some(tickets) = env
+        .storage()
         .persistent()
         .get::<DataKey, Vec<u64>>(&DataKey::OwnerTickets(owner.clone()))
     {
         return tickets;
     }
-    
+
     // Fallback: Return empty vector (map-based storage requires scanning)
     // Note: Scanning is expensive and should be avoided in production
     Vec::new(env)
@@ -105,13 +110,14 @@ pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
 #[allow(deprecated)]
 pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
     // Try to read from legacy storage first
-    if let Some(tickets) = env.storage()
+    if let Some(tickets) = env
+        .storage()
         .persistent()
         .get::<DataKey, Vec<u64>>(&DataKey::EventTickets(event_id.clone()))
     {
         return tickets;
     }
-    
+
     // Fallback: Return empty vector (map-based storage requires scanning)
     // Note: Scanning is expensive and should be avoided in production
     Vec::new(env)
