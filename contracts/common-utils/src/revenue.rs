@@ -47,20 +47,20 @@ pub fn calculate_all_shares(
 ) -> soroban_sdk::Vec<(Address, i128)> {
     let env = splits.env();
     let mut result = soroban_sdk::Vec::new(env);
-    
+
     if splits.is_empty() {
         // Empty splits: single entry for organizer
         result.push_back((organizer.clone(), net_amount));
         return result;
     }
-    
+
     for i in 0..splits.len() {
         if let Some((recipient, _)) = splits.get(i) {
             let share = calculate_recipient_share(splits, &recipient, organizer, net_amount);
             result.push_back((recipient, share));
         }
     }
-    
+
     result
 }
 
@@ -72,10 +72,7 @@ pub fn calculate_all_shares(
 ///
 /// # Returns
 /// * `true` if shares sum to expected total, `false` otherwise
-pub fn verify_shares_sum(
-    shares: &soroban_sdk::Vec<(Address, i128)>,
-    expected_total: i128,
-) -> bool {
+pub fn verify_shares_sum(shares: &soroban_sdk::Vec<(Address, i128)>, expected_total: i128) -> bool {
     let mut sum: i128 = 0;
     for i in 0..shares.len() {
         if let Some((_, amount)) = shares.get(i) {

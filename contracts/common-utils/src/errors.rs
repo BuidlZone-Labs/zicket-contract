@@ -11,35 +11,35 @@ pub enum CommonErrorCode {
     // Resource errors (1-10)
     NotFound = 1,
     AlreadyExists = 2,
-    
+
     // Authorization errors (11-20)
     Unauthorized = 11,
-    
+
     // Validation errors (21-40)
     InvalidInput = 21,
     InvalidAmount = 22,
     InvalidStatusTransition = 23,
     InvalidFeeBps = 24,
-    
+
     // State errors (41-60)
     NotActive = 41,
     NotCompleted = 42,
     AlreadyProcessed = 43,
-    
+
     // Configuration errors (61-80)
     NotInitialized = 61,
     NotConfigured = 62,
-    
+
     // Business logic errors (81-100)
     InsufficientFunds = 81,
     MaxLimitReached = 82,
     SoldOut = 83,
-    
+
     // System errors (101-120)
     ContractPaused = 101,
     TransferFailed = 102,
     AccountingMismatch = 103,
-    
+
     // Migration errors (121-130)
     MigrationFailed = 121,
     UnsupportedVersion = 122,

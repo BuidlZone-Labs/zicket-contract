@@ -5,12 +5,12 @@
 //! This crate provides shared validation, calculation, and helper functions
 //! to reduce code duplication and ensure consistency across all contracts.
 
-pub mod validation;
-pub mod revenue;
 pub mod errors;
+pub mod revenue;
+pub mod validation;
 
-pub use validation::*;
 pub use revenue::*;
+pub use validation::*;
 
 #[cfg(test)]
 mod test;

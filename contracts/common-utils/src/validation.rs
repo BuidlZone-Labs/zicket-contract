@@ -59,38 +59,36 @@ pub fn validate_revenue_splits(
     organizer: &Address,
 ) -> Result<(), &'static str> {
     let len = splits.len();
-    
+
     // Empty splits are allowed (single organizer)
     if len == 0 {
         return Ok(());
     }
-    
+
     // Check maximum recipients
     if len > MAX_REVENUE_SPLIT_RECIPIENTS {
         return Err("Too many split recipients");
     }
-    
+
     // First recipient must be the primary organizer
     let (first, _) = splits.get(0).ok_or("Split configuration is empty")?;
     if first != *organizer {
         return Err("First recipient must be the primary organizer");
     }
-    
+
     let mut total: u32 = 0;
-    
+
     for i in 0..len {
         let (recipient, bps) = splits.get(i).ok_or("Failed to get split entry")?;
-        
+
         // No zero allocations
         if bps == 0 {
             return Err("Basis points cannot be zero");
         }
-        
+
         // Sum with overflow check
-        total = total
-            .checked_add(bps)
-            .ok_or("Basis points sum overflow")?;
-        
+        total = total.checked_add(bps).ok_or("Basis points sum overflow")?;
+
         // Check for duplicates
         for j in 0..i {
             let (other, _) = splits.get(j).ok_or("Failed to get split entry")?;
@@ -99,12 +97,12 @@ pub fn validate_revenue_splits(
             }
         }
     }
-    
+
     // Must sum to exactly 10000 (100%)
     if total != TOTAL_BASIS_POINTS {
         return Err("Basis points must sum to 10000");
     }
-    
+
     Ok(())
 }
 
@@ -139,12 +137,12 @@ pub fn calculate_recipient_share(
             return 0;
         }
     }
-    
+
     let (primary, _) = match splits.get(0) {
         Some(entry) => entry,
         None => return 0,
     };
-    
+
     // Primary organizer gets the remainder (to capture dust)
     if *recipient == primary {
         let mut others_total: i128 = 0;
@@ -192,9 +190,6 @@ pub fn find_recipient_basis_points(
 ///
 /// # Returns
 /// * `true` if address is a recipient, `false` otherwise
-pub fn is_split_recipient(
-    splits: &soroban_sdk::Vec<(Address, u32)>,
-    address: &Address,
-) -> bool {
+pub fn is_split_recipient(splits: &soroban_sdk::Vec<(Address, u32)>, address: &Address) -> bool {
     find_recipient_basis_points(splits, address).is_some()
 }

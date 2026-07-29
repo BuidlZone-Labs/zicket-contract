@@ -1,4 +1,4 @@
-﻿use soroban_sdk::contracterror;
+use soroban_sdk::contracterror;
 
 /// Event contract error codes.
 ///
@@ -8,21 +8,21 @@
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum EventError {
-    EventNotFound = 1,              // CommonErrorCode::NotFound
-    EventAlreadyExists = 2,         // CommonErrorCode::AlreadyExists
-    InvalidStatusTransition = 3,    // CommonErrorCode::InvalidStatusTransition
-    Unauthorized = 4,               // CommonErrorCode::Unauthorized
-    InvalidInput = 5,               // CommonErrorCode::InvalidInput
-    EventNotActive = 6,             // CommonErrorCode::NotActive
+    EventNotFound = 1,           // CommonErrorCode::NotFound
+    EventAlreadyExists = 2,      // CommonErrorCode::AlreadyExists
+    InvalidStatusTransition = 3, // CommonErrorCode::InvalidStatusTransition
+    Unauthorized = 4,            // CommonErrorCode::Unauthorized
+    InvalidInput = 5,            // CommonErrorCode::InvalidInput
+    EventNotActive = 6,          // CommonErrorCode::NotActive
     InvalidEventDate = 7,
     InvalidTicketCount = 8,
-    InvalidPrice = 9,               // CommonErrorCode::InvalidAmount
+    InvalidPrice = 9, // CommonErrorCode::InvalidAmount
     EventNotUpdatable = 10,
-    EventSoldOut = 11,              // CommonErrorCode::SoldOut
-    AlreadyRegistered = 12,         // CommonErrorCode::AlreadyProcessed
+    EventSoldOut = 11,      // CommonErrorCode::SoldOut
+    AlreadyRegistered = 12, // CommonErrorCode::AlreadyProcessed
     TierNotFound = 13,
-    TierSoldOut = 14,               // CommonErrorCode::SoldOut
-    ContractLinksNotConfigured = 15,// CommonErrorCode::NotConfigured
+    TierSoldOut = 14,                // CommonErrorCode::SoldOut
+    ContractLinksNotConfigured = 15, // CommonErrorCode::NotConfigured
     RefundFailed = 16,
     ReservationNotFound = 17,
     ReservationExpired = 18,
@@ -32,10 +32,10 @@ pub enum EventError {
     UnsupportedVersion = 22,        // CommonErrorCode::UnsupportedVersion
     UnauthorizedPrivateAccess = 23, // CommonErrorCode::Unauthorized
     PrivacyViolation = 24,
-    ClaimLimitExceeded = 25,        // CommonErrorCode::MaxLimitReached
+    ClaimLimitExceeded = 25, // CommonErrorCode::MaxLimitReached
     ClaimCooldownActive = 26,
     AnonCommitmentReused = 27,
-    AnonClaimWindowFull = 28,       // CommonErrorCode::MaxLimitReached
+    AnonClaimWindowFull = 28, // CommonErrorCode::MaxLimitReached
     AnonymousClaimsNotEnabled = 29,
     /// The requested refund-choice window is shorter than the mandatory minimum
     /// (`MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS`).
@@ -45,7 +45,7 @@ pub enum EventError {
     InvalidPostponementDate = 31,
     /// The event has already been postponed the maximum number of times
     /// (`MAX_POSTPONEMENTS`); the organizer must run or cancel it instead.
-    MaxPostponementsReached = 32,   // CommonErrorCode::MaxLimitReached
+    MaxPostponementsReached = 32, // CommonErrorCode::MaxLimitReached
     /// `finalize_postponement` was called while the refund-choice window is still open.
     PostponementWindowOpen = 33,
     /// The operation requires the event to be in the `Postponed` state.
@@ -56,7 +56,7 @@ pub enum EventError {
     NoRefundableTicket = 35,
     /// Revenue split is malformed: wrong basis-point sum, too many recipients,
     /// a zero/duplicate recipient, or index 0 is not the primary organizer.
-    InvalidRevenueSplit = 36,       // CommonErrorCode::InvalidInput
+    InvalidRevenueSplit = 36, // CommonErrorCode::InvalidInput
     // -- zkPassport errors ----------------------------------------------------
     /// The proof's `expiry_ledger` is less than the current ledger sequence.
     ZkProofExpired = 37,
