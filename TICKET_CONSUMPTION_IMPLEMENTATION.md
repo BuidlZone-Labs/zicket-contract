@@ -40,7 +40,7 @@ pub fn use_ticket(env: Env, organizer: Address, owner: Address, ticket_id: u64) 
 
 3. **Ticket Existence**: Retrieves ticket from persistent storage
    - Returns `TicketNotFound` if ticket doesn't exist
-   
+
 4. **Organizer Verification**: Verifies caller is the ticket's organizer
    - Returns `Unauthorized` if caller is not the organizer
 
