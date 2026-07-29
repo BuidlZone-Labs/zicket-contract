@@ -114,6 +114,20 @@ The `ticket` contract handles the ticket lifecycle and ownership:
 - **Used** — ticket has been validated at the door and cannot be reused or transferred
 - **Cancelled** — ticket has been invalidated (e.g., due to event cancellation) and cannot be used or transferred
 
+## Payments Contract — Revenue Withdrawal
+
+Escrowed event revenue leaves the `payments` contract through exactly one of these paths:
+
+- **`withdraw`** — organizer path. Honours the event status and timing rules: a `Completed` event unlocks after `withdrawal_delay_ledgers` (plus any admin extension), a `Cancelled` event unlocks after the minimum dispute window and pays out only the time-based `withdrawable_ratio_bps` share, leaving the remainder escrowed for attendee refunds via `claim_refund`.
+- **`withdraw_revenue`** — admin path. Settles an event to an arbitrary recipient without the status/timing rules, for support and recovery cases.
+- **`withdraw_split`** — the only path for events configured with a revenue split; each recipient claims its own share once. The two single-organizer paths above reject split events.
+
+**Settlement is one-shot per event.** `withdraw` and `withdraw_revenue` draw on the same escrow balance, so they share the `EventConfig::organizer_withdrawn` latch: whichever runs first marks the event settled and the other is rejected — `NoRevenue` from `withdraw`, `PaymentAlreadyProcessed` from `withdraw_revenue`. This holds even if later ticket sales re-fund the escrow. Without the shared latch an admin withdrawal followed by (or following) an organizer withdrawal would pay the same event out twice, draining balances held for refunds and for other events.
+
+Legacy events that have never been synced from the `event` contract have no `EventConfig` and therefore no latch; `withdraw` is unreachable for them, so only the admin path applies.
+
+Both paths deduct the platform fee at `platform_fee_bps`, accrue it to the event's platform revenue (claimable via `withdraw_platform_revenue`), and append to the event's withdrawal history. Withdrawals of any kind are frozen while an event is `Postponed` or the contract is paused.
+
 ## Roadmap
 
 See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descriptions covering upcoming work:
