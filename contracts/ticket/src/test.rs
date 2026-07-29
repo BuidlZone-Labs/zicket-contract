@@ -1,10 +1,7 @@
 use super::*;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
-    vec, Address, Env, IntoVal, Symbol, Vec,
-};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol, Vec};
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
@@ -231,7 +228,7 @@ fn test_use_ticket_happy_path() {
         ticket_id,
         TicketStatus::Valid,
     );
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
     let ticket: Ticket = env.as_contract(&contract_id, || {
         env.storage()
             .persistent()
@@ -270,7 +267,7 @@ fn test_use_ticket_double_checkin() {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
     });
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
 }
 
 #[test]
@@ -295,12 +292,12 @@ fn test_use_ticket_unauthorized() {
         ticket_id,
         TicketStatus::Valid,
     );
-    client.use_ticket(&random_person, &ticket_id);
+    client.use_ticket(&random_person, &owner, &ticket_id);
 }
 
 #[test]
-#[should_panic(expected = "Unauthorized")]
-fn test_use_ticket_requires_owner_consent() {
+#[should_panic(expected = "HostError: Error(Contract, #4)")]
+fn test_use_ticket_wrong_owner_rejected() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -309,6 +306,7 @@ fn test_use_ticket_requires_owner_consent() {
 
     let organizer = Address::generate(&env);
     let owner = Address::generate(&env);
+    let impostor_owner = Address::generate(&env);
     let ticket_id = 1;
 
     setup_test_ticket(
@@ -319,20 +317,9 @@ fn test_use_ticket_requires_owner_consent() {
         ticket_id,
         TicketStatus::Valid,
     );
-
-    // Only the organizer's auth is mocked, simulating a forced check-in
-    // attempt where the owner never signed. use_ticket must still require
-    // the owner's auth and trap.
-    env.mock_auths(&[MockAuth {
-        address: &organizer,
-        invoke: &MockAuthInvoke {
-            contract: &contract_id,
-            fn_name: "use_ticket",
-            args: (organizer.clone(), ticket_id).into_val(&env),
-            sub_invokes: &[],
-        },
-    }]);
-    client.use_ticket(&organizer, &ticket_id);
+    // The organizer alone cannot check the ticket in for someone other than
+    // its actual owner -- the real owner never authorized this check-in.
+    client.use_ticket(&organizer, &impostor_owner, &ticket_id);
 }
 
 #[test]
@@ -356,7 +343,7 @@ fn test_use_ticket_cancelled() {
         ticket_id,
         TicketStatus::Cancelled,
     );
-    client.use_ticket(&organizer, &ticket_id);
+    client.use_ticket(&organizer, &owner, &ticket_id);
 }
 
 #[test]

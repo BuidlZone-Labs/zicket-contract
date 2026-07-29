@@ -25,7 +25,10 @@ pub enum DataKey {
     EventClaimSettings(Symbol),
     Postponement(Symbol),
     PostponeCount(Symbol),
-    AnonCommitment(Symbol, BytesN<32>),
+    AnonCommitment(Symbol, Address, BytesN<32>),
+    /// Pre-per-claimant-scoping commitment key, kept read-only for replay
+    /// protection against entries written before this key shape changed.
+    LegacyAnonCommitment(Symbol, BytesN<32>),
     EventAnonWindow(Symbol),
     EventAnonSettings(Symbol),
     ZkNullifier(Symbol, BytesN<32>),
@@ -309,19 +312,40 @@ pub fn set_last_free_claim(env: &Env, event_id: &Symbol, attendee: &Address, tim
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
-pub fn has_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) -> bool {
-    let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
+pub fn has_anon_commitment(
+    env: &Env,
+    event_id: &Symbol,
+    claimant: &Address,
+    commitment: &BytesN<32>,
+) -> bool {
+    let key = DataKey::AnonCommitment(event_id.clone(), claimant.clone(), commitment.clone());
     let exists = env.storage().persistent().has(&key);
     if exists {
         env.storage()
             .persistent()
             .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+        return true;
     }
-    exists
+
+    // Fall back to the pre-per-claimant-scoping key so commitments saved
+    // before this schema change still count as reused.
+    let legacy_key = DataKey::LegacyAnonCommitment(event_id.clone(), commitment.clone());
+    let legacy_exists = env.storage().persistent().has(&legacy_key);
+    if legacy_exists {
+        env.storage()
+            .persistent()
+            .extend_ttl(&legacy_key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    legacy_exists
 }
 
-pub fn save_anon_commitment(env: &Env, event_id: &Symbol, commitment: &BytesN<32>) {
-    let key = DataKey::AnonCommitment(event_id.clone(), commitment.clone());
+pub fn save_anon_commitment(
+    env: &Env,
+    event_id: &Symbol,
+    claimant: &Address,
+    commitment: &BytesN<32>,
+) {
+    let key = DataKey::AnonCommitment(event_id.clone(), claimant.clone(), commitment.clone());
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
