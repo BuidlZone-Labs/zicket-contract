@@ -398,7 +398,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     // Only Standard tickets are indexed by owner address; indexing the others
     // would leak the owner identity for Private/Anonymous purchases.
     if payment.privacy_level == PaymentPrivacy::Standard {
-        storage::add_owner_ticket(&env, &params.payer, ticket_id);
+        storage::add_owner_ticket_map(&env, &params.payer, ticket_id);
     }
     match params.privacy_level {
         PaymentPrivacy::Standard => {
@@ -2279,13 +2279,10 @@ impl PaymentsContract {
         let key = crate::storage::DataKey::Ticket(ticket_id);
         env.storage().persistent().set(&key, &new_ticket);
 
-        let mut seller_tickets = storage::get_owner_tickets(&env, &listing.seller);
-        if let Some(index) = seller_tickets.first_index_of(ticket_id) {
-            seller_tickets.remove(index);
-            let seller_key = crate::storage::DataKey::OwnerTickets(listing.seller.clone());
-            env.storage().persistent().set(&seller_key, &seller_tickets);
-        }
-        storage::add_owner_ticket(&env, &buyer, ticket_id);
+        // Remove from seller's ownership (map-based)
+        storage::remove_owner_ticket_map(&env, &listing.seller, ticket_id);
+        // Add to buyer's ownership (map-based)
+        storage::add_owner_ticket_map(&env, &buyer, ticket_id);
 
         storage::remove_resale_listing(&env, ticket_id);
 

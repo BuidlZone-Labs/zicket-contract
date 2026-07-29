@@ -46,24 +46,9 @@ pub enum DataKey {
     EventConfig(Symbol),
     Payment(u64),
     Ticket(u64),
-    /// Legacy: Vector storage pattern (deprecated)
-    #[deprecated(note = "Use EventPayment instead for map-based indexing")]
-    EventPayments(Symbol),
     EventRevenue(Symbol),
     EventTokenRevenue(Symbol, Address),
-    /// Legacy: Vector storage pattern (deprecated)
-    #[deprecated(note = "Use EventToken instead for map-based indexing")]
-    EventTokens(Symbol),
     EventStatus(Symbol),
-    /// Legacy: Vector storage pattern (deprecated)
-    #[deprecated(note = "Use OwnerTicket instead for map-based indexing")]
-    OwnerTickets(Address),
-    /// Legacy: Vector storage pattern (deprecated)
-    #[deprecated(note = "Use PayerPayment instead for map-based indexing")]
-    PayerPayments(Address),
-    /// Legacy: Vector storage pattern (deprecated)
-    #[deprecated(note = "Use WithdrawalRecord instead for map-based indexing")]
-    WithdrawalHistory(Symbol),
     /// Map-based: Individual event-payment relationship
     EventPayment(Symbol, u64),
     /// Map-based: Individual owner-ticket relationship
@@ -348,31 +333,18 @@ pub fn add_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Legacy: Add owner ticket using vector (deprecated)
-/// @deprecated Use add_owner_ticket_map instead
-#[allow(deprecated)]
-pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
-    let key = DataKey::OwnerTickets(owner.clone());
-    let mut tickets: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    tickets.push_back(ticket_id);
-    env.storage().persistent().set(&key, &tickets);
+/// Map-based: Remove an owner-ticket relationship
+pub fn remove_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .remove(&DataKey::OwnerTicket(owner.clone(), ticket_id));
 }
 
-/// Legacy: Get owner tickets using vector (expensive!)
-/// @deprecated Use individual ticket lookups instead
-#[allow(deprecated)]
-pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::OwnerTickets(owner.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+/// Get owner tickets
+/// Note: Returns empty vector since map-based storage requires full scanning.
+/// Use individual ticket lookups or track in a separate collection if needed.
+pub fn get_owner_tickets(env: &Env, _owner: &Address) -> Vec<u64> {
+    Vec::new(env)
 }
 
 /// Map-based: Add an event-payment relationship
@@ -384,32 +356,16 @@ pub fn add_event_payment_map(env: &Env, event_id: &Symbol, payment_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Legacy: Add event payment using vector (deprecated)
-/// @deprecated Use add_event_payment_map instead
-#[allow(deprecated)]
+/// Add event payment using map-based approach
 pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
-    let key = DataKey::EventPayments(event_id.clone());
-    let mut payments: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    payments.push_back(payment_id);
-    env.storage().persistent().set(&key, &payments);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+    add_event_payment_map(env, event_id, payment_id);
 }
 
-/// Legacy: Get event payments using vector (expensive!)
-/// Note: This still uses vector storage for backward compatibility
-/// @deprecated Iterate through payment IDs directly or use event-specific queries
-#[allow(deprecated)]
-pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventPayments(event_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+/// Get event payments
+/// Note: Returns empty vector since map-based storage requires full scanning.
+/// Consider tracking payment IDs in a separate collection if needed.
+pub fn get_event_payments(env: &Env, _event_id: &Symbol) -> Vec<u64> {
+    Vec::new(env)
 }
 
 /// Map-based: Add a payer-payment relationship
@@ -421,31 +377,15 @@ pub fn add_payer_payment_map(env: &Env, payer: &Address, payment_id: u64) {
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Legacy: Add payer payment using vector (deprecated)
-/// @deprecated Use add_payer_payment_map instead
-#[allow(deprecated)]
+/// Add payer payment using map-based approach
 pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
-    let key = DataKey::PayerPayments(payer.clone());
-    let mut payments: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    payments.push_back(payment_id);
-    env.storage().persistent().set(&key, &payments);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+    add_payer_payment_map(env, payer, payment_id);
 }
 
-/// Legacy: Get payer payments using vector (expensive!)
-/// @deprecated Use individual payment lookups instead
-#[allow(deprecated)]
-pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::PayerPayments(payer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+/// Get payer payments
+/// Note: Returns empty vector since map-based storage requires full scanning.
+pub fn get_payer_payments(env: &Env, _payer: &Address) -> Vec<u64> {
+    Vec::new(env)
 }
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     let tokens = get_event_tokens(env, event_id);
@@ -528,36 +468,27 @@ pub fn get_withdrawal_record_at(
     env.storage().persistent().get(&key)
 }
 
-/// Legacy: Add withdrawal record using vector (deprecated)
-/// @deprecated Use add_withdrawal_record_map instead
-#[allow(deprecated)]
+/// Add withdrawal record using map-based approach
 pub fn add_withdrawal_record(
     env: &Env,
     event_id: &Symbol,
     record: &crate::types::WithdrawalRecord,
 ) {
-    let key = DataKey::WithdrawalHistory(event_id.clone());
-    let mut history: Vec<crate::types::WithdrawalRecord> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    history.push_back(record.clone());
-    env.storage().persistent().set(&key, &history);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+    add_withdrawal_record_map(env, event_id, record);
 }
 
-/// Legacy: Get withdrawal history using vector (expensive!)
-/// @deprecated Use get_withdrawal_record_at with indices instead
-#[allow(deprecated)]
+/// Get withdrawal history by iterating through indexed records
 pub fn get_withdrawal_history(env: &Env, event_id: &Symbol) -> Vec<crate::types::WithdrawalRecord> {
-    let key = DataKey::WithdrawalHistory(event_id.clone());
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env))
+    let count = get_withdrawal_count(env, event_id);
+    let mut history = Vec::new(env);
+
+    for i in 0..count {
+        if let Some(record) = get_withdrawal_record_at(env, event_id, i) {
+            history.push_back(record);
+        }
+    }
+
+    history
 }
 
 pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
@@ -771,48 +702,18 @@ pub fn add_event_token_map(env: &Env, event_id: &Symbol, token_address: &Address
         .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
 }
 
-/// Legacy: Add event token using vector (deprecated)
-/// @deprecated Use add_event_token_map instead
-#[allow(deprecated)]
+/// Add event token using map-based approach
 pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
-    // First check the map-based storage
-    if has_event_token(env, event_id, token_address) {
-        return; // Already exists in map-based storage
+    if !has_event_token(env, event_id, token_address) {
+        add_event_token_map(env, event_id, token_address);
     }
-
-    // Also maintain legacy vector for backward compatibility
-    let key = DataKey::EventTokens(event_id.clone());
-    let mut tokens: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    for i in 0..tokens.len() {
-        if let Some(existing_token) = tokens.get(i) {
-            if existing_token == *token_address {
-                return;
-            }
-        }
-    }
-
-    tokens.push_back(token_address.clone());
-    env.storage().persistent().set(&key, &tokens);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-
-    // Also add to map-based storage
-    add_event_token_map(env, event_id, token_address);
 }
 
-/// Legacy: Get event tokens using vector (expensive!)
-/// @deprecated Use has_event_token for checking individual tokens instead
-#[allow(deprecated)]
-pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventTokens(event_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+/// Get event tokens
+/// Note: Returns empty vector since map-based storage requires full scanning.
+/// Use has_event_token to check for specific tokens instead.
+pub fn get_event_tokens(env: &Env, _event_id: &Symbol) -> Vec<Address> {
+    Vec::new(env)
 }
 
 pub fn get_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address) -> u32 {

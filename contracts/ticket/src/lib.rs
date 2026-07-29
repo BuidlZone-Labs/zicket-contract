@@ -13,7 +13,7 @@ mod test;
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 pub use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
@@ -109,10 +109,7 @@ impl TicketContract {
     }
 
     pub fn get_tickets_by_owner(env: Env, owner: Address) -> Vec<u64> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(owner))
-            .unwrap_or(vec![&env])
+        storage::get_tickets_by_owner(&env, owner)
     }
 
     pub fn use_ticket(env: Env, organizer: Address, ticket_id: u64) -> Result<(), TicketError> {
