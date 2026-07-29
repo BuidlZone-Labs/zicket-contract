@@ -103,6 +103,9 @@ pub enum DataKey {
     PayerPaymentIndex(Address, u64),
     PayerPaymentsCount(Address),
     EventTokenVolume(Symbol, Address),
+    /// Legacy: Vector storage pattern (kept for migration compatibility only)
+    /// @deprecated Only for migration - use EventPayment instead
+    EventPayments(Symbol),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -365,7 +368,7 @@ pub fn add_event_payment_map(env: &Env, event_id: &Symbol, payment_id: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Add event payment using map-based approach
@@ -386,7 +389,7 @@ pub fn add_payer_payment_map(env: &Env, payer: &Address, payment_id: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Add payer payment using map-based approach
