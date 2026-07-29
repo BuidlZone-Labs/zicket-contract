@@ -4,12 +4,25 @@
 
 This document provides a theoretical analysis of gas cost improvements achieved by migrating from vector-based to map-based storage patterns in the Zicket smart contracts.
 
+## ⚠️ Important Disclaimer
+
+**All gas costs in this document are THEORETICAL ESTIMATES** based on algorithmic complexity analysis. These are NOT measured results. Actual gas costs must be validated through testnet deployment with Soroban budget tracking enabled.
+
+**To obtain verified benchmarks:**
+1. Deploy contracts to Soroban testnet
+2. Enable budget tracking: `env.budget().reset_default()`
+3. Execute operations with varying collection sizes
+4. Capture CPU and memory instruction counts
+5. Document soroban-sdk version, protocol version, and test conditions
+
 ## Methodology
 
-Gas cost analysis is based on:
+Theoretical gas cost analysis is based on:
 1. **Serialization overhead**: Cost of encoding/decoding data structures
 2. **Storage operations**: Cost of read/write operations
 3. **Computational complexity**: O(n) vs O(1) operations
+
+**Note**: Actual Soroban gas costs include protocol fees, host function overhead, and Wasm execution costs not captured in this theoretical model.
 
 ## Vector-Based Storage (Legacy)
 
@@ -37,13 +50,13 @@ DataKey::OwnerTickets(Address) → Vec<u64>
 
 **Cost Growth**: O(n₁ + n₂) where n₁ = old owner tickets, n₂ = new owner tickets
 
-### Theoretical Gas Costs (Scaled Units)
+### Theoretical Gas Costs (Estimated, Unverified)
 
 | Operation | User has 1 ticket | User has 10 tickets | User has 100 tickets | User has 1000 tickets |
 |-----------|------------------|---------------------|---------------------|----------------------|
-| Mint      | 5,000 gas       | 7,000 gas          | 50,000 gas         | 500,000 gas         |
-| Transfer  | 8,000 gas       | 12,000 gas         | 80,000 gas         | 800,000 gas         |
-| Check ownership | 3,000 gas | 4,500 gas          | 30,000 gas         | 300,000 gas         |
+| Mint      | ~5,000 gas (est.) | ~7,000 gas (est.) | ~50,000 gas (est.) | ~500,000 gas (est.) |
+| Transfer  | ~8,000 gas (est.) | ~12,000 gas (est.) | ~80,000 gas (est.) | ~800,000 gas (est.) |
+| Check ownership | ~3,000 gas (est.) | ~4,500 gas (est.) | ~30,000 gas (est.) | ~300,000 gas (est.) |
 
 ## Map-Based Storage (New)
 
@@ -65,13 +78,13 @@ DataKey::OwnerTicket(Address, u64) → bool
 
 **Cost Growth**: O(1) - constant regardless of ticket count
 
-### Theoretical Gas Costs (Scaled Units)
+### Theoretical Gas Costs (Estimated, Unverified)
 
 | Operation | User has 1 ticket | User has 10 tickets | User has 100 tickets | User has 1000 tickets |
 |-----------|------------------|---------------------|---------------------|----------------------|
-| Mint      | 5,000 gas       | 5,000 gas          | 5,000 gas          | 5,000 gas           |
-| Transfer  | 6,000 gas       | 6,000 gas          | 6,000 gas          | 6,000 gas           |
-| Check ownership | 2,000 gas | 2,000 gas          | 2,000 gas          | 2,000 gas           |
+| Mint      | ~5,000 gas (est.) | ~5,000 gas (est.) | ~5,000 gas (est.) | ~5,000 gas (est.) |
+| Transfer  | ~6,000 gas (est.) | ~6,000 gas (est.) | ~6,000 gas (est.) | ~6,000 gas (est.) |
+| Check ownership | ~2,000 gas (est.) | ~2,000 gas (est.) | ~2,000 gas (est.) | ~2,000 gas (est.) |
 
 ## Improvement Analysis
 
@@ -193,26 +206,31 @@ Storage_Cost = Key_Size + Value_Size
 
 ## Conclusion
 
-The migration from vector-based to map-based storage provides:
+The migration from vector-based to map-based storage is expected to provide:
 
-1. **Immediate benefits** for users with multiple tickets
-2. **Long-term scalability** for the platform
-3. **Predictable costs** for all operations
-4. **Economic viability** for high-volume users
+1. **Potential benefits** for users with multiple tickets (pending verification)
+2. **Long-term scalability** through O(1) operations
+3. **More predictable algorithmic costs** for operations
+4. **Improved economic viability** for high-volume users (pending gas measurement)
 
 ### Recommended Actions
 
 1. ✅ **Implement map-based storage** (Completed)
-2. ⏳ **Deploy to testnet** for real gas measurements
-3. ⏳ **Monitor gas costs** in production
-4. ⏳ **Gradual migration** of existing users
+2. 🔄 **Deploy to testnet** for real gas measurements (CRITICAL NEXT STEP)
+3. ⏳ **Measure and document** actual gas costs with budget tracking
+4. ⏳ **Compare measured results** against these theoretical estimates
+5. ⏳ **Publish verified benchmarks** with SDK/protocol versions
+6. ⏳ **Monitor gas costs** in production
+7. ⏳ **Gradual migration** of existing users
 
-### Expected Platform Impact
+### Projected Platform Impact (Pending Verification)
 
-- **90% reduction** in average gas costs for active users
-- **Improved UX** through predictable transaction costs
-- **Scalability** to support 10x more tickets per user
-- **Reduced network congestion** during peak events
+- **Estimated 70-90% reduction** in gas costs for active users (theoretical)
+- **More predictable transaction costs** through O(1) operations
+- **Theoretical scalability** to support 10x more tickets per user
+- **Expected reduction** in network congestion during peak events
+
+**⚠️ These projections must be validated through testnet measurements before making production claims.**
 
 ## References
 

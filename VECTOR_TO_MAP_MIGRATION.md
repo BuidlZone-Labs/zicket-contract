@@ -125,25 +125,33 @@ Comprehensive tests verify:
 2. **Transfer operations**: Ownership indices update properly
 3. **Recovery operations**: Map indices update during ticket recovery
 4. **Admin transfers**: Admin transfers update map indices correctly
-5. **Gas cost reduction**: Verified through benchmark tests
+5. **Functional correctness**: Map-based storage behaves as expected
 
 ### Test Files
 - `contracts/ticket/src/migration_test.rs`
 - `contracts/payments/src/migration_test.rs`
 
-## Gas Cost Benchmarks
+**Note**: Tests validate functional correctness. Gas cost measurements require testnet deployment with budget tracking enabled.
 
-### Expected Improvements
+## Gas Cost Estimates
 
-| Operation | Legacy (Vector) | New (Map) | Improvement |
-|-----------|----------------|-----------|-------------|
+### Theoretical Improvements (Unverified)
+
+**⚠️ Important**: The following are theoretical estimates based on algorithmic complexity analysis. Actual gas costs must be measured on testnet with soroban-sdk budget tracking before making production claims.
+
+| Operation | Legacy (Vector) | New (Map) | Estimated Improvement |
+|-----------|----------------|-----------|---------------------|
 | Mint ticket (1st) | ~5K gas | ~5K gas | 0% |
-| Mint ticket (100th) | ~50K gas | ~5K gas | 90% |
-| Transfer (1st ticket) | ~8K gas | ~6K gas | 25% |
-| Transfer (100th ticket) | ~80K gas | ~6K gas | 92.5% |
-| Check ownership | O(n) scan | O(1) lookup | 95%+ |
+| Mint ticket (100th) | ~50K gas (est.) | ~5K gas | ~90% (est.) |
+| Transfer (1st ticket) | ~8K gas | ~6K gas | ~25% (est.) |
+| Transfer (100th ticket) | ~80K gas (est.) | ~6K gas | ~92.5% (est.) |
+| Check ownership | O(n) scan | O(1) lookup | Significant (est.) |
 
-*Note: Actual gas costs depend on Soroban runtime and should be measured in production*
+**To verify these estimates:**
+1. Deploy to Soroban testnet
+2. Enable budget tracking: `env.budget().reset_default()`
+3. Measure actual CPU and memory instruction costs
+4. Document SDK version and protocol version used
 
 ## Deprecation Timeline
 
@@ -168,11 +176,25 @@ Comprehensive tests verify:
 
 The current implementation maintains full backward compatibility. No breaking changes are introduced.
 
+### Limitations
+
+**Enumeration Behavior Change**:
+- `get_tickets_by_owner()` and `get_tickets_by_event()` only return tickets if legacy vector storage exists
+- Tickets added via map-based storage are NOT enumerable through these functions
+- This is intentional: full enumeration requires off-chain indexing or maintaining both storage patterns
+- Applications needing "list all tickets" should maintain their own indices off-chain or use event logs
+
+**Migration Strategy**:
+- Check individual ticket ownership using `has_owner_ticket(address, ticket_id)`
+- Use ticket IDs from transaction events or off-chain database
+- Do not rely on `get_tickets_by_owner()` for complete listings post-migration
+
 ### Future Considerations
 
 In a future major version:
-- Vector-based query functions (`get_tickets_by_owner`, `get_event_payments`) may be removed
-- Applications should transition to using individual lookups or maintain their own indices off-chain
+- Vector-based query functions (`get_tickets_by_owner`, `get_event_payments`) may be removed entirely
+- Applications must transition to using individual lookups with off-chain indices
+- Event emission provides audit trail for building off-chain ticket lists
 
 ## Best Practices
 
