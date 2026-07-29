@@ -88,6 +88,14 @@ pub enum DataKey {
     Dispute(u64),
     /// List of disputed ticket ids for an event.
     EventDisputes(Symbol),
+    TotalPayments(Symbol),
+    TotalRefunds(Symbol),
+    TotalWithdrawn(Symbol),
+    EventPaymentIndex(Symbol, u64),
+    EventPaymentsCount(Symbol),
+    PayerPaymentIndex(Address, u64),
+    PayerPaymentsCount(Address),
+    EventTokenVolume(Symbol, Address),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -340,43 +348,114 @@ pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
         .get(&DataKey::OwnerTickets(owner.clone()))
         .unwrap_or_else(|| Vec::new(env))
 }
-pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
-    let key = DataKey::EventPayments(event_id.clone());
-    let mut payments: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    payments.push_back(payment_id);
-    env.storage().persistent().set(&key, &payments);
+pub fn get_event_payments_count(env: &Env, event_id: &Symbol) -> u64 {
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .get(&DataKey::EventPaymentsCount(event_id.clone()))
+        .unwrap_or(0)
+}
+
+pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
+    let count = get_event_payments_count(env, event_id);
+    let idx_key = DataKey::EventPaymentIndex(event_id.clone(), count);
+    env.storage().persistent().set(&idx_key, &payment_id);
+    env.storage()
+        .persistent()
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::EventPaymentsCount(event_id.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
+    let count = get_event_payments_count(env, event_id);
+    let mut payments = Vec::new(env);
+    for i in 0..count {
+        if let Some(pid) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventPaymentIndex(event_id.clone(), i))
+        {
+            payments.push_back(pid);
+        }
+    }
+    payments
+}
+pub fn get_event_payments_paginated(
+    env: &Env,
+    event_id: &Symbol,
+    start: u64,
+    limit: u64,
+) -> Vec<u64> {
+    let count = get_event_payments_count(env, event_id);
+    let mut payments = Vec::new(env);
+    let end = count.min(start.saturating_add(limit));
+    for i in start..end {
+        if let Some(pid) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventPaymentIndex(event_id.clone(), i))
+        {
+            payments.push_back(pid);
+        }
+    }
+    payments
+}
+pub fn get_payer_payments_count(env: &Env, payer: &Address) -> u64 {
     env.storage()
         .persistent()
-        .get(&DataKey::EventPayments(event_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&DataKey::PayerPaymentsCount(payer.clone()))
+        .unwrap_or(0)
 }
 pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
-    let key = DataKey::PayerPayments(payer.clone());
-    let mut payments: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    payments.push_back(payment_id);
-    env.storage().persistent().set(&key, &payments);
+    let count = get_payer_payments_count(env, payer);
+    let idx_key = DataKey::PayerPaymentIndex(payer.clone(), count);
+    env.storage().persistent().set(&idx_key, &payment_id);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::PayerPaymentsCount(payer.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::PayerPayments(payer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    let count = get_payer_payments_count(env, payer);
+    let mut payments = Vec::new(env);
+    for i in 0..count {
+        if let Some(pid) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerPaymentIndex(payer.clone(), i))
+        {
+            payments.push_back(pid);
+        }
+    }
+    payments
+}
+pub fn get_payer_payments_paginated(
+    env: &Env,
+    payer: &Address,
+    start: u64,
+    limit: u64,
+) -> Vec<u64> {
+    let count = get_payer_payments_count(env, payer);
+    let mut payments = Vec::new(env);
+    let end = count.min(start.saturating_add(limit));
+    for i in start..end {
+        if let Some(pid) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerPaymentIndex(payer.clone(), i))
+        {
+            payments.push_back(pid);
+        }
+    }
+    payments
 }
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
     let tokens = get_event_tokens(env, event_id);
@@ -834,6 +913,49 @@ pub fn set_dispute(env: &Env, ticket_id: u64, record: &crate::types::DisputeReco
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
+pub fn get_total_payments(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalPayments(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_payments(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_payments(env, event_id);
+    let key = DataKey::TotalPayments(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+pub fn get_total_refunds(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalRefunds(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_refunds(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_refunds(env, event_id);
+    let key = DataKey::TotalRefunds(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+pub fn get_total_withdrawn(env: &Env, event_id: &Symbol) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalWithdrawn(event_id.clone()))
+        .unwrap_or(0)
+}
+pub fn add_total_withdrawn(env: &Env, event_id: &Symbol, amount: i128) {
+    let current = get_total_withdrawn(env, event_id);
+    let key = DataKey::TotalWithdrawn(event_id.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
 pub fn remove_dispute(env: &Env, ticket_id: u64) {
     env.storage()
         .persistent()
@@ -850,6 +972,22 @@ pub fn get_event_disputes(env: &Env, event_id: &Symbol) -> soroban_sdk::Vec<u64>
 pub fn set_event_disputes(env: &Env, event_id: &Symbol, disputes: &soroban_sdk::Vec<u64>) {
     let key = DataKey::EventDisputes(event_id.clone());
     env.storage().persistent().set(&key, disputes);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_volume(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventTokenVolume(event_id.clone(), token.clone()))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_volume(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_volume(env, event_id, token);
+    let key = DataKey::EventTokenVolume(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);

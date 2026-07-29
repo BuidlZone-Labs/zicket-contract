@@ -161,10 +161,6 @@ fn test_standard_emits_payer_address() {
         MaskedAddress::Full(payer.clone())
     );
 
-    let by_user = client.get_payments_by_user(&payer);
-    assert_eq!(by_user.len(), 1);
-    assert_eq!(by_user.get(0).unwrap().payer, Some(payer.clone()));
-
     let tickets = client.get_owner_tickets(&payer);
     assert_eq!(tickets.len(), 1);
     let ticket = client.get_ticket(&tickets.get(0).unwrap());
@@ -267,7 +263,6 @@ fn test_private_no_raw_address_in_record() {
     assert_eq!(p.payer, None);
     assert_eq!(p.nullifier_commitment, None);
     // Not indexed by raw address -> not discoverable via payer query.
-    assert_eq!(client.get_payments_by_user(&payer).len(), 0);
     assert_eq!(client.get_owner_tickets(&payer).len(), 0);
 }
 
@@ -418,7 +413,6 @@ fn test_anonymous_no_address_in_record() {
     );
     let p = client.get_payment(&pid);
     assert_eq!(p.payer, None);
-    assert_eq!(client.get_payments_by_user(&payer).len(), 0);
     assert_eq!(client.get_owner_tickets(&payer).len(), 0);
 }
 

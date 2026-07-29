@@ -886,7 +886,7 @@ fn test_get_attendees() {
     client.register_for_event(&1, &attendee1, &event_id, &0, &false, &None);
     client.register_for_event(&2, &attendee2, &event_id, &0, &false, &None);
 
-    let attendees = client.get_attendees(&event_id);
+    let attendees = client.get_attendees_paginated(&event_id, &0, &100);
     assert_eq!(attendees.len(), 2);
     assert_eq!(attendees.get(0).unwrap(), attendee1);
     assert_eq!(attendees.get(1).unwrap(), attendee2);

@@ -33,6 +33,8 @@ pub enum DataKey {
     EventAnonSettings(Symbol),
     ZkNullifier(Symbol, BytesN<32>),
     ZkVerificationConfig(Symbol),
+    EventAttendeeIndex(Symbol, u64),
+    EventAttendeesCount(Symbol),
 }
 pub fn event_exists(env: &Env, event_id: &Symbol) -> bool {
     env.storage()
@@ -66,31 +68,69 @@ pub fn is_registered(env: &Env, event_id: &Symbol, attendee: &Address) -> bool {
         .has(&DataKey::Registration(event_id.clone(), attendee.clone()))
 }
 
+pub fn get_attendees_count(env: &Env, event_id: &Symbol) -> u64 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventAttendeesCount(event_id.clone()))
+        .unwrap_or(0)
+}
+
 pub fn save_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
     let key = DataKey::Registration(event_id.clone(), attendee.clone());
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 
-    let attendees_key = DataKey::EventAttendees(event_id.clone());
-    let mut attendees: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get(&attendees_key)
-        .unwrap_or(Vec::new(env));
-    attendees.push_back(attendee.clone());
-    env.storage().persistent().set(&attendees_key, &attendees);
+    let count = get_attendees_count(env, event_id);
+    let idx_key = DataKey::EventAttendeeIndex(event_id.clone(), count);
+    env.storage().persistent().set(&idx_key, attendee);
     env.storage()
         .persistent()
-        .extend_ttl(&attendees_key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::EventAttendeesCount(event_id.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_attendees(env: &Env, event_id: &Symbol) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventAttendees(event_id.clone()))
-        .unwrap_or(Vec::new(env))
+    let count = get_attendees_count(env, event_id);
+    let mut attendees = Vec::new(env);
+    for i in 0..count {
+        if let Some(attendee) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventAttendeeIndex(event_id.clone(), i))
+        {
+            attendees.push_back(attendee);
+        }
+    }
+    attendees
+}
+
+pub fn get_attendees_paginated(
+    env: &Env,
+    event_id: &Symbol,
+    start: u64,
+    limit: u64,
+) -> Vec<Address> {
+    let count = get_attendees_count(env, event_id);
+    let mut attendees = Vec::new(env);
+    let actual_limit = limit.min(100);
+    let end = count.min(start.saturating_add(actual_limit));
+    for i in start..end {
+        if let Some(attendee) = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EventAttendeeIndex(event_id.clone(), i))
+        {
+            attendees.push_back(attendee);
+        }
+    }
+    attendees
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -245,22 +285,50 @@ pub fn remove_registration(env: &Env, event_id: &Symbol, attendee: &Address) {
         .persistent()
         .remove(&DataKey::Registration(event_id.clone(), attendee.clone()));
 
-    let attendees_key = DataKey::EventAttendees(event_id.clone());
-    let attendees: Vec<Address> = env
-        .storage()
-        .persistent()
-        .get(&attendees_key)
-        .unwrap_or(Vec::new(env));
-    let mut remaining = Vec::new(env);
-    for a in attendees.iter() {
-        if a != *attendee {
-            remaining.push_back(a);
+    let count = get_attendees_count(env, event_id);
+    if count == 0 {
+        return;
+    }
+
+    let mut target_index = None;
+    for i in 0..count {
+        if let Some(a) = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::EventAttendeeIndex(event_id.clone(), i))
+        {
+            if a == *attendee {
+                target_index = Some(i);
+                break;
+            }
         }
     }
-    env.storage().persistent().set(&attendees_key, &remaining);
-    env.storage()
-        .persistent()
-        .extend_ttl(&attendees_key, TTL_THRESHOLD, TTL_BUMP);
+
+    if let Some(idx) = target_index {
+        let last_idx = count - 1;
+        if idx != last_idx {
+            if let Some(last_attendee) = env
+                .storage()
+                .persistent()
+                .get::<_, Address>(&DataKey::EventAttendeeIndex(event_id.clone(), last_idx))
+            {
+                let target_key = DataKey::EventAttendeeIndex(event_id.clone(), idx);
+                env.storage().persistent().set(&target_key, &last_attendee);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&target_key, TTL_THRESHOLD, TTL_BUMP);
+            }
+        }
+        env.storage()
+            .persistent()
+            .remove(&DataKey::EventAttendeeIndex(event_id.clone(), last_idx));
+
+        let count_key = DataKey::EventAttendeesCount(event_id.clone());
+        env.storage().persistent().set(&count_key, &last_idx);
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+    }
 }
 
 pub fn get_claim_settings(env: &Env, event_id: &Symbol) -> ClaimSettings {
