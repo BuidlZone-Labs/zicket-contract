@@ -141,11 +141,11 @@ pub struct TicketUsed {
    - Organizer is authorized but the ticket owner never signed
    - Expects the owner's `require_auth()` to trap
 
-5. **Transfer Used Ticket** (`test_transfer_used_ticket_via_is_used`)
+6. **Transfer Used Ticket** (`test_transfer_used_ticket_via_is_used`)
    - Attempts to transfer a ticket with `is_used = true`
    - Expects `TicketNotTransferable` error
 
-6. **Cancel Used Ticket** (`test_cancel_used_ticket_via_is_used`)
+7. **Cancel Used Ticket** (`test_cancel_used_ticket_via_is_used`)
    - Attempts to cancel a ticket with `is_used = true`
    - Expects `TicketAlreadyUsed` error
 
