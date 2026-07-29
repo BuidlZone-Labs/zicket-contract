@@ -1427,33 +1427,41 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
-        // Get the payout token from event config
-        let payout_token = storage::get_event_payout_token(&env, &event_id)?;
-        let token_total = storage::get_event_token_revenue(&env, &event_id, &payout_token);
+        // Get all tokens that have been used for this event and release them
+        let tokens = storage::get_event_tokens(&env, &event_id);
         let mut total = 0i128;
 
-        if token_total > 0 {
-            let token_client = token::Client::new(&env, &payout_token);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &meta.organizer,
-                &token_total,
-            );
+        for i in 0..tokens.len() {
+            if let Some(token_address) = tokens.get(i) {
+                let token_total = storage::get_event_token_revenue(&env, &event_id, &token_address);
+                if token_total > 0 {
+                    let token_client = token::Client::new(&env, &token_address);
+                    token_client.transfer(
+                        &env.current_contract_address(),
+                        &meta.organizer,
+                        &token_total,
+                    );
 
-            storage::set_event_token_revenue(&env, &event_id, &payout_token, 0);
+                    storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
 
-            let current_event_revenue = storage::get_event_revenue(&env, &event_id);
-            storage::set_event_revenue(&env, &event_id, current_event_revenue - token_total);
+                    let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                    storage::set_event_revenue(
+                        &env,
+                        &event_id,
+                        current_event_revenue - token_total,
+                    );
 
-            let record = WithdrawalRecord {
-                amount: token_total, // no fee in auto_release?
-                timestamp: env.ledger().timestamp(),
-                organizer: meta.organizer.clone(),
-            };
-            storage::add_withdrawal_record(&env, &event_id, &record);
-            storage::add_total_withdrawn(&env, &event_id, token_total);
+                    let record = WithdrawalRecord {
+                        amount: token_total, // no fee in auto_release?
+                        timestamp: env.ledger().timestamp(),
+                        organizer: meta.organizer.clone(),
+                    };
+                    storage::add_withdrawal_record(&env, &event_id, &record);
+                    storage::add_total_withdrawn(&env, &event_id, token_total);
 
-            total = token_total;
+                    total += token_total;
+                }
+            }
         }
 
         meta.auto_released = true;
