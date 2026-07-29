@@ -13,7 +13,7 @@ mod test;
 use crate::errors::TicketError;
 use crate::storage::DataKey;
 pub use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{contract, contractimpl, vec, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
 
 #[contract]
 pub struct TicketContract;
@@ -43,25 +43,9 @@ impl TicketContract {
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
 
-        let mut owner_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(owner.clone()))
-            .unwrap_or(vec![&env]);
-        owner_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OwnerTickets(owner), &owner_tickets);
-
-        let mut event_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EventTickets(event_id.clone()))
-            .unwrap_or(vec![&env]);
-        event_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::EventTickets(event_id), &event_tickets);
+        // Use map-based indexing instead of vector storage
+        storage::add_owner_ticket(&env, &owner, ticket_id);
+        storage::add_event_ticket(&env, &event_id, ticket_id);
 
         write_next_ticket_id(&env, ticket_id + 1);
         events::emit_ticket_minted(
@@ -114,28 +98,10 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-        let mut from_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(from.clone()))
-            .unwrap_or(vec![&env]);
 
-        if let Some(index) = from_tickets.first_index_of(ticket_id) {
-            from_tickets.remove(index);
-            env.storage()
-                .persistent()
-                .set(&DataKey::OwnerTickets(from.clone()), &from_tickets);
-        }
-        let mut to_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(to.clone()))
-            .unwrap_or(vec![&env]);
-
-        to_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OwnerTickets(to.clone()), &to_tickets);
+        // Use map-based indexing: remove from old owner, add to new owner
+        storage::remove_owner_ticket(&env, &from, ticket_id);
+        storage::add_owner_ticket(&env, &to, ticket_id);
 
         events::emit_ticket_transferred(&env, ticket_id, ticket.event_id.clone(), from, to);
 
@@ -143,10 +109,7 @@ impl TicketContract {
     }
 
     pub fn get_tickets_by_owner(env: Env, owner: Address) -> Vec<u64> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(owner))
-            .unwrap_or(vec![&env])
+        storage::get_tickets_by_owner(&env, owner)
     }
 
     pub fn use_ticket(
@@ -276,20 +239,10 @@ impl TicketContract {
         let old_owner = ticket.owner.clone();
         ticket.owner = new_owner.clone();
         storage::update_ticket(&env, &ticket);
-        let mut old_owner_tickets = storage::get_tickets_by_owner(&env, old_owner.clone());
-        if let Some(index) = old_owner_tickets.first_index_of(ticket_id) {
-            old_owner_tickets.remove(index);
-            env.storage().persistent().set(
-                &DataKey::OwnerTickets(old_owner.clone()),
-                &old_owner_tickets,
-            );
-        }
-        let mut new_owner_tickets = storage::get_tickets_by_owner(&env, new_owner.clone());
-        new_owner_tickets.push_back(ticket_id);
-        env.storage().persistent().set(
-            &DataKey::OwnerTickets(new_owner.clone()),
-            &new_owner_tickets,
-        );
+
+        // Use map-based indexing: remove from old owner, add to new owner
+        storage::remove_owner_ticket(&env, &old_owner, ticket_id);
+        storage::add_owner_ticket(&env, &new_owner, ticket_id);
         storage::remove_recovery_key(&env, ticket_id);
 
         events::emit_ticket_recovered(&env, ticket_id, old_owner, new_owner);
@@ -341,21 +294,9 @@ impl TicketContract {
         ticket.owner = to.clone();
         storage::update_ticket(&env, &ticket);
 
-        // Update old owner's list
-        let mut from_tickets = storage::get_tickets_by_owner(&env, from.clone());
-        if let Some(index) = from_tickets.first_index_of(ticket_id) {
-            from_tickets.remove(index);
-            env.storage()
-                .persistent()
-                .set(&DataKey::OwnerTickets(from.clone()), &from_tickets);
-        }
-
-        // Update new owner's list
-        let mut to_tickets = storage::get_tickets_by_owner(&env, to.clone());
-        to_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OwnerTickets(to.clone()), &to_tickets);
+        // Use map-based indexing: remove from old owner, add to new owner
+        storage::remove_owner_ticket(&env, &from, ticket_id);
+        storage::add_owner_ticket(&env, &to, ticket_id);
 
         events::emit_ticket_transferred(&env, ticket_id, ticket.event_id.clone(), from, to);
 

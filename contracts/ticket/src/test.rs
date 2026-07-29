@@ -1,7 +1,7 @@
 use super::*;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol, Vec};
+use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
@@ -44,15 +44,8 @@ fn setup_test_ticket_with_transferable(
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
-        let mut owner_tickets: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OwnerTickets(owner.clone()))
-            .unwrap_or(vec![env]);
-        owner_tickets.push_back(ticket_id);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OwnerTickets(owner.clone()), &owner_tickets);
+        // Use map-based indexing
+        storage::add_owner_ticket(env, owner, ticket_id);
     });
 }
 

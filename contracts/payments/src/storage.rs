@@ -46,14 +46,24 @@ pub enum DataKey {
     EventConfig(Symbol),
     Payment(u64),
     Ticket(u64),
-    EventPayments(Symbol),
     EventRevenue(Symbol),
     EventTokenRevenue(Symbol, Address),
-    EventTokens(Symbol),
     EventStatus(Symbol),
-    OwnerTickets(Address),
-    PayerPayments(Address),
-    WithdrawalHistory(Symbol),
+    /// Map-based: Individual event-payment relationship
+    EventPayment(Symbol, u64),
+    /// Map-based: Individual owner-ticket relationship
+    OwnerTicket(Address, u64),
+    /// Map-based: Individual payer-payment relationship
+    PayerPayment(Address, u64),
+    /// Map-based: Individual withdrawal record by event and index
+    WithdrawalRecord(Symbol, u32),
+    /// Map-based: Count of withdrawals for an event
+    WithdrawalCount(Symbol),
+    /// Map-based: Individual event-token relationship
+    EventToken(Symbol, Address),
+    /// Indexed storage for event tokens
+    EventTokenIndex(Symbol, u32),
+    EventTokenCount(Symbol),
     NextPaymentId,
     NextTicketId,
     PlatformFeeBps,
@@ -96,6 +106,12 @@ pub enum DataKey {
     PayerPaymentIndex(Address, u64),
     PayerPaymentsCount(Address),
     EventTokenVolume(Symbol, Address),
+    /// Indexed storage for owner tickets
+    OwnerTicketIndex(Address, u64),
+    OwnerTicketsCount(Address),
+    /// Legacy: Vector storage pattern (kept for migration compatibility only)
+    /// @deprecated Only for migration - use EventPayment instead
+    EventPayments(Symbol),
 }
 
 pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
@@ -103,7 +119,7 @@ pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
     env.storage().persistent().set(&key, status);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
@@ -228,7 +244,7 @@ pub fn set_event_privacy(env: &Env, event_id: &Symbol, privacy: &EventPrivacyCon
     env.storage().persistent().set(&key, privacy);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_event_config(env: &Env, event_id: &Symbol) -> Option<EventConfig> {
@@ -242,7 +258,7 @@ pub fn set_event_config(env: &Env, event_id: &Symbol, config: &EventConfig) {
     env.storage().persistent().set(&key, config);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_event_organizer(env: &Env, event_id: &Symbol) -> Result<Address, PaymentError> {
@@ -303,7 +319,7 @@ pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentErr
     env.storage().persistent().set(&key, payment);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
     Ok(())
 }
 pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
@@ -320,7 +336,7 @@ pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
     env.storage().persistent().set(&key, ticket);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
     Ok(())
 }
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
@@ -329,33 +345,117 @@ pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
         .get(&DataKey::Ticket(ticket_id))
         .ok_or(PaymentError::TicketNotFound)
 }
-pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
-    let key = DataKey::OwnerTickets(owner.clone());
-    let mut tickets: Vec<u64> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    tickets.push_back(ticket_id);
-    env.storage().persistent().set(&key, &tickets);
+/// Map-based: Add an owner-ticket relationship
+pub fn add_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
+    // Get the current count which will be the index for this ticket
+    let count = get_owner_tickets_count(env, owner);
+
+    // Store the membership with the index as the value
+    let key = DataKey::OwnerTicket(owner.clone(), ticket_id);
+    env.storage().persistent().set(&key, &count);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-}
-pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+    // Add to indexed list for retrieval
+    let idx_key = DataKey::OwnerTicketIndex(owner.clone(), count);
+    env.storage().persistent().set(&idx_key, &ticket_id);
     env.storage()
         .persistent()
-        .get(&DataKey::OwnerTickets(owner.clone()))
-        .unwrap_or_else(|| Vec::new(env))
-}
-pub fn get_event_payments_count(env: &Env, event_id: &Symbol) -> u64 {
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::OwnerTicketsCount(owner.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
     env.storage()
         .persistent()
-        .get(&DataKey::EventPaymentsCount(event_id.clone()))
-        .unwrap_or(0)
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
 
-pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
+/// Map-based: Remove an owner-ticket relationship
+pub fn remove_owner_ticket_map(env: &Env, owner: &Address, ticket_id: u64) {
+    // Get the stored index from the membership entry
+    let membership_key = DataKey::OwnerTicket(owner.clone(), ticket_id);
+    let stored_index: Option<u64> = env.storage().persistent().get(&membership_key);
+
+    // Remove the membership entry
+    env.storage().persistent().remove(&membership_key);
+
+    // Only proceed with index removal if the membership existed
+    if let Some(idx) = stored_index {
+        let count = get_owner_tickets_count(env, owner);
+        if count == 0 {
+            return;
+        }
+
+        // Swap with last element
+        let last_idx = count - 1;
+        if idx < last_idx {
+            let last_key = DataKey::OwnerTicketIndex(owner.clone(), last_idx);
+            if let Some(last_ticket_id) = env.storage().persistent().get::<DataKey, u64>(&last_key)
+            {
+                // Update the index entry
+                let current_key = DataKey::OwnerTicketIndex(owner.clone(), idx);
+                env.storage()
+                    .persistent()
+                    .set(&current_key, &last_ticket_id);
+                env.storage()
+                    .persistent()
+                    .extend_ttl(&current_key, TTL_THRESHOLD, TTL_BUMP);
+
+                // Update the membership entry of the moved ticket to reflect its new index
+                let moved_membership_key = DataKey::OwnerTicket(owner.clone(), last_ticket_id);
+                env.storage().persistent().set(&moved_membership_key, &idx);
+                env.storage().persistent().extend_ttl(
+                    &moved_membership_key,
+                    TTL_THRESHOLD,
+                    TTL_BUMP,
+                );
+            }
+        }
+
+        // Remove the last element
+        let last_key = DataKey::OwnerTicketIndex(owner.clone(), last_idx);
+        env.storage().persistent().remove(&last_key);
+
+        // Decrement count
+        let count_key = DataKey::OwnerTicketsCount(owner.clone());
+        env.storage().persistent().set(&count_key, &last_idx);
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+    }
+}
+
+/// Get the count of tickets owned by an address
+pub fn get_owner_tickets_count(env: &Env, owner: &Address) -> u64 {
+    let key = DataKey::OwnerTicketsCount(owner.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Get owner tickets using indexed storage
+pub fn get_owner_tickets(env: &Env, owner: &Address) -> Vec<u64> {
+    let count = get_owner_tickets_count(env, owner);
+    let mut tickets = Vec::new(env);
+
+    for i in 0..count {
+        let idx_key = DataKey::OwnerTicketIndex(owner.clone(), i);
+        if let Some(ticket_id) = env.storage().persistent().get(&idx_key) {
+            tickets.push_back(ticket_id);
+        }
+    }
+
+    tickets
+}
+
+/// Map-based: Add an event-payment relationship
+pub fn add_event_payment_map(env: &Env, event_id: &Symbol, payment_id: u64) {
+    let key = DataKey::EventPayment(event_id.clone(), payment_id);
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+    // Also add to indexed list for retrieval
     let count = get_event_payments_count(env, event_id);
     let idx_key = DataKey::EventPaymentIndex(event_id.clone(), count);
     env.storage().persistent().set(&idx_key, &payment_id);
@@ -369,47 +469,42 @@ pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
         .persistent()
         .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
+
+/// Get the count of payments for an event
+pub fn get_event_payments_count(env: &Env, event_id: &Symbol) -> u64 {
+    let key = DataKey::EventPaymentsCount(event_id.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Add event payment using map-based approach
+pub fn add_event_payment(env: &Env, event_id: &Symbol, payment_id: u64) {
+    add_event_payment_map(env, event_id, payment_id);
+}
+
+/// Get event payments using indexed storage
 pub fn get_event_payments(env: &Env, event_id: &Symbol) -> Vec<u64> {
     let count = get_event_payments_count(env, event_id);
     let mut payments = Vec::new(env);
+
     for i in 0..count {
-        if let Some(pid) = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EventPaymentIndex(event_id.clone(), i))
-        {
-            payments.push_back(pid);
+        let idx_key = DataKey::EventPaymentIndex(event_id.clone(), i);
+        if let Some(payment_id) = env.storage().persistent().get(&idx_key) {
+            payments.push_back(payment_id);
         }
     }
+
     payments
 }
-pub fn get_event_payments_paginated(
-    env: &Env,
-    event_id: &Symbol,
-    start: u64,
-    limit: u64,
-) -> Vec<u64> {
-    let count = get_event_payments_count(env, event_id);
-    let mut payments = Vec::new(env);
-    let end = count.min(start.saturating_add(limit));
-    for i in start..end {
-        if let Some(pid) = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EventPaymentIndex(event_id.clone(), i))
-        {
-            payments.push_back(pid);
-        }
-    }
-    payments
-}
-pub fn get_payer_payments_count(env: &Env, payer: &Address) -> u64 {
+
+/// Map-based: Add a payer-payment relationship
+pub fn add_payer_payment_map(env: &Env, payer: &Address, payment_id: u64) {
+    let key = DataKey::PayerPayment(payer.clone(), payment_id);
+    env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .get(&DataKey::PayerPaymentsCount(payer.clone()))
-        .unwrap_or(0)
-}
-pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+    // Also add to indexed list for retrieval
     let count = get_payer_payments_count(env, payer);
     let idx_key = DataKey::PayerPaymentIndex(payer.clone(), count);
     env.storage().persistent().set(&idx_key, &payment_id);
@@ -423,38 +518,30 @@ pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
         .persistent()
         .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 }
+
+/// Get the count of payments for a payer
+pub fn get_payer_payments_count(env: &Env, payer: &Address) -> u64 {
+    let key = DataKey::PayerPaymentsCount(payer.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Add payer payment using map-based approach
+pub fn add_payer_payment(env: &Env, payer: &Address, payment_id: u64) {
+    add_payer_payment_map(env, payer, payment_id);
+}
+
+/// Get payer payments using indexed storage
 pub fn get_payer_payments(env: &Env, payer: &Address) -> Vec<u64> {
     let count = get_payer_payments_count(env, payer);
     let mut payments = Vec::new(env);
+
     for i in 0..count {
-        if let Some(pid) = env
-            .storage()
-            .persistent()
-            .get(&DataKey::PayerPaymentIndex(payer.clone(), i))
-        {
-            payments.push_back(pid);
+        let idx_key = DataKey::PayerPaymentIndex(payer.clone(), i);
+        if let Some(payment_id) = env.storage().persistent().get(&idx_key) {
+            payments.push_back(payment_id);
         }
     }
-    payments
-}
-pub fn get_payer_payments_paginated(
-    env: &Env,
-    payer: &Address,
-    start: u64,
-    limit: u64,
-) -> Vec<u64> {
-    let count = get_payer_payments_count(env, payer);
-    let mut payments = Vec::new(env);
-    let end = count.min(start.saturating_add(limit));
-    for i in start..end {
-        if let Some(pid) = env
-            .storage()
-            .persistent()
-            .get(&DataKey::PayerPaymentIndex(payer.clone(), i))
-        {
-            payments.push_back(pid);
-        }
-    }
+
     payments
 }
 pub fn get_event_revenue(env: &Env, event_id: &Symbol) -> i128 {
@@ -476,7 +563,7 @@ pub fn add_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     env.storage().persistent().set(&key, &new_revenue);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn set_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
@@ -484,7 +571,7 @@ pub fn set_event_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     env.storage().persistent().set(&key, &amount);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
     let key = DataKey::Payment(payment.payment_id);
@@ -494,34 +581,71 @@ pub fn update_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentE
     env.storage().persistent().set(&key, payment);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
     Ok(())
 }
 
+/// Map-based: Add a withdrawal record
+pub fn add_withdrawal_record_map(
+    env: &Env,
+    event_id: &Symbol,
+    record: &crate::types::WithdrawalRecord,
+) {
+    // Get current count
+    let count = get_withdrawal_count(env, event_id);
+
+    // Store record at index
+    let key = DataKey::WithdrawalRecord(event_id.clone(), count);
+    env.storage().persistent().set(&key, record);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+    // Increment count
+    let count_key = DataKey::WithdrawalCount(event_id.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Get the count of withdrawals for an event
+pub fn get_withdrawal_count(env: &Env, event_id: &Symbol) -> u32 {
+    let key = DataKey::WithdrawalCount(event_id.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Get a specific withdrawal record by index
+pub fn get_withdrawal_record_at(
+    env: &Env,
+    event_id: &Symbol,
+    index: u32,
+) -> Option<crate::types::WithdrawalRecord> {
+    let key = DataKey::WithdrawalRecord(event_id.clone(), index);
+    env.storage().persistent().get(&key)
+}
+
+/// Add withdrawal record using map-based approach
 pub fn add_withdrawal_record(
     env: &Env,
     event_id: &Symbol,
     record: &crate::types::WithdrawalRecord,
 ) {
-    let key = DataKey::WithdrawalHistory(event_id.clone());
-    let mut history: Vec<crate::types::WithdrawalRecord> = env
-        .storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    history.push_back(record.clone());
-    env.storage().persistent().set(&key, &history);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+    add_withdrawal_record_map(env, event_id, record);
 }
 
+/// Get withdrawal history by iterating through indexed records
 pub fn get_withdrawal_history(env: &Env, event_id: &Symbol) -> Vec<crate::types::WithdrawalRecord> {
-    let key = DataKey::WithdrawalHistory(event_id.clone());
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env))
+    let count = get_withdrawal_count(env, event_id);
+    let mut history = Vec::new(env);
+
+    for i in 0..count {
+        if let Some(record) = get_withdrawal_record_at(env, event_id, i) {
+            history.push_back(record);
+        }
+    }
+
+    history
 }
 
 pub fn reset_event_revenue(env: &Env, event_id: &Symbol) {
@@ -579,7 +703,7 @@ pub fn add_platform_revenue(env: &Env, event_id: &Symbol, amount: i128) {
     env.storage().persistent().set(&key, &(current + amount));
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn set_emission_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) {
@@ -587,7 +711,7 @@ pub fn set_emission_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) 
     env.storage().persistent().set(&key, level);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn reset_platform_revenue(env: &Env, event_id: &Symbol) {
     let key = DataKey::PlatformRevenue(event_id.clone());
@@ -606,7 +730,7 @@ pub fn set_escrow_meta(env: &Env, event_id: &Symbol, meta: &EscrowMetadata) {
     env.storage().persistent().set(&key, meta);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_escrow_meta(env: &Env, event_id: &Symbol) -> Result<EscrowMetadata, PaymentError> {
@@ -704,7 +828,7 @@ pub fn add_event_token_revenue(
     env.storage().persistent().set(&key, &new_revenue);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn set_event_token_revenue(
     env: &Env,
@@ -716,34 +840,65 @@ pub fn set_event_token_revenue(
     env.storage().persistent().set(&key, &amount);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
-pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
-    let key = DataKey::EventTokens(event_id.clone());
-    let mut tokens: Vec<Address> = env
-        .storage()
+/// Map-based: Check if an event has a specific token
+pub fn has_event_token(env: &Env, event_id: &Symbol, token_address: &Address) -> bool {
+    env.storage().persistent().has(&DataKey::EventToken(
+        event_id.clone(),
+        token_address.clone(),
+    ))
+}
+
+/// Map-based: Add a token to an event
+pub fn add_event_token_map(env: &Env, event_id: &Symbol, token_address: &Address) {
+    let key = DataKey::EventToken(event_id.clone(), token_address.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
         .persistent()
-        .get(&key)
-        .unwrap_or_else(|| Vec::new(env));
-    for i in 0..tokens.len() {
-        if let Some(existing_token) = tokens.get(i) {
-            if existing_token == *token_address {
-                return;
-            }
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+
+    // Also add to indexed list for retrieval
+    let count = get_event_token_count(env, event_id);
+    let idx_key = DataKey::EventTokenIndex(event_id.clone(), count);
+    env.storage().persistent().set(&idx_key, token_address);
+    env.storage()
+        .persistent()
+        .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
+
+    let count_key = DataKey::EventTokenCount(event_id.clone());
+    env.storage().persistent().set(&count_key, &(count + 1));
+    env.storage()
+        .persistent()
+        .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Get the count of tokens for an event
+pub fn get_event_token_count(env: &Env, event_id: &Symbol) -> u32 {
+    let key = DataKey::EventTokenCount(event_id.clone());
+    env.storage().persistent().get(&key).unwrap_or(0)
+}
+
+/// Add event token using map-based approach
+pub fn add_event_token(env: &Env, event_id: &Symbol, token_address: &Address) {
+    if !has_event_token(env, event_id, token_address) {
+        add_event_token_map(env, event_id, token_address);
+    }
+}
+
+/// Get event tokens using indexed storage
+pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
+    let count = get_event_token_count(env, event_id);
+    let mut tokens = Vec::new(env);
+
+    for i in 0..count {
+        let idx_key = DataKey::EventTokenIndex(event_id.clone(), i);
+        if let Some(token_address) = env.storage().persistent().get(&idx_key) {
+            tokens.push_back(token_address);
         }
     }
 
-    tokens.push_back(token_address.clone());
-    env.storage().persistent().set(&key, &tokens);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
-}
-pub fn get_event_tokens(env: &Env, event_id: &Symbol) -> Vec<Address> {
-    env.storage()
-        .persistent()
-        .get(&DataKey::EventTokens(event_id.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+    tokens
 }
 
 pub fn get_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address) -> u32 {
@@ -757,7 +912,7 @@ pub fn increment_user_event_tickets(env: &Env, event_id: &Symbol, user: &Address
     env.storage().persistent().set(&key, &(current + 1));
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_user_event_tickets_hash(env: &Env, event_id: &Symbol, user_hash: &BytesN<32>) -> u32 {
@@ -771,7 +926,7 @@ pub fn increment_user_event_tickets_hash(env: &Env, event_id: &Symbol, user_hash
     env.storage().persistent().set(&key, &(current + 1));
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn increment_event_sold_count(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
@@ -887,7 +1042,7 @@ pub fn save_resale_listing(env: &Env, ticket_id: u64, listing: &crate::types::Re
     env.storage().persistent().set(&key, listing);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 30, 60 * 60 * 24 * 30 * 2);
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_resale_listing(env: &Env, ticket_id: u64) -> Option<crate::types::ResaleListing> {

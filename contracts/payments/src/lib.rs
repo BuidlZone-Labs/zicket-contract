@@ -416,7 +416,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
     // Only Standard tickets are indexed by owner address; indexing the others
     // would leak the owner identity for Private/Anonymous purchases.
     if payment.privacy_level == PaymentPrivacy::Standard {
-        storage::add_owner_ticket(&env, &params.payer, ticket_id);
+        storage::add_owner_ticket_map(&env, &params.payer, ticket_id);
     }
     match params.privacy_level {
         PaymentPrivacy::Standard => {
@@ -493,6 +493,11 @@ fn find_split_bps(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address) -> Opt
 /// organizer (index 0) receives the remainder, so integer-division dust is never
 /// stranded and the sum of all shares always equals `net`.
 fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: i128) -> i128 {
+    // Return 0 immediately if splits is empty
+    if splits.is_empty() {
+        return 0;
+    }
+
     // Convert RevenueSplit vec to (Address, u32) vec for common utility
     let env = splits.env();
     let mut converted = soroban_sdk::Vec::new(env);
@@ -502,11 +507,8 @@ fn recipient_share(splits: &soroban_sdk::Vec<RevenueSplit>, who: &Address, net: 
         }
     }
 
-    // Get organizer from index 0, or use the recipient as fallback for empty splits
-    let organizer = splits
-        .get(0)
-        .map(|s| s.recipient)
-        .unwrap_or_else(|| who.clone());
+    // Get organizer from index 0
+    let organizer = splits.get(0).unwrap().recipient;
 
     validation::calculate_recipient_share(&converted, who, &organizer, net)
 }
@@ -1425,6 +1427,7 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
+        // Get all tokens that have been used for this event and release them
         let tokens = storage::get_event_tokens(&env, &event_id);
         let mut total = 0i128;
 
@@ -1781,45 +1784,47 @@ impl PaymentsContract {
 
         validate_revenue_invariant(&env, &event_id)?;
 
+        // Enumerate all tokens and drain revenue for every event token
         let tokens = storage::get_event_tokens(&env, &event_id);
-        if tokens.is_empty() {
-            return Err(PaymentError::NoRevenue);
-        }
+        let mut has_revenue = false;
 
         for i in 0..tokens.len() {
             let token_address = tokens.get(i).ok_or(PaymentError::PaymentNotFound)?;
             let revenue = storage::get_event_token_revenue(&env, &event_id, &token_address);
 
             if revenue > 0 {
+                has_revenue = true;
                 let token_client = token::Client::new(&env, &token_address);
                 let total = revenue;
 
-                if total > 0 {
-                    token_client.transfer(&env.current_contract_address(), &organizer, &total);
+                token_client.transfer(&env.current_contract_address(), &organizer, &total);
 
-                    storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
-                    storage::add_total_withdrawn(&env, &event_id, total);
+                storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
+                storage::add_total_withdrawn(&env, &event_id, total);
 
-                    let current_event_revenue = storage::get_event_revenue(&env, &event_id);
-                    storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
+                let current_event_revenue = storage::get_event_revenue(&env, &event_id);
+                storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
 
-                    let record = WithdrawalRecord {
-                        amount: total,
-                        timestamp: env.ledger().timestamp(),
-                        organizer: organizer.clone(),
-                    };
-                    storage::add_withdrawal_record(&env, &event_id, &record);
-                    events::emit_revenue_withdrawn(
-                        &env,
-                        event_id.clone(),
-                        organizer.clone(),
-                        total,
-                        token_address.clone(),
-                        organizer.clone(),
-                        &storage::get_emission_privacy(&env, &event_id),
-                    );
-                }
+                let record = WithdrawalRecord {
+                    amount: total,
+                    timestamp: env.ledger().timestamp(),
+                    organizer: organizer.clone(),
+                };
+                storage::add_withdrawal_record(&env, &event_id, &record);
+                events::emit_revenue_withdrawn(
+                    &env,
+                    event_id.clone(),
+                    organizer.clone(),
+                    total,
+                    token_address.clone(),
+                    organizer.clone(),
+                    &storage::get_emission_privacy(&env, &event_id),
+                );
             }
+        }
+
+        if !has_revenue {
+            return Err(PaymentError::NoRevenue);
         }
 
         Ok(())
@@ -2283,13 +2288,10 @@ impl PaymentsContract {
         let key = crate::storage::DataKey::Ticket(ticket_id);
         env.storage().persistent().set(&key, &new_ticket);
 
-        let mut seller_tickets = storage::get_owner_tickets(&env, &listing.seller);
-        if let Some(index) = seller_tickets.first_index_of(ticket_id) {
-            seller_tickets.remove(index);
-            let seller_key = crate::storage::DataKey::OwnerTickets(listing.seller.clone());
-            env.storage().persistent().set(&seller_key, &seller_tickets);
-        }
-        storage::add_owner_ticket(&env, &buyer, ticket_id);
+        // Remove from seller's ownership (map-based)
+        storage::remove_owner_ticket_map(&env, &listing.seller, ticket_id);
+        // Add to buyer's ownership (map-based)
+        storage::add_owner_ticket_map(&env, &buyer, ticket_id);
 
         storage::remove_resale_listing(&env, ticket_id);
 
