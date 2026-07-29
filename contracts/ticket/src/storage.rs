@@ -12,8 +12,16 @@ const CURRENT_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataKey {
     Ticket(u64),
+    /// Legacy: Vector storage pattern (deprecated)
+    #[deprecated(note = "Use OwnerTicket instead for map-based indexing")]
     OwnerTickets(Address),
+    /// Legacy: Vector storage pattern (deprecated)
+    #[deprecated(note = "Use EventTicket instead for map-based indexing")]
     EventTickets(Symbol),
+    /// Map-based: Individual owner-ticket relationship
+    OwnerTicket(Address, u64),
+    /// Map-based: Individual event-ticket relationship
+    EventTicket(Symbol, u64),
     NextTicketId,
     ContractVersion,
     Admin,
@@ -34,18 +42,79 @@ pub fn update_ticket(env: &Env, ticket: &Ticket) {
         .set(&DataKey::Ticket(ticket.ticket_id), ticket);
 }
 
-pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
+/// Check if an owner has a specific ticket (map-based lookup)
+pub fn has_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) -> bool {
     env.storage()
         .persistent()
-        .get(&DataKey::OwnerTickets(owner))
-        .unwrap_or(Vec::new(env))
+        .has(&DataKey::OwnerTicket(owner.clone(), ticket_id))
 }
 
-pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
+/// Add an owner-ticket relationship (map-based)
+pub fn add_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
     env.storage()
         .persistent()
-        .get(&DataKey::EventTickets(event_id))
-        .unwrap_or(Vec::new(env))
+        .set(&DataKey::OwnerTicket(owner.clone(), ticket_id), &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::OwnerTicket(owner.clone(), ticket_id), TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Remove an owner-ticket relationship (map-based)
+pub fn remove_owner_ticket(env: &Env, owner: &Address, ticket_id: u64) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::OwnerTicket(owner.clone(), ticket_id));
+}
+
+/// Check if an event has a specific ticket (map-based lookup)
+pub fn has_event_ticket(env: &Env, event_id: &Symbol, ticket_id: u64) -> bool {
+    env.storage()
+        .persistent()
+        .has(&DataKey::EventTicket(event_id.clone(), ticket_id))
+}
+
+/// Add an event-ticket relationship (map-based)
+pub fn add_event_ticket(env: &Env, event_id: &Symbol, ticket_id: u64) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventTicket(event_id.clone(), ticket_id), &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::EventTicket(event_id.clone(), ticket_id), TTL_THRESHOLD, TTL_BUMP);
+}
+
+/// Legacy: Get all tickets by owner (requires full scan - expensive!)
+/// @deprecated Use has_owner_ticket for individual lookups instead
+#[allow(deprecated)]
+pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
+    // Try to read from legacy storage first
+    if let Some(tickets) = env.storage()
+        .persistent()
+        .get::<DataKey, Vec<u64>>(&DataKey::OwnerTickets(owner.clone()))
+    {
+        return tickets;
+    }
+    
+    // Fallback: Return empty vector (map-based storage requires scanning)
+    // Note: Scanning is expensive and should be avoided in production
+    Vec::new(env)
+}
+
+/// Legacy: Get all tickets by event (requires full scan - expensive!)
+/// @deprecated Use has_event_ticket for individual lookups instead
+#[allow(deprecated)]
+pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
+    // Try to read from legacy storage first
+    if let Some(tickets) = env.storage()
+        .persistent()
+        .get::<DataKey, Vec<u64>>(&DataKey::EventTickets(event_id.clone()))
+    {
+        return tickets;
+    }
+    
+    // Fallback: Return empty vector (map-based storage requires scanning)
+    // Note: Scanning is expensive and should be avoided in production
+    Vec::new(env)
 }
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
