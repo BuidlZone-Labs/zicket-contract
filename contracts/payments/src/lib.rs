@@ -441,7 +441,7 @@ fn collect_cancellation_organizer_pool(
     withdrawable_ratio_bps: u32,
 ) -> Result<i128, PaymentError> {
     let total_volume = storage::get_total_token_volume(env, event_id, token_address);
-    
+
     let mut disputed_volume = 0i128;
     let disputes = storage::get_event_disputes(env, event_id);
     for i in 0..disputes.len() {
@@ -455,7 +455,7 @@ fn collect_cancellation_organizer_pool(
             }
         }
     }
-    
+
     let eligible_volume = total_volume - disputed_volume;
     Ok(eligible_volume * (withdrawable_ratio_bps as i128) / 10_000)
 }
@@ -934,7 +934,10 @@ impl PaymentsContract {
 
         let status = storage::get_event_status(&env, &payment.event_id);
         let max_refund = if status == Some(EventStatus::Cancelled) {
-            let withdrawable_ratio_bps = config.as_ref().and_then(|c| c.withdrawable_ratio_bps).unwrap_or(0);
+            let withdrawable_ratio_bps = config
+                .as_ref()
+                .and_then(|c| c.withdrawable_ratio_bps)
+                .unwrap_or(0);
             let refund_ratio_bps = 10_000 - withdrawable_ratio_bps;
             let total_refundable = payment.amount * (refund_ratio_bps as i128) / 10_000;
             total_refundable - payment.refunded_amount
@@ -1217,7 +1220,10 @@ impl PaymentsContract {
         }
 
         let config = storage::get_event_config(&env, &payment.event_id);
-        let withdrawable_ratio_bps = config.as_ref().and_then(|c| c.withdrawable_ratio_bps).unwrap_or(0);
+        let withdrawable_ratio_bps = config
+            .as_ref()
+            .and_then(|c| c.withdrawable_ratio_bps)
+            .unwrap_or(0);
         let refund_ratio_bps = 10000 - withdrawable_ratio_bps;
         if refund_ratio_bps == 0 {
             return Err(PaymentError::NoRevenue);
