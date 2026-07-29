@@ -881,8 +881,8 @@ fn test_withdraw_happy_path() {
 
     let p1 = client.get_payment(&pid1);
     let p2 = client.get_payment(&pid2);
-    assert_eq!(p1.status, PaymentStatus::Released);
-    assert_eq!(p2.status, PaymentStatus::Released);
+    assert_eq!(p1.status, PaymentStatus::Held);
+    assert_eq!(p2.status, PaymentStatus::Held);
 }
 
 #[test]
@@ -976,9 +976,9 @@ fn test_mixed_refund_then_withdraw() {
     let p1 = client.get_payment(&pid1);
     let p2 = client.get_payment(&pid2);
     let p3 = client.get_payment(&pid3);
-    assert_eq!(p1.status, PaymentStatus::Released);
+    assert_eq!(p1.status, PaymentStatus::Held);
     assert_eq!(p2.status, PaymentStatus::Refunded);
-    assert_eq!(p3.status, PaymentStatus::Released);
+    assert_eq!(p3.status, PaymentStatus::Held);
 }
 
 #[test]

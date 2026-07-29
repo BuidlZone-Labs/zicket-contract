@@ -440,8 +440,24 @@ fn collect_cancellation_organizer_pool(
     token_address: &Address,
     withdrawable_ratio_bps: u32,
 ) -> Result<i128, PaymentError> {
-    let revenue = storage::get_event_token_revenue(env, event_id, token_address);
-    Ok(revenue * (withdrawable_ratio_bps as i128) / 10_000)
+    let total_volume = storage::get_total_token_volume(env, event_id, token_address);
+    
+    let mut disputed_volume = 0i128;
+    let disputes = storage::get_event_disputes(env, event_id);
+    for i in 0..disputes.len() {
+        if let Some(ticket_id) = disputes.get(i) {
+            if let Some(dispute) = storage::get_dispute(env, ticket_id) {
+                if let Ok(payment) = storage::get_payment(env, dispute.payment_id) {
+                    if payment.token == *token_address {
+                        disputed_volume += payment.amount;
+                    }
+                }
+            }
+        }
+    }
+    
+    let eligible_volume = total_volume - disputed_volume;
+    Ok(eligible_volume * (withdrawable_ratio_bps as i128) / 10_000)
 }
 
 /// Reject legacy single-organizer withdrawal paths for events that carry a
@@ -904,10 +920,11 @@ impl PaymentsContract {
             return Err(PaymentError::PaymentAlreadyProcessed);
         }
 
-        let config = storage::get_event_config(&env, &payment.event_id)
-            .ok_or(PaymentError::InvalidOrganizer)?;
-        if config.organizer_withdrawn && config.withdrawable_ratio_bps.unwrap_or(10_000) == 10_000 {
-            return Err(PaymentError::PaymentAlreadyProcessed);
+        let config = storage::get_event_config(&env, &payment.event_id);
+        if let Some(cfg) = &config {
+            if cfg.organizer_withdrawn && cfg.withdrawable_ratio_bps.unwrap_or(10_000) == 10_000 {
+                return Err(PaymentError::PaymentAlreadyProcessed);
+            }
         }
         if let Ok(meta) = storage::get_escrow_meta(&env, &payment.event_id) {
             if meta.auto_released {
@@ -917,7 +934,7 @@ impl PaymentsContract {
 
         let status = storage::get_event_status(&env, &payment.event_id);
         let max_refund = if status == Some(EventStatus::Cancelled) {
-            let withdrawable_ratio_bps = config.withdrawable_ratio_bps.unwrap_or(0);
+            let withdrawable_ratio_bps = config.as_ref().and_then(|c| c.withdrawable_ratio_bps).unwrap_or(0);
             let refund_ratio_bps = 10_000 - withdrawable_ratio_bps;
             let total_refundable = payment.amount * (refund_ratio_bps as i128) / 10_000;
             total_refundable - payment.refunded_amount
@@ -1199,9 +1216,8 @@ impl PaymentsContract {
             return Err(PaymentError::EventNotActive);
         }
 
-        let config = storage::get_event_config(&env, &payment.event_id)
-            .ok_or(PaymentError::InvalidOrganizer)?;
-        let withdrawable_ratio_bps = config.withdrawable_ratio_bps.unwrap_or(0);
+        let config = storage::get_event_config(&env, &payment.event_id);
+        let withdrawable_ratio_bps = config.as_ref().and_then(|c| c.withdrawable_ratio_bps).unwrap_or(0);
         let refund_ratio_bps = 10000 - withdrawable_ratio_bps;
         if refund_ratio_bps == 0 {
             return Err(PaymentError::NoRevenue);
@@ -1633,15 +1649,20 @@ impl PaymentsContract {
         let mut total_refunds = 0;
         for i in 0..legacy_payments.len() {
             if let Some(payment_id) = legacy_payments.get(i) {
-                let idx_key = crate::storage::DataKey::EventPaymentIndex(event_id.clone(), i as u64);
+                let idx_key =
+                    crate::storage::DataKey::EventPaymentIndex(event_id.clone(), i as u64);
                 env.storage().persistent().set(&idx_key, &payment_id);
                 if let Ok(payment) = storage::get_payment(&env, payment_id) {
                     total_payments += payment.amount;
                     total_refunds += payment.refunded_amount;
-                    
+
                     // Add to EventTokenVolume
-                    let vol_key = crate::storage::DataKey::EventTokenVolume(event_id.clone(), payment.token.clone());
-                    let mut current_vol: i128 = env.storage().persistent().get(&vol_key).unwrap_or(0);
+                    let vol_key = crate::storage::DataKey::EventTokenVolume(
+                        event_id.clone(),
+                        payment.token.clone(),
+                    );
+                    let mut current_vol: i128 =
+                        env.storage().persistent().get(&vol_key).unwrap_or(0);
                     current_vol += payment.amount;
                     env.storage().persistent().set(&vol_key, &current_vol);
                 }
@@ -1649,7 +1670,9 @@ impl PaymentsContract {
         }
 
         let count_key = crate::storage::DataKey::EventPaymentsCount(event_id.clone());
-        env.storage().persistent().set(&count_key, &(legacy_payments.len() as u64));
+        env.storage()
+            .persistent()
+            .set(&count_key, &(legacy_payments.len() as u64));
 
         let tp_key = crate::storage::DataKey::TotalPayments(event_id.clone());
         env.storage().persistent().set(&tp_key, &total_payments);
