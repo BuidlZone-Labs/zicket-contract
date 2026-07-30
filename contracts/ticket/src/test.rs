@@ -545,6 +545,11 @@ fn test_set_event_contract_and_authorized_mint() {
 
     client.set_event_contract(&admin, &event_contract);
 
+    // Verify stored event_contract matches configured address
+    let stored_event_contract =
+        env.as_contract(&contract_id, || storage::get_event_contract(&env)).unwrap();
+    assert_eq!(stored_event_contract, event_contract);
+
     let ticket_id = client.mint_ticket(&event_id, &organizer, &owner);
     assert_eq!(ticket_id, 1);
     assert_eq!(client.get_tickets_by_owner(&owner), vec![&env, 1]);
