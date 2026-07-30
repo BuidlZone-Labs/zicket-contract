@@ -12,6 +12,15 @@ mod tests {
         (env, client, caller)
     }
 
+    // migrate() requires caller == admin, so migration tests bootstrap the
+    // stored admin via set_payments_contract (the only way to set it).
+    fn setup_migration_test() -> (Env, TicketContractClient<'static>, Address) {
+        let (env, client, admin) = setup_test();
+        let payments_contract = Address::generate(&env);
+        client.set_payments_contract(&admin, &payments_contract);
+        (env, client, admin)
+    }
+
     #[test]
     fn test_contract_version_initialization() {
         let (_env, client, _caller) = setup_test();
@@ -22,12 +31,12 @@ mod tests {
 
     #[test]
     fn test_migration_v1_to_v2() {
-        let (_env, client, caller) = setup_test();
+        let (_env, client, admin) = setup_migration_test();
 
         let current_version = client.contract_version();
         assert_eq!(current_version, 1);
 
-        let new_version = client.migrate(&caller);
+        let new_version = client.migrate(&admin);
         assert_eq!(new_version, 2);
 
         let updated_version = client.contract_version();
@@ -36,20 +45,48 @@ mod tests {
 
     #[test]
     fn test_migration_requires_auth() {
+        let (env, client, admin) = setup_migration_test();
+
+        // Drop the blanket auth mock so require_auth() is actually
+        // enforced: with no authorization entries supplied, the call must
+        // be rejected even though `admin` is the correct admin address.
+        env.set_auths(&[]);
+
+        let result = client.try_migrate(&admin);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_migration_rejects_non_admin_caller() {
+        let (env, client, _admin) = setup_migration_test();
+        let non_admin = Address::generate(&env);
+
+        let result = client.try_migrate(&non_admin);
+        assert_eq!(result, Err(Ok(TicketError::Unauthorized)));
+
+        // Version must be unchanged after a rejected migration attempt.
+        let version = client.contract_version();
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn test_migration_fails_without_admin_configured() {
         let (_env, client, caller) = setup_test();
 
+        // No admin has been set (set_payments_contract was never called),
+        // so any caller must be rejected.
         let result = client.try_migrate(&caller);
-        assert!(result.is_ok() || result.is_err());
+        assert_eq!(result, Err(Ok(TicketError::Unauthorized)));
     }
 
     #[test]
     fn test_multiple_migrations() {
-        let (_env, client, caller) = setup_test();
+        let (_env, client, admin) = setup_migration_test();
 
-        let v2 = client.migrate(&caller);
+        let v2 = client.migrate(&admin);
         assert_eq!(v2, 2);
 
-        let v3 = client.migrate(&caller);
+        let v3 = client.migrate(&admin);
         assert_eq!(v3, 3);
 
         let final_version = client.contract_version();
@@ -69,9 +106,9 @@ mod tests {
 
     #[test]
     fn test_ticket_operations_after_migration() {
-        let (_env, client, caller) = setup_test();
+        let (_env, client, admin) = setup_migration_test();
 
-        client.migrate(&caller);
+        client.migrate(&admin);
 
         let owner = Address::generate(&_env);
         let tickets = client.get_tickets_by_owner(&owner);

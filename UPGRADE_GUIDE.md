@@ -39,7 +39,7 @@ pub fn migrate(env: Env, admin: Address) -> Result<u32, PaymentError>
 
 #### Migration Process
 
-1. **Authorization**: Only authorized users (admin) can trigger migrations
+1. **Authorization**: Only the stored contract admin (`storage::get_admin()`) can trigger migrations — every `migrate()` requires the caller's signature *and* a match against the stored admin, returning `Unauthorized` otherwise
 2. **Version Increment**: Current version is automatically incremented
 3. **Data Transformation**: Version-specific migrations handle data layout changes
 4. **Backward Compatibility**: Old data formats are validated and converted if needed
@@ -80,6 +80,8 @@ All contracts use `contracttype` enums for storage keys, ensuring:
 - OwnerTickets(Address) - Tickets owned by address
 - EventTickets(Symbol) - Tickets for event
 - NextTicketId - Counter for ticket IDs
+- Admin - Admin address (set on first `set_payments_contract` call; required by `migrate()`)
+- PaymentsContract - Payments contract address
 - **ContractVersion** - Contract version (NEW)
 
 **Payments Contract:**
