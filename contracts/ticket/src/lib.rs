@@ -26,6 +26,14 @@ impl TicketContract {
         organizer: Address,
         owner: Address,
     ) -> Result<u64, TicketError> {
+        if let Ok(event_contract) = storage::get_event_contract(&env) {
+            event_contract.require_auth();
+        } else if let Ok(payments_contract) = storage::get_payments_contract(&env) {
+            payments_contract.require_auth();
+        } else {
+            organizer.require_auth();
+        }
+
         let ticket_id = read_next_ticket_id(&env);
 
         let ticket = Ticket {
@@ -264,6 +272,23 @@ impl TicketContract {
         }
         admin.require_auth();
         storage::set_payments_contract(&env, &payments_contract);
+        Ok(())
+    }
+
+    pub fn set_event_contract(
+        env: Env,
+        admin: Address,
+        event_contract: Address,
+    ) -> Result<(), TicketError> {
+        if let Ok(stored_admin) = storage::get_admin(&env) {
+            if admin != stored_admin {
+                return Err(TicketError::Unauthorized);
+            }
+        } else {
+            storage::set_admin(&env, &admin);
+        }
+        admin.require_auth();
+        storage::set_event_contract(&env, &event_contract);
         Ok(())
     }
 
