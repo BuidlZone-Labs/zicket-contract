@@ -1,0 +1,4 @@
+secret = "42"
+event_scope = "0x4b4391f304ddc1ce330e92c69674cf6d"
+tier_id = "0"
+expiry_ledger = "2000"

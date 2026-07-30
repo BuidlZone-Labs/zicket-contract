@@ -31,6 +31,8 @@ pub enum DataKey {
     LegacyAnonCommitment(Symbol, BytesN<32>),
     EventAnonWindow(Symbol),
     EventAnonSettings(Symbol),
+    AnonymousClaimVerifier,
+    AnonymousNullifier(Symbol, BytesN<32>),
     ZkNullifier(Symbol, BytesN<32>),
     ZkVerificationConfig(Symbol),
     EventAttendeeIndex(Symbol, u64),
@@ -415,6 +417,58 @@ pub fn save_anon_commitment(
 ) {
     let key = DataKey::AnonCommitment(event_id.clone(), claimant.clone(), commitment.clone());
     env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn set_anonymous_claim_verifier(env: &Env, verifier: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::AnonymousClaimVerifier, verifier);
+    env.storage().persistent().extend_ttl(
+        &DataKey::AnonymousClaimVerifier,
+        TTL_THRESHOLD,
+        TTL_BUMP,
+    );
+}
+
+pub fn get_anonymous_claim_verifier(env: &Env) -> Result<Address, EventError> {
+    let key = DataKey::AnonymousClaimVerifier;
+    let verifier = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::AnonymousClaimVerifierNotConfigured)?;
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(verifier)
+}
+
+pub fn get_anonymous_ticket_commitment(
+    env: &Env,
+    event_id: &Symbol,
+    nullifier: &BytesN<32>,
+) -> Option<BytesN<32>> {
+    let key = DataKey::AnonymousNullifier(event_id.clone(), nullifier.clone());
+    let commitment = env.storage().persistent().get(&key);
+    if commitment.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    commitment
+}
+
+pub fn save_anonymous_ticket_commitment(
+    env: &Env,
+    event_id: &Symbol,
+    nullifier: &BytesN<32>,
+    commitment: &BytesN<32>,
+) {
+    let key = DataKey::AnonymousNullifier(event_id.clone(), nullifier.clone());
+    env.storage().persistent().set(&key, commitment);
     env.storage()
         .persistent()
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);

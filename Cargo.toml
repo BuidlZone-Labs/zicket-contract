@@ -2,11 +2,12 @@
 resolver = "2"
 members = [
   "contracts/*",
+  "crates/*",
   "relayer",
 ]
 
 [workspace.dependencies]
-soroban-sdk = "25.1.1"
+soroban-sdk = "26.0.1"
 
 [profile.release]
 opt-level = "z"
