@@ -434,10 +434,16 @@ pub fn set_anonymous_claim_verifier(env: &Env, verifier: &Address) {
 }
 
 pub fn get_anonymous_claim_verifier(env: &Env) -> Result<Address, EventError> {
+    let key = DataKey::AnonymousClaimVerifier;
+    let verifier = env
+        .storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::AnonymousClaimVerifierNotConfigured)?;
     env.storage()
         .persistent()
-        .get(&DataKey::AnonymousClaimVerifier)
-        .ok_or(EventError::AnonymousClaimVerifierNotConfigured)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(verifier)
 }
 
 pub fn get_anonymous_ticket_commitment(

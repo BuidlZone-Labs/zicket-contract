@@ -82,4 +82,5 @@ pub enum EventError {
     AnonymousClaimVerifierNotConfigured = 45,
     AnonymousNullifierReused = 46,
     AnonymousClaimVerifierAlreadyConfigured = 47,
+    AnonymousProofExpiryTooFar = 48,
 }

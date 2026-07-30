@@ -365,22 +365,6 @@ fn generate_shplonk_z_challenge(env: &Env, proof: &Proof, previous_challenge: Fr
     (shplonk_z, next_previous_challenge)
 }
 
-/// Build the full transcript: all Fiat–Shamir challenges for UltraHonk verification.
-///
-/// Challenge order (identical to BB native verifier):
-/// 1. η, η₂, η₃  – sorted-list / lookup accumulator
-/// 2. β, γ        – log-derivative inverse
-/// 3. α₀…α₂₄      – subrelation batching
-/// 4. gate βᵢ     – sumcheck gate separator
-/// 5. uᵢ          – sumcheck round challenges
-/// 6. ρ           – Gemini batching
-/// 7. r           – Gemini folding
-/// 8. ν           – Shplonk batching
-/// 9. z           – Shplonk evaluation point
-///
-/// BB: `oink_verifier.cpp::OinkVerifier::verify` + `ultra_verifier.cpp::verify_proof` +
-///      `sumcheck/sumcheck.hpp::SumcheckVerifier::verify` +
-///      `commitment_schemes/shplonk/shplemini.hpp::ShpleminiVerifier_::compute_batch_opening_claim`
 /// Verify that a deserialized Proof contains all expected elements with correct sizes.
 ///
 /// Fixed-size arrays guarantee these lengths in Rust, but explicit checks document
@@ -409,6 +393,22 @@ fn validate_proof(proof: &Proof) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Build the full transcript: all Fiat–Shamir challenges for UltraHonk verification.
+///
+/// Challenge order (identical to BB native verifier):
+/// 1. η, η₂, η₃  – sorted-list / lookup accumulator
+/// 2. β, γ        – log-derivative inverse
+/// 3. α₀…α₂₄      – subrelation batching
+/// 4. gate βᵢ     – sumcheck gate separator
+/// 5. uᵢ          – sumcheck round challenges
+/// 6. ρ           – Gemini batching
+/// 7. r           – Gemini folding
+/// 8. ν           – Shplonk batching
+/// 9. z           – Shplonk evaluation point
+///
+/// BB: `oink_verifier.cpp::OinkVerifier::verify` + `ultra_verifier.cpp::verify_proof` +
+///      `sumcheck/sumcheck.hpp::SumcheckVerifier::verify` +
+///      `commitment_schemes/shplonk/shplemini.hpp::ShpleminiVerifier_::compute_batch_opening_claim`
 pub fn generate_transcript(
     env: &Env,
     proof: &Proof,

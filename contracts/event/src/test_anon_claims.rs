@@ -3,8 +3,8 @@ use crate::types::{
     AnonClaimSettings, AnonymousTicketClaim, CreateEventParams, EventStatus, PrivacyLevel,
     TicketTierParams,
 };
-use crate::{EventContract, EventContractClient};
-use soroban_sdk::testutils::{Address as _, Ledger};
+use crate::{DataKey, EventContract, EventContractClient, MAX_ANONYMOUS_PROOF_TTL_LEDGERS};
+use soroban_sdk::testutils::{storage::Persistent as _, Address as _, Ledger};
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol};
 
 #[contract]
@@ -90,21 +90,34 @@ fn claim(env: &Env, byte: u8) -> AnonymousTicketClaim {
         proof: Bytes::from_slice(env, &[byte]),
         nullifier: BytesN::from_array(env, &[byte; 32]),
         ticket_commitment: BytesN::from_array(env, &[byte.wrapping_add(64); 32]),
-        expiry_ledger: 20_000,
+        expiry_ledger: env
+            .ledger()
+            .sequence()
+            .saturating_add(MAX_ANONYMOUS_PROOF_TTL_LEDGERS),
     }
 }
 
-fn real_claim(env: &Env) -> AnonymousTicketClaim {
+fn fixture_u32(public_inputs: &[u8], offset: usize) -> u32 {
+    assert!(public_inputs[offset..offset + 28]
+        .iter()
+        .all(|byte| *byte == 0));
+    u32::from_be_bytes(public_inputs[offset + 28..offset + 32].try_into().unwrap())
+}
+
+fn real_claim(env: &Env) -> (u32, AnonymousTicketClaim) {
     let public_inputs = include_bytes!("../../anon-claim-verifier/fixtures/public_inputs");
-    AnonymousTicketClaim {
-        proof: Bytes::from_slice(
-            env,
-            include_bytes!("../../anon-claim-verifier/fixtures/proof"),
-        ),
-        nullifier: BytesN::from_array(env, public_inputs[96..128].try_into().unwrap()),
-        ticket_commitment: BytesN::from_array(env, public_inputs[128..160].try_into().unwrap()),
-        expiry_ledger: 2_000,
-    }
+    (
+        fixture_u32(public_inputs, 32),
+        AnonymousTicketClaim {
+            proof: Bytes::from_slice(
+                env,
+                include_bytes!("../../anon-claim-verifier/fixtures/proof"),
+            ),
+            nullifier: BytesN::from_array(env, public_inputs[96..128].try_into().unwrap()),
+            ticket_commitment: BytesN::from_array(env, public_inputs[128..160].try_into().unwrap()),
+            expiry_ledger: fixture_u32(public_inputs, 64),
+        },
+    )
 }
 
 #[test]
@@ -186,6 +199,28 @@ fn test_anonymous_claim_verifier_is_admin_set_and_immutable() {
         Some(Ok(EventError::AnonymousClaimVerifierAlreadyConfigured))
     );
     assert_eq!(client.get_anonymous_claim_verifier(), verifier);
+}
+
+#[test]
+fn test_anonymous_claim_verifier_ttl_renews_on_read() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    client.initialize(&admin, &Address::generate(&env), &Address::generate(&env));
+    let verifier = env.register(MockAnonymousClaimVerifier, ());
+    client.set_anonymous_claim_verifier(&admin, &verifier);
+
+    let key = DataKey::AnonymousClaimVerifier;
+    let initial_ttl = env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+    env.ledger()
+        .with_mut(|li| li.sequence_number += initial_ttl / 2 + 1);
+    let before_read = env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+
+    assert_eq!(client.get_anonymous_claim_verifier(), verifier);
+
+    let after_read = env.as_contract(&contract_id, || env.storage().persistent().get_ttl(&key));
+    assert!(after_read > before_read);
 }
 
 #[test]
@@ -337,6 +372,31 @@ fn test_expired_anonymous_proof_fails() {
 }
 
 #[test]
+fn test_anonymous_proof_expiry_horizon_boundaries() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_ttl");
+
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
+
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+
+    let mut too_far = claim(&env, 2);
+    too_far.expiry_ledger = too_far.expiry_ledger.saturating_add(1);
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &too_far);
+
+    assert_eq!(
+        result.err(),
+        Some(Ok(EventError::AnonymousProofExpiryTooFar))
+    );
+    assert_eq!(client.get_event(&event_id).sold_count, 1);
+}
+
+#[test]
 fn test_same_nullifier_with_different_commitment_fails() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
@@ -398,7 +458,7 @@ fn test_real_ultrahonk_proof_claims_ticket_end_to_end() {
     client.set_anonymous_claim_verifier(&organizer, &verifier);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
 
-    let claim = real_claim(&env);
+    let (tier_id, claim) = real_claim(&env);
     let expected_scope = include_bytes!("../../anon-claim-verifier/fixtures/public_inputs");
     assert_eq!(
         client.get_anonymous_claim_scope(&event_id).to_array(),
@@ -413,14 +473,14 @@ fn test_real_ultrahonk_proof_claims_ticket_end_to_end() {
         wrong_event_id.clone(),
         10,
     );
-    let wrong_event_result = client.try_claim_anonymous_ticket(&wrong_event_id, &0, &claim);
+    let wrong_event_result = client.try_claim_anonymous_ticket(&wrong_event_id, &tier_id, &claim);
     assert_eq!(
         wrong_event_result.err(),
         Some(Ok(EventError::AnonymousProofInvalid))
     );
     assert_eq!(client.get_event(&wrong_event_id).sold_count, 0);
 
-    client.claim_anonymous_ticket(&event_id, &0, &claim);
+    client.claim_anonymous_ticket(&event_id, &tier_id, &claim);
 
     assert_eq!(client.get_event(&event_id).sold_count, 1);
     assert_eq!(

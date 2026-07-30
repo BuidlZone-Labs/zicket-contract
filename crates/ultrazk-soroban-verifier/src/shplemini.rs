@@ -118,6 +118,7 @@ pub fn verify_shplemini(
     // 1) r^{2^i}
     let one = Fr::one(env);
     let two = Fr::from_u64(env, 2);
+    let subgroup_generator = Fr::from_array(env, &SUBGROUP_GENERATOR_BYTES);
     let mut r_pows = Fr::zero_array::<CONST_PROOF_SIZE_LOG_N>(env);
     r_pows[0] = tp.gemini_r.clone();
     for i in 1..log_n {
@@ -129,8 +130,9 @@ pub fn verify_shplemini(
     //   - gemini_r                       for shifted weight
     //   - (r^j*(1-u_j) + u_j)           for j in 1..=log_n  (fold round denoms)
     //   - (z - r^j), (z + r^j)          for j in 1..log_n   (further folding)
+    //   - z - subgroup_generator*gemini_r for the Libra grand-sum opening
     //
-    // Total: 2 + 1 + log_n + 2*(log_n - 1) = 3*log_n + 1 values.
+    // Total: 2 + 1 + log_n + 2*(log_n - 1) + 1 = 3*log_n + 2 values.
 
     // Collect all values to invert into a flat array.
     // Layout:
@@ -139,9 +141,11 @@ pub fn verify_shplemini(
     //   [2]           = gemini_r
     //   [3 .. 3+log_n)  = fold round denominators (j = log_n down to 1)
     //   [3+log_n .. 3+log_n + 2*(log_n-1))  = pairs (z - r^j, z + r^j) for j=1..log_n
-    // Max batch size: 3*CONST_PROOF_SIZE_LOG_N + 1 (upper bound when log_n == CONST_PROOF_SIZE_LOG_N)
-    const MAX_BATCH: usize = 3 * CONST_PROOF_SIZE_LOG_N + 1;
-    let batch_size = 3 + log_n + 2 * (log_n - 1);
+    //   [3*log_n+1]  = z - subgroup_generator*gemini_r
+    // Max batch size: 3*CONST_PROOF_SIZE_LOG_N + 2 (upper bound when log_n == CONST_PROOF_SIZE_LOG_N)
+    const MAX_BATCH: usize = 3 * CONST_PROOF_SIZE_LOG_N + 2;
+    let libra_denominator_index = 3 + log_n + 2 * (log_n - 1);
+    let batch_size = libra_denominator_index + 1;
     let mut to_invert = Fr::zero_array::<MAX_BATCH>(env);
     let mut inverted = Fr::zero_array::<MAX_BATCH>(env);
 
@@ -161,9 +165,10 @@ pub fn verify_shplemini(
         to_invert[further_base + 2 * (j - 1)] = &tp.shplonk_z - &r_pows[j];
         to_invert[further_base + 2 * (j - 1) + 1] = &tp.shplonk_z + &r_pows[j];
     }
+    to_invert[libra_denominator_index] = &tp.shplonk_z - &subgroup_generator * &tp.gemini_r;
 
     batch_inverse(&to_invert[..batch_size], &mut inverted[..batch_size]).map_err(|_| {
-        "shplemini: batch inversion failed (zero denominator in shplonk/gemini/fold)"
+        "shplemini: batch inversion failed (zero denominator in shplonk/gemini/fold/libra)"
     })?;
 
     // Defense-in-depth: ensure no inverted result is zero before use.
@@ -178,6 +183,7 @@ pub fn verify_shplemini(
     let pos0 = inverted[0].clone();
     let neg0 = inverted[1].clone();
     let gemini_r_inv = inverted[2].clone();
+    let libra_denominator_inv = inverted[libra_denominator_index].clone();
 
     // 2) allocate arrays
     // Deduplicated layout: shifted commitments merged into unshifted counterparts.
@@ -338,10 +344,9 @@ pub fn verify_shplemini(
         .clone_from_slice(&proof.gemini_fold_comms[(log_n - 1)..(CONST_PROOF_SIZE_LOG_N - 1)]);
 
     let libra_base = base + (CONST_PROOF_SIZE_LOG_N - 1);
-    let subgroup_generator = Fr::from_array(env, &SUBGROUP_GENERATOR_BYTES);
     let libra_denominators = [
         pos0.clone(),
-        (&tp.shplonk_z - &subgroup_generator * &tp.gemini_r).inverse(),
+        libra_denominator_inv,
         pos0.clone(),
         pos0.clone(),
     ];

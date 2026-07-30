@@ -30,6 +30,7 @@ const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 const MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 51_840;
 const MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 518_400;
 const MAX_POSTPONEMENTS: u32 = 3;
+const MAX_ANONYMOUS_PROOF_TTL_LEDGERS: u32 = 17_280;
 const ANONYMOUS_CLAIM_DOMAIN: &[u8] = b"zicket:anonymous-ticket-claim:v1";
 
 #[allow(dead_code)]
@@ -1050,6 +1051,8 @@ impl EventContract {
     pub fn get_claim_settings(env: Env, event_id: Symbol) -> ClaimSettings {
         storage::get_claim_settings(&env, &event_id)
     }
+    /// Configures the verifier once so an admin cannot later replace the proof
+    /// system with one that accepts forged claims.
     pub fn set_anonymous_claim_verifier(
         env: Env,
         admin: Address,
@@ -1103,8 +1106,12 @@ impl EventContract {
         if !event.allow_anonymous {
             return Err(EventError::AnonymousClaimsNotEnabled);
         }
-        if claim.expiry_ledger < env.ledger().sequence() {
+        let current_ledger = env.ledger().sequence();
+        if claim.expiry_ledger < current_ledger {
             return Err(EventError::AnonymousProofExpired);
+        }
+        if claim.expiry_ledger > current_ledger.saturating_add(MAX_ANONYMOUS_PROOF_TTL_LEDGERS) {
+            return Err(EventError::AnonymousProofExpiryTooFar);
         }
         let mut tier_index = None;
         for i in 0..event.tiers.len() {

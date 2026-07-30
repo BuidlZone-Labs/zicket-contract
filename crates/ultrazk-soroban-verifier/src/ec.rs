@@ -25,12 +25,12 @@ const RHS_G2_BYTES: [u8; 128] = [
     0xe3, 0xd1, 0xe7, 0x69, 0x0c, 0x43, 0xd3, 0x7b, 0x4c, 0xe6, 0xcc, 0x01, 0x66, 0xfa, 0x7d, 0xaa,
 ];
 
-/// Negated G2 generator point `-[1]_2` (or the second fixed G2 point in the
-/// BN254 pairing precompile input).
+/// Trusted-setup SRS point `[x]_2`, used as the second G2 argument in the KZG
+/// pairing check. The corresponding negation is applied to the G1 KZG quotient.
 ///
 /// Provenance: extracted from Barretenberg v0.87.0
 /// `barretenberg/cpp/src/barretenberg/dsl/acir_proofs/honk_contract.hpp`
-/// where it appears as the VK-derived G2 point in the `pairing` function
+/// where it appears as the second fixed G2 point in the `pairing` function
 /// (the last 128 bytes of the precompile input).
 const LHS_G2_BYTES: [u8; 128] = [
     0x26, 0x0e, 0x01, 0xb2, 0x51, 0xf6, 0xf1, 0xc7, 0xe7, 0xff, 0x4e, 0x58, 0x07, 0x91, 0xde, 0xe8,

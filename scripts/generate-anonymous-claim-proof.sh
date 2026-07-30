@@ -1,17 +1,30 @@
 #!/usr/bin/env sh
 set -eu
 
-NARGO_VERSION="nargo version = 1.0.0-beta.9"
-BB_VERSION="v0.87.0"
+NARGO_VERSION="1.0.0-beta.9"
+BB_VERSION="0.87.0"
 CIRCUIT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/../circuits/anonymous-ticket-claim" && pwd)"
 
-if [ "$(nargo --version | sed -n '1p')" != "$NARGO_VERSION" ]; then
-  echo "expected $NARGO_VERSION" >&2
+extract_version() {
+  "$1" --version | awk '{
+    for (i = 1; i <= NF; i++) {
+      version = $i
+      sub(/^v/, "", version)
+      if (version ~ /^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/) {
+        print version
+        exit
+      }
+    }
+  }'
+}
+
+if [ "$(extract_version nargo)" != "$NARGO_VERSION" ]; then
+  echo "expected nargo version = $NARGO_VERSION" >&2
   exit 1
 fi
 
-if [ "$(bb --version)" != "$BB_VERSION" ]; then
-  echo "expected bb $BB_VERSION" >&2
+if [ "$(extract_version bb)" != "$BB_VERSION" ]; then
+  echo "expected bb v$BB_VERSION" >&2
   exit 1
 fi
 
