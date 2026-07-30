@@ -44,10 +44,15 @@ pub fn event_exists(env: &Env, event_id: &Symbol) -> bool {
         .has(&DataKey::Event(event_id.clone()))
 }
 pub fn get_event(env: &Env, event_id: &Symbol) -> Result<Event, EventError> {
+    let key = DataKey::Event(event_id.clone());
+    let event = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::EventNotFound)?;
     env.storage()
         .persistent()
-        .get(&DataKey::Event(event_id.clone()))
-        .ok_or(EventError::EventNotFound)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(event)
 }
 pub fn save_event(env: &Env, event_id: &Symbol, event: &Event) {
     let key = DataKey::Event(event_id.clone());
@@ -145,36 +150,57 @@ pub fn set_admin(env: &Env, admin: &Address) {
 }
 
 pub fn get_admin(env: &Env) -> Result<Address, EventError> {
+    let key = DataKey::Admin;
+    let admin = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::ContractLinksNotConfigured)?;
     env.storage()
         .persistent()
-        .get(&DataKey::Admin)
-        .ok_or(EventError::ContractLinksNotConfigured)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(admin)
 }
 
 pub fn set_ticket_contract(env: &Env, ticket_contract: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::TicketContract, ticket_contract);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::TicketContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::PaymentsContract, payments_contract);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::PaymentsContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_ticket_contract(env: &Env) -> Result<Address, EventError> {
+    let key = DataKey::TicketContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::ContractLinksNotConfigured)?;
     env.storage()
         .persistent()
-        .get(&DataKey::TicketContract)
-        .ok_or(EventError::ContractLinksNotConfigured)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn get_payments_contract(env: &Env) -> Result<Address, EventError> {
+    let key = DataKey::PaymentsContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(EventError::ContractLinksNotConfigured)?;
     env.storage()
         .persistent()
-        .get(&DataKey::PaymentsContract)
-        .ok_or(EventError::ContractLinksNotConfigured)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn has_linked_contracts(env: &Env) -> bool {
@@ -201,10 +227,14 @@ pub fn get_reservation(
     attendee: &Address,
 ) -> Result<crate::types::Reservation, EventError> {
     let key = DataKey::Reservation(event_id.clone(), attendee.clone());
-    env.storage()
+    let reservation = env.storage()
         .persistent()
         .get(&key)
-        .ok_or(EventError::ReservationNotFound)
+        .ok_or(EventError::ReservationNotFound)?;
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, 60 * 60, 60 * 60 * 2);
+    Ok(reservation)
 }
 
 pub fn remove_reservation(env: &Env, event_id: &Symbol, attendee: &Address) {
@@ -242,10 +272,15 @@ pub fn set_event_privacy(env: &Env, event_id: &Symbol, level: &PrivacyLevel) {
 }
 
 pub fn get_event_privacy(env: &Env, event_id: &Symbol) -> PrivacyLevel {
+    let key = DataKey::EventPrivacy(event_id.clone());
+    let privacy = env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(PrivacyLevel::Standard);
     env.storage()
         .persistent()
-        .get(&DataKey::EventPrivacy(event_id.clone()))
-        .unwrap_or(PrivacyLevel::Standard)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    privacy
 }
 
 pub fn has_reservation(env: &Env, event_id: &Symbol, attendee: &Address) -> bool {
@@ -260,9 +295,16 @@ pub fn set_postponement(env: &Env, event_id: &Symbol, info: &PostponementInfo) {
         .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn get_postponement(env: &Env, event_id: &Symbol) -> Option<PostponementInfo> {
-    env.storage()
+    let key = DataKey::Postponement(event_id.clone());
+    let info = env.storage()
         .persistent()
-        .get(&DataKey::Postponement(event_id.clone()))
+        .get(&key);
+    if info.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    info
 }
 pub fn remove_postponement(env: &Env, event_id: &Symbol) {
     env.storage()

@@ -3,8 +3,8 @@ use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 use crate::errors::TicketError;
 use crate::types::Ticket;
 
-const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
-const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
+pub const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
+pub const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
 #[allow(dead_code)]
 const CURRENT_VERSION: u32 = 1;
 
@@ -31,16 +31,25 @@ pub enum DataKey {
 }
 
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, TicketError> {
+    let key = DataKey::Ticket(ticket_id);
+    let ticket = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(TicketError::TicketNotFound)?;
     env.storage()
         .persistent()
-        .get(&DataKey::Ticket(ticket_id))
-        .ok_or(TicketError::TicketNotFound)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(ticket)
 }
 
 pub fn update_ticket(env: &Env, ticket: &Ticket) {
+    let key = DataKey::Ticket(ticket.ticket_id);
     env.storage()
         .persistent()
-        .set(&DataKey::Ticket(ticket.ticket_id), ticket);
+        .set(&key, ticket);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 /// Add an owner-ticket relationship (map-based)
@@ -188,6 +197,9 @@ pub fn get_tickets_by_owner(env: &Env, owner: Address) -> Vec<u64> {
     for i in 0..count {
         let idx_key = DataKey::OwnerTicketIndex(owner.clone(), i);
         if let Some(ticket_id) = env.storage().persistent().get(&idx_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
             tickets.push_back(ticket_id);
         }
     }
@@ -203,6 +215,9 @@ pub fn get_tickets_by_event(env: &Env, event_id: Symbol) -> Vec<u64> {
     for i in 0..count {
         let idx_key = DataKey::EventTicketIndex(event_id.clone(), i);
         if let Some(ticket_id) = env.storage().persistent().get(&idx_key) {
+            env.storage()
+                .persistent()
+                .extend_ttl(&idx_key, TTL_THRESHOLD, TTL_BUMP);
             tickets.push_back(ticket_id);
         }
     }
@@ -233,15 +248,26 @@ pub fn verify_version(env: &Env) -> Result<(), TicketError> {
 }
 
 pub fn get_recovery_key(env: &Env, ticket_id: u64) -> Option<BytesN<32>> {
-    env.storage()
+    let key = DataKey::RecoveryKey(ticket_id);
+    let value = env.storage()
         .persistent()
-        .get(&DataKey::RecoveryKey(ticket_id))
+        .get(&key);
+    if value.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    value
 }
 
 pub fn set_recovery_key(env: &Env, ticket_id: u64, public_key: &BytesN<32>) {
+    let key = DataKey::RecoveryKey(ticket_id);
     env.storage()
         .persistent()
-        .set(&DataKey::RecoveryKey(ticket_id), public_key);
+        .set(&key, public_key);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn remove_recovery_key(env: &Env, ticket_id: u64) {
@@ -251,10 +277,15 @@ pub fn remove_recovery_key(env: &Env, ticket_id: u64) {
 }
 
 pub fn get_payments_contract(env: &Env) -> Result<Address, TicketError> {
+    let key = DataKey::PaymentsContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(TicketError::Unauthorized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::PaymentsContract)
-        .ok_or(TicketError::Unauthorized) // or specific error if available
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
@@ -267,10 +298,15 @@ pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
 }
 
 pub fn get_event_contract(env: &Env) -> Result<Address, TicketError> {
+    let key = DataKey::EventContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(TicketError::Unauthorized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::EventContract)
-        .ok_or(TicketError::Unauthorized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn set_event_contract(env: &Env, event_contract: &Address) {
@@ -283,10 +319,15 @@ pub fn set_event_contract(env: &Env, event_contract: &Address) {
 }
 
 pub fn get_admin(env: &Env) -> Result<Address, TicketError> {
+    let key = DataKey::Admin;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(TicketError::Unauthorized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::Admin)
-        .ok_or(TicketError::Unauthorized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {

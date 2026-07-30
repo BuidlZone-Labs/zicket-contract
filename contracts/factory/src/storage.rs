@@ -27,10 +27,15 @@ pub fn is_initialized(env: &Env) -> bool {
 }
 
 pub fn get_admin(env: &Env) -> Result<Address, FactoryError> {
+    let key = DataKey::Admin;
+    let admin = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(FactoryError::NotInitialized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::Admin)
-        .ok_or(FactoryError::NotInitialized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(admin)
 }
 
 pub fn set_admin(env: &Env, admin: &Address) {
@@ -41,10 +46,15 @@ pub fn set_admin(env: &Env, admin: &Address) {
 }
 
 pub fn get_event_wasm_hash(env: &Env) -> Result<BytesN<32>, FactoryError> {
+    let key = DataKey::EventWasm;
+    let hash = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(FactoryError::NotInitialized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::EventWasm)
-        .ok_or(FactoryError::NotInitialized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(hash)
 }
 
 pub fn set_event_wasm_hash(env: &Env, hash: &BytesN<32>) {
@@ -55,10 +65,15 @@ pub fn set_event_wasm_hash(env: &Env, hash: &BytesN<32>) {
 }
 
 pub fn get_ticket_contract(env: &Env) -> Result<Address, FactoryError> {
+    let key = DataKey::TicketContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(FactoryError::NotInitialized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::TicketContract)
-        .ok_or(FactoryError::NotInitialized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn set_ticket_contract(env: &Env, address: &Address) {
@@ -71,10 +86,15 @@ pub fn set_ticket_contract(env: &Env, address: &Address) {
 }
 
 pub fn get_payments_contract(env: &Env) -> Result<Address, FactoryError> {
+    let key = DataKey::PaymentsContract;
+    let address = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(FactoryError::NotInitialized)?;
     env.storage()
         .persistent()
-        .get(&DataKey::PaymentsContract)
-        .ok_or(FactoryError::NotInitialized)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(address)
 }
 
 pub fn set_payments_contract(env: &Env, address: &Address) {
@@ -120,24 +140,43 @@ pub fn save_deployed_event(env: &Env, event: &DeployedEvent) -> Result<(), Facto
 }
 
 pub fn get_deployed_event(env: &Env, event_id: &Symbol) -> Result<DeployedEvent, FactoryError> {
+    let key = DataKey::DeployedEvent(event_id.clone());
+    let event = env.storage()
+        .persistent()
+        .get(&key)
+        .ok_or(FactoryError::EventNotFoundInRegistry)?;
     env.storage()
         .persistent()
-        .get(&DataKey::DeployedEvent(event_id.clone()))
-        .ok_or(FactoryError::EventNotFoundInRegistry)
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    Ok(event)
 }
 
 pub fn get_all_event_ids(env: &Env) -> Vec<Symbol> {
-    env.storage()
+    let key = DataKey::AllEvents;
+    let events = env.storage()
         .persistent()
-        .get(&DataKey::AllEvents)
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !events.is_empty() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    events
 }
 
 pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<Symbol> {
-    env.storage()
+    let key = DataKey::OrganizerEvents(organizer.clone());
+    let events = env.storage()
         .persistent()
-        .get(&DataKey::OrganizerEvents(organizer.clone()))
-        .unwrap_or_else(|| Vec::new(env))
+        .get(&key)
+        .unwrap_or_else(|| Vec::new(env));
+    if !events.is_empty() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    events
 }
 pub fn get_contract_version(env: &Env) -> u32 {
     env.storage()
