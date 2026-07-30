@@ -45,10 +45,15 @@ mod tests {
 
     #[test]
     fn test_migration_requires_auth() {
-        let (_env, client, admin) = setup_migration_test();
+        let (env, client, admin) = setup_migration_test();
+
+        // Drop the blanket auth mock so require_auth() is actually
+        // enforced: with no authorization entries supplied, the call must
+        // be rejected even though `admin` is the correct admin address.
+        env.set_auths(&[]);
 
         let result = client.try_migrate(&admin);
-        assert!(result.is_ok());
+        assert!(result.is_err());
     }
 
     #[test]
