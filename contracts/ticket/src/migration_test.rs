@@ -13,11 +13,11 @@ mod tests {
     }
 
     // migrate() requires caller == admin, so migration tests bootstrap the
-    // stored admin via set_payments_contract (the only way to set it).
+    // stored admin via initialize.
     fn setup_migration_test() -> (Env, TicketContractClient<'static>, Address) {
         let (env, client, admin) = setup_test();
         let payments_contract = Address::generate(&env);
-        client.set_payments_contract(&admin, &payments_contract);
+        client.initialize(&admin, &payments_contract);
         (env, client, admin)
     }
 
@@ -230,8 +230,8 @@ mod tests {
         let admin = Address::generate(&env);
         let payments_contract = Address::generate(&env);
 
-        // Set up admin and payments contract
-        client.set_payments_contract(&admin, &payments_contract);
+        // Set up admin and payments contract via initialize
+        client.initialize(&admin, &payments_contract);
 
         // Mint a ticket
         let ticket_id = client.mint_ticket(&event_id, &organizer, &owner1);
