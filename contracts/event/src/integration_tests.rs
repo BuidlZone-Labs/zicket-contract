@@ -84,6 +84,7 @@ fn test_registration_cross_contract_happy_path() {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_client.initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     let price = 100_000_000i128;
@@ -218,6 +219,8 @@ fn test_cancel_event_triggers_refunds() {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_contract::TicketContractClient::new(&env, &ticket_contract_id)
+        .initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     let price = 100_000_000i128;
@@ -289,6 +292,8 @@ fn test_registration_with_email_hook() {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_contract::TicketContractClient::new(&env, &ticket_contract_id)
+        .initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     let price = 100_000_000i128;
@@ -362,6 +367,7 @@ fn setup_linked(
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_client.initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     (
@@ -737,6 +743,8 @@ fn test_withdraw_revenue_integration() {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_contract::TicketContractClient::new(&env, &ticket_contract_id)
+        .initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     let price = 100_000_000i128;
@@ -799,6 +807,8 @@ fn setup_split_world(env: &Env) -> SplitWorld<'_> {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_contract::TicketContractClient::new(env, &ticket_contract_id)
+        .initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
 
     SplitWorld {
@@ -1100,8 +1110,8 @@ fn test_resale_royalty_exceeding_proceeds_leaves_seller_unpaid() {
         &platform_wallet,
         &event_contract_id,
     );
+    ticket_client.initialize(&organizer, &payments_contract_id);
     event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
-    ticket_client.set_payments_contract(&organizer, &payments_contract_id);
     payments_client.set_ticket_contract(&organizer, &ticket_contract_id);
 
     let event_id = Symbol::new(&env, "evt_resale_royalty");

@@ -960,6 +960,9 @@ fn setup_registration_contracts(
     let platform_wallet = Address::generate(env);
     payments_client.initialize(admin, &token, &0, &platform_wallet, &event_client.address);
 
+    let ticket_client = ticket_contract::TicketContractClient::new(env, &ticket_contract_id);
+    ticket_client.initialize(admin, &payments_contract_id);
+
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
 
     (payments_contract_id, token, token_admin)
