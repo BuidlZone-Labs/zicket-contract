@@ -21,6 +21,7 @@ pub enum DataKey {
     Admin,
     RecoveryKey(u64),
     PaymentsContract,
+    EventContract,
     /// Indexed storage for owner tickets
     OwnerTicketIndex(Address, u64),
     OwnerTicketsCount(Address),
@@ -263,6 +264,22 @@ pub fn set_payments_contract(env: &Env, payments_contract: &Address) {
     env.storage()
         .persistent()
         .extend_ttl(&DataKey::PaymentsContract, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_event_contract(env: &Env) -> Result<Address, TicketError> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::EventContract)
+        .ok_or(TicketError::Unauthorized)
+}
+
+pub fn set_event_contract(env: &Env, event_contract: &Address) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::EventContract, event_contract);
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::EventContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_admin(env: &Env) -> Result<Address, TicketError> {
