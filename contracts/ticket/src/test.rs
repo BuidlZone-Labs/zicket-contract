@@ -530,6 +530,78 @@ fn test_recover_ticket_no_key_set() {
 }
 
 #[test]
+fn test_initialize_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let payments_contract = Address::generate(&env);
+
+    client.initialize(&admin, &payments_contract);
+
+    let stored_admin = env
+        .as_contract(&contract_id, || storage::get_admin(&env))
+        .unwrap();
+    assert_eq!(stored_admin, admin);
+
+    let stored_payments = env
+        .as_contract(&contract_id, || storage::get_payments_contract(&env))
+        .unwrap();
+    assert_eq!(stored_payments, payments_contract);
+}
+
+#[test]
+fn test_initialize_already_initialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let payments_contract = Address::generate(&env);
+    let attacker = Address::generate(&env);
+
+    client.initialize(&admin, &payments_contract);
+
+    let res = client.try_initialize(&attacker, &payments_contract);
+    assert_eq!(res, Err(Ok(TicketError::Unauthorized)));
+}
+
+#[test]
+fn test_set_payments_contract_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let attacker = Address::generate(&env);
+    let payments_contract = Address::generate(&env);
+
+    let res = client.try_set_payments_contract(&attacker, &payments_contract);
+    assert_eq!(res, Err(Ok(TicketError::Unauthorized)));
+}
+
+#[test]
+fn test_set_event_contract_uninitialized_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let attacker = Address::generate(&env);
+    let event_contract = Address::generate(&env);
+
+    let res = client.try_set_event_contract(&attacker, &event_contract);
+    assert_eq!(res, Err(Ok(TicketError::Unauthorized)));
+}
+
+#[test]
 fn test_set_event_contract_and_authorized_mint() {
     let env = Env::default();
     env.mock_all_auths();
@@ -538,11 +610,13 @@ fn test_set_event_contract_and_authorized_mint() {
     let client = TicketContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
+    let payments_contract = Address::generate(&env);
     let event_contract = Address::generate(&env);
     let organizer = Address::generate(&env);
     let owner = Address::generate(&env);
     let event_id = Symbol::new(&env, "event_1");
 
+    client.initialize(&admin, &payments_contract);
     client.set_event_contract(&admin, &event_contract);
 
     // Verify stored event_contract matches configured address
@@ -565,10 +639,11 @@ fn test_set_event_contract_unauthorized_admin() {
     let client = TicketContractClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
+    let payments_contract = Address::generate(&env);
     let attacker = Address::generate(&env);
     let event_contract = Address::generate(&env);
 
-    client.set_event_contract(&admin, &event_contract);
+    client.initialize(&admin, &payments_contract);
     let res = client.try_set_event_contract(&attacker, &event_contract);
     assert_eq!(res, Err(Ok(TicketError::Unauthorized)));
 }

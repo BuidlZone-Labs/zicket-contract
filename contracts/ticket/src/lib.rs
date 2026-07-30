@@ -258,18 +258,29 @@ impl TicketContract {
         Ok(())
     }
 
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        payments_contract: Address,
+    ) -> Result<(), TicketError> {
+        if storage::get_admin(&env).is_ok() {
+            return Err(TicketError::Unauthorized);
+        }
+        admin.require_auth();
+        storage::set_admin(&env, &admin);
+        storage::set_payments_contract(&env, &payments_contract);
+        Ok(())
+    }
+
     pub fn set_payments_contract(
         env: Env,
         admin: Address,
         payments_contract: Address,
     ) -> Result<(), TicketError> {
         admin.require_auth();
-        if let Ok(stored_admin) = storage::get_admin(&env) {
-            if admin != stored_admin {
-                return Err(TicketError::Unauthorized);
-            }
-        } else {
-            storage::set_admin(&env, &admin);
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(TicketError::Unauthorized);
         }
         storage::set_payments_contract(&env, &payments_contract);
         Ok(())
@@ -281,12 +292,9 @@ impl TicketContract {
         event_contract: Address,
     ) -> Result<(), TicketError> {
         admin.require_auth();
-        if let Ok(stored_admin) = storage::get_admin(&env) {
-            if admin != stored_admin {
-                return Err(TicketError::Unauthorized);
-            }
-        } else {
-            storage::set_admin(&env, &admin);
+        let stored_admin = storage::get_admin(&env)?;
+        if admin != stored_admin {
+            return Err(TicketError::Unauthorized);
         }
         storage::set_event_contract(&env, &event_contract);
         Ok(())
