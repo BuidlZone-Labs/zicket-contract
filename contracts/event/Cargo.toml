@@ -17,3 +17,4 @@ common-utils = { path = "../common-utils" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+anon-claim-verifier = { path = "../anon-claim-verifier" }

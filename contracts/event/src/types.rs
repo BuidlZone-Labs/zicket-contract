@@ -18,6 +18,14 @@ pub struct ZkPassportClaim {
 }
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnonymousTicketClaim {
+    pub proof: Bytes,
+    pub nullifier: BytesN<32>,
+    pub ticket_commitment: BytesN<32>,
+    pub expiry_ledger: u32,
+}
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZkVerificationConfig {
     pub required_claim_type: ZkClaimType,
     pub enabled: bool,

@@ -77,4 +77,9 @@ pub enum EventError {
     /// client-generated privacy material (stealth key / nullifier commitment).
     /// Use the payments contract's privacy-aware entry point directly.
     PaymentPrivacyUnsupported = 42,
+    AnonymousProofExpired = 43,
+    AnonymousProofInvalid = 44,
+    AnonymousClaimVerifierNotConfigured = 45,
+    AnonymousNullifierReused = 46,
+    AnonymousClaimVerifierAlreadyConfigured = 47,
 }

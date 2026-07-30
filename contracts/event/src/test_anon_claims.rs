@@ -1,10 +1,21 @@
 use crate::errors::EventError;
 use crate::types::{
-    AnonClaimSettings, CreateEventParams, EventStatus, PrivacyLevel, TicketTierParams,
+    AnonClaimSettings, AnonymousTicketClaim, CreateEventParams, EventStatus, PrivacyLevel,
+    TicketTierParams,
 };
 use crate::{EventContract, EventContractClient};
 use soroban_sdk::testutils::{Address as _, Ledger};
-use soroban_sdk::{Address, BytesN, Env, String, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol};
+
+#[contract]
+struct MockAnonymousClaimVerifier;
+
+#[contractimpl]
+impl MockAnonymousClaimVerifier {
+    pub fn verify(_env: Env, proof: Bytes, public_inputs: Bytes) -> bool {
+        !proof.is_empty() && public_inputs.len() == 160
+    }
+}
 
 fn setup_env() -> Env {
     let env = Env::default();
@@ -31,6 +42,8 @@ fn setup_contracts(
     payments_client.initialize(admin, token, &0, &platform_wallet, &event_client.address);
 
     event_client.initialize(admin, &ticket_contract_id, &payments_contract_id);
+    let verifier = env.register(MockAnonymousClaimVerifier, ());
+    event_client.set_anonymous_claim_verifier(admin, &verifier);
 }
 fn create_anon_free_event(
     env: &Env,
@@ -72,8 +85,26 @@ fn create_anon_free_event(
     client.update_event_status(organizer, &event_id, &EventStatus::Active);
 }
 
-fn commitment(env: &Env, byte: u8) -> BytesN<32> {
-    BytesN::from_array(env, &[byte; 32])
+fn claim(env: &Env, byte: u8) -> AnonymousTicketClaim {
+    AnonymousTicketClaim {
+        proof: Bytes::from_slice(env, &[byte]),
+        nullifier: BytesN::from_array(env, &[byte; 32]),
+        ticket_commitment: BytesN::from_array(env, &[byte.wrapping_add(64); 32]),
+        expiry_ledger: 20_000,
+    }
+}
+
+fn real_claim(env: &Env) -> AnonymousTicketClaim {
+    let public_inputs = include_bytes!("../../anon-claim-verifier/fixtures/public_inputs");
+    AnonymousTicketClaim {
+        proof: Bytes::from_slice(
+            env,
+            include_bytes!("../../anon-claim-verifier/fixtures/proof"),
+        ),
+        nullifier: BytesN::from_array(env, public_inputs[96..128].try_into().unwrap()),
+        ticket_commitment: BytesN::from_array(env, public_inputs[128..160].try_into().unwrap()),
+        expiry_ledger: 2_000,
+    }
 }
 
 #[test]
@@ -135,6 +166,29 @@ fn test_anon_claim_settings_default_unlimited() {
 }
 
 #[test]
+fn test_anonymous_claim_verifier_is_admin_set_and_immutable() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let intruder = Address::generate(&env);
+    client.initialize(&admin, &Address::generate(&env), &Address::generate(&env));
+    let verifier = env.register(MockAnonymousClaimVerifier, ());
+    let replacement = env.register(MockAnonymousClaimVerifier, ());
+
+    let unauthorized = client.try_set_anonymous_claim_verifier(&intruder, &verifier);
+    assert_eq!(unauthorized.err(), Some(Ok(EventError::Unauthorized)));
+
+    client.set_anonymous_claim_verifier(&admin, &verifier);
+    let replace = client.try_set_anonymous_claim_verifier(&admin, &replacement);
+    assert_eq!(
+        replace.err(),
+        Some(Ok(EventError::AnonymousClaimVerifierAlreadyConfigured))
+    );
+    assert_eq!(client.get_anonymous_claim_verifier(), verifier);
+}
+
+#[test]
 fn test_anon_claim_basic_success() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
@@ -142,12 +196,9 @@ fn test_anon_claim_basic_success() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_ok");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
-
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
 
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 1);
@@ -161,8 +212,6 @@ fn test_anon_claim_rejects_non_anonymous_event() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_dis");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
 
     let params = CreateEventParams {
@@ -196,7 +245,7 @@ fn test_anon_claim_rejects_non_anonymous_event() {
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
     assert_eq!(
         result.err(),
         Some(Ok(EventError::AnonymousClaimsNotEnabled))
@@ -211,8 +260,6 @@ fn test_anon_claim_paid_tier_fails() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_paid");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
 
     let params = CreateEventParams {
@@ -246,29 +293,140 @@ fn test_anon_claim_paid_tier_fails() {
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
 
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
     assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
 }
 
 #[test]
-fn test_anon_commitment_reused_fails() {
+fn test_exact_proof_replay_is_idempotent() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_dup");
-    let claimant = Address::generate(&env);
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
+
+    let claim = claim(&env, 42);
+    client.claim_anonymous_ticket(&event_id, &0, &claim);
+    env.ledger().with_mut(|li| li.sequence_number = 20_001);
+    client.claim_anonymous_ticket(&event_id, &0, &claim);
+
+    assert_eq!(client.get_event(&event_id).sold_count, 1);
+}
+
+#[test]
+fn test_expired_anonymous_proof_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_exp");
 
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
 
-    let c = commitment(&env, 42);
+    let mut expired = claim(&env, 1);
+    expired.expiry_ledger = 999;
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &expired);
 
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &c);
+    assert_eq!(result.err(), Some(Ok(EventError::AnonymousProofExpired)));
+    assert_eq!(client.get_event(&event_id).sold_count, 0);
+}
 
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &c);
-    assert_eq!(result.err(), Some(Ok(EventError::AnonCommitmentReused)));
+#[test]
+fn test_same_nullifier_with_different_commitment_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_null");
+
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
+
+    let original = claim(&env, 42);
+    client.claim_anonymous_ticket(&event_id, &0, &original);
+    let mut changed = original.clone();
+    changed.ticket_commitment = BytesN::from_array(&env, &[99; 32]);
+
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &changed);
+    assert_eq!(result.err(), Some(Ok(EventError::AnonymousNullifierReused)));
+    assert_eq!(client.get_event(&event_id).sold_count, 1);
+}
+
+#[test]
+fn test_invalid_anonymous_proof_fails() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_badpf");
+
+    setup_contracts(&env, &client, &organizer, &token);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
+
+    let mut invalid = claim(&env, 1);
+    invalid.proof = Bytes::new(&env);
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &invalid);
+
+    assert_eq!(result.err(), Some(Ok(EventError::AnonymousProofInvalid)));
+    assert_eq!(client.get_event(&event_id).sold_count, 0);
+}
+
+#[test]
+fn test_real_ultrahonk_proof_claims_ticket_end_to_end() {
+    let env = setup_env();
+    let contract_id = env.register(EventContract, ());
+    let client = EventContractClient::new(&env, &contract_id);
+    let organizer = Address::generate(&env);
+    let token = Address::generate(&env);
+    let event_id = Symbol::new(&env, "anon_ok");
+
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(&env, &payments_contract_id);
+    let platform_wallet = Address::generate(&env);
+    payments_client.initialize(&organizer, &token, &0, &platform_wallet, &client.address);
+    client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+    let verifier = env.register(anon_claim_verifier::AnonymousClaimVerifier, ());
+    client.set_anonymous_claim_verifier(&organizer, &verifier);
+    create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
+
+    let claim = real_claim(&env);
+    let expected_scope = include_bytes!("../../anon-claim-verifier/fixtures/public_inputs");
+    assert_eq!(
+        client.get_anonymous_claim_scope(&event_id).to_array(),
+        expected_scope[..32]
+    );
+    let wrong_event_id = Symbol::new(&env, "anon_no");
+    create_anon_free_event(
+        &env,
+        &client,
+        &organizer,
+        &token,
+        wrong_event_id.clone(),
+        10,
+    );
+    let wrong_event_result = client.try_claim_anonymous_ticket(&wrong_event_id, &0, &claim);
+    assert_eq!(
+        wrong_event_result.err(),
+        Some(Ok(EventError::AnonymousProofInvalid))
+    );
+    assert_eq!(client.get_event(&wrong_event_id).sold_count, 0);
+
+    client.claim_anonymous_ticket(&event_id, &0, &claim);
+
+    assert_eq!(client.get_event(&event_id).sold_count, 1);
+    assert_eq!(
+        client.get_anonymous_ticket_commitment(&event_id, &claim.nullifier),
+        Some(claim.ticket_commitment)
+    );
 }
 
 #[test]
@@ -279,13 +437,11 @@ fn test_distinct_commitments_each_accepted_once() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_dist");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
 
     for i in 1u8..=5 {
-        client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, i));
+        client.claim_anonymous_ticket(&event_id, &0, &claim(&env, i));
     }
 
     let event = client.get_event(&event_id);
@@ -300,16 +456,14 @@ fn test_anon_window_rate_limit_blocks_excess_claims() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_wlim");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
 
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
 
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 3));
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 3));
     assert_eq!(result.err(), Some(Ok(EventError::AnonClaimWindowFull)));
 }
 
@@ -321,18 +475,16 @@ fn test_anon_window_resets_after_ledger_advance() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_wrst");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
 
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_100;
     });
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 3));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 3));
 
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 3);
@@ -345,15 +497,13 @@ fn test_anon_window_straddle_boundary() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_strd");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 50);
     client.set_anon_claim_settings(&organizer, &event_id, &1, &10);
     env.ledger().with_mut(|li| li.sequence_number = 1_009);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
     env.ledger().with_mut(|li| li.sequence_number = 1_010);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
 
     let event = client.get_event(&event_id);
     assert_eq!(event.sold_count, 2);
@@ -366,8 +516,6 @@ fn test_single_source_rate_limited_per_window() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_drain");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     let total_capacity = 5u32;
     create_anon_free_event(
@@ -379,11 +527,11 @@ fn test_single_source_rate_limited_per_window() {
         total_capacity,
     );
     client.set_anon_claim_settings(&organizer, &event_id, &2, &100);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
-    let r3 = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 3));
-    let r4 = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 4));
-    let r5 = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 5));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
+    let r3 = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 3));
+    let r4 = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 4));
+    let r5 = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 5));
 
     assert_eq!(r3.err(), Some(Ok(EventError::AnonClaimWindowFull)));
     assert_eq!(r4.err(), Some(Ok(EventError::AnonClaimWindowFull)));
@@ -402,20 +550,18 @@ fn test_anon_claim_event_sold_out() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_sol");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 2);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
 
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_100;
     });
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
     env.ledger().with_mut(|li| {
         li.sequence_number = 1_200;
     });
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 3));
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 3));
     assert_eq!(result.err(), Some(Ok(EventError::EventSoldOut)));
 }
 
@@ -427,8 +573,6 @@ fn test_anon_claim_tier_sold_out() {
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_tso");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     let params = CreateEventParams {
         organizer: organizer.clone(),
@@ -465,54 +609,46 @@ fn test_anon_claim_tier_sold_out() {
     };
     client.create_event(&params);
     client.update_event_status(&organizer, &event_id, &EventStatus::Active);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
-    let result = client.try_claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 2));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+    let result = client.try_claim_anonymous_ticket(&event_id, &0, &claim(&env, 2));
     assert_eq!(result.err(), Some(Ok(EventError::TierSoldOut)));
 }
 
 #[test]
 fn test_front_running_commitment_theft_fails() {
-    // A bot watches the mempool, copies the (public) commitment bytes from a
-    // real user's pending claim, and submits them first as its own,
-    // fully-authorized transaction. The attacker is authorized to claim under
-    // its own address, but the commitment is scoped per-claimant, so this
-    // cannot hijack or block the real claimant's slot: the real claimant's
-    // later claim with the same commitment bytes still succeeds.
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_front");
-    let attacker_bot = Address::generate(&env);
-    let real_claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
 
-    let stolen_commitment = commitment(&env, 7);
-
-    client.claim_anonymous_ticket(&attacker_bot, &event_id, &0, &stolen_commitment);
-    client.claim_anonymous_ticket(&real_claimant, &event_id, &0, &stolen_commitment);
+    let copied_claim = claim(&env, 7);
+    client.claim_anonymous_ticket(&event_id, &0, &copied_claim);
+    client.claim_anonymous_ticket(&event_id, &0, &copied_claim);
 
     let event = client.get_event(&event_id);
-    assert_eq!(event.sold_count, 2);
+    assert_eq!(event.sold_count, 1);
+    assert_eq!(
+        client.get_anonymous_ticket_commitment(&event_id, &copied_claim.nullifier),
+        Some(copied_claim.ticket_commitment)
+    );
 }
 
 #[test]
-#[should_panic(expected = "Error(Auth, InvalidAction)")]
-fn test_anon_claim_without_claimant_auth_fails() {
+fn test_anonymous_claim_requires_no_address_auth() {
     let env = setup_env();
     let contract_id = env.register(EventContract, ());
     let client = EventContractClient::new(&env, &contract_id);
     let organizer = Address::generate(&env);
     let token = Address::generate(&env);
     let event_id = Symbol::new(&env, "anon_noauth");
-    let claimant = Address::generate(&env);
-
     setup_contracts(&env, &client, &organizer, &token);
     create_anon_free_event(&env, &client, &organizer, &token, event_id.clone(), 10);
 
     env.set_auths(&[]);
-    client.claim_anonymous_ticket(&claimant, &event_id, &0, &commitment(&env, 1));
+    client.claim_anonymous_ticket(&event_id, &0, &claim(&env, 1));
+    assert_eq!(client.get_event(&event_id).sold_count, 1);
 }

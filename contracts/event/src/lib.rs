@@ -1,6 +1,8 @@
 #![no_std]
 use payments_contract::{PaymentPrivacy, PaymentsContractClient};
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
+use soroban_sdk::{
+    contract, contractclient, contractimpl, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol,
+};
 use ticket_contract::TicketContractClient;
 
 mod errors;
@@ -28,6 +30,46 @@ const MIN_WITHDRAWAL_DELAY_LEDGERS: u32 = 100;
 const MIN_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 51_840;
 const MAX_POSTPONEMENT_CHOICE_WINDOW_LEDGERS: u32 = 518_400;
 const MAX_POSTPONEMENTS: u32 = 3;
+const ANONYMOUS_CLAIM_DOMAIN: &[u8] = b"zicket:anonymous-ticket-claim:v1";
+
+#[allow(dead_code)]
+#[contractclient(name = "AnonymousClaimVerifierClient")]
+trait AnonymousClaimVerifier {
+    fn verify(env: Env, proof: Bytes, public_inputs: Bytes) -> bool;
+}
+
+fn anonymous_claim_scope(env: &Env, event_id: &Symbol) -> BytesN<32> {
+    let mut preimage = Bytes::from_slice(env, ANONYMOUS_CLAIM_DOMAIN);
+    preimage.extend_from_slice(&env.ledger().network_id().to_array());
+    preimage.append(&env.current_contract_address().to_xdr(env));
+    preimage.append(&event_id.to_xdr(env));
+
+    let digest: BytesN<32> = env.crypto().sha256(&preimage).into();
+    let mut scope = digest.to_array();
+    scope[..16].fill(0);
+    BytesN::from_array(env, &scope)
+}
+
+fn append_u32_field(bytes: &mut Bytes, value: u32) {
+    let mut field = [0u8; 32];
+    field[28..].copy_from_slice(&value.to_be_bytes());
+    bytes.extend_from_slice(&field);
+}
+
+fn anonymous_claim_public_inputs(
+    env: &Env,
+    event_id: &Symbol,
+    tier_id: u32,
+    claim: &AnonymousTicketClaim,
+) -> Bytes {
+    let mut inputs = Bytes::new(env);
+    inputs.extend_from_slice(&anonymous_claim_scope(env, event_id).to_array());
+    append_u32_field(&mut inputs, tier_id);
+    append_u32_field(&mut inputs, claim.expiry_ledger);
+    inputs.extend_from_slice(&claim.nullifier.to_array());
+    inputs.extend_from_slice(&claim.ticket_commitment.to_array());
+    inputs
+}
 
 #[contract]
 pub struct EventContract;
@@ -1008,28 +1050,61 @@ impl EventContract {
     pub fn get_claim_settings(env: Env, event_id: Symbol) -> ClaimSettings {
         storage::get_claim_settings(&env, &event_id)
     }
+    pub fn set_anonymous_claim_verifier(
+        env: Env,
+        admin: Address,
+        verifier: Address,
+    ) -> Result<(), EventError> {
+        admin.require_auth();
+        if storage::get_admin(&env)? != admin {
+            return Err(EventError::Unauthorized);
+        }
+        if storage::get_anonymous_claim_verifier(&env).is_ok() {
+            return Err(EventError::AnonymousClaimVerifierAlreadyConfigured);
+        }
+        storage::set_anonymous_claim_verifier(&env, &verifier);
+        Ok(())
+    }
+    pub fn get_anonymous_claim_verifier(env: Env) -> Result<Address, EventError> {
+        storage::get_anonymous_claim_verifier(&env)
+    }
+    pub fn get_anonymous_claim_scope(env: Env, event_id: Symbol) -> Result<BytesN<32>, EventError> {
+        storage::get_event(&env, &event_id)?;
+        Ok(anonymous_claim_scope(&env, &event_id))
+    }
+    pub fn get_anonymous_ticket_commitment(
+        env: Env,
+        event_id: Symbol,
+        nullifier: BytesN<32>,
+    ) -> Option<BytesN<32>> {
+        storage::get_anonymous_ticket_commitment(&env, &event_id, &nullifier)
+    }
     pub fn claim_anonymous_ticket(
         env: Env,
-        claimant: Address,
         event_id: Symbol,
         tier_id: u32,
-        commitment: BytesN<32>,
+        claim: AnonymousTicketClaim,
     ) -> Result<(), EventError> {
-        // The claimant's signature stops a third party who observes the commitment
-        // in the mempool from submitting it under their own auth as a hijack of
-        // the real claimant's slot: the commitment is scoped to `claimant` below,
-        // so a copied commitment can only ever be reused under the copier's own
-        // address, never collide with (and block) the original claimant's claim.
-        claimant.require_auth();
-
         let mut event = storage::get_event(&env, &event_id)?;
 
+        if let Some(commitment) =
+            storage::get_anonymous_ticket_commitment(&env, &event_id, &claim.nullifier)
+        {
+            return if commitment == claim.ticket_commitment {
+                Ok(())
+            } else {
+                Err(EventError::AnonymousNullifierReused)
+            };
+        }
         if event.status != EventStatus::Active {
             return Err(EventError::EventNotActive);
         }
 
         if !event.allow_anonymous {
             return Err(EventError::AnonymousClaimsNotEnabled);
+        }
+        if claim.expiry_ledger < env.ledger().sequence() {
+            return Err(EventError::AnonymousProofExpired);
         }
         let mut tier_index = None;
         for i in 0..event.tiers.len() {
@@ -1043,9 +1118,14 @@ impl EventContract {
             }
         }
         let index = tier_index.ok_or(EventError::TierNotFound)?;
-        if storage::has_anon_commitment(&env, &event_id, &claimant, &commitment) {
-            return Err(EventError::AnonCommitmentReused);
+        let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
+        if event.sold_count >= event.max_supply {
+            return Err(EventError::EventSoldOut);
         }
+        if tier.sold + tier.reserved >= tier.capacity {
+            return Err(EventError::TierSoldOut);
+        }
+
         let anon_settings = storage::get_anon_claim_settings(&env, &event_id);
         if anon_settings.max_anon_claims_per_window > 0 && anon_settings.anon_window_size > 0 {
             let current_window = env.ledger().sequence() / anon_settings.anon_window_size;
@@ -1060,15 +1140,21 @@ impl EventContract {
             state.count += 1;
             storage::set_anon_window_state(&env, &event_id, &state);
         }
-        let mut tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
 
-        if event.sold_count >= event.max_supply {
-            return Err(EventError::EventSoldOut);
+        let verifier = storage::get_anonymous_claim_verifier(&env)?;
+        let verifier_client = AnonymousClaimVerifierClient::new(&env, &verifier);
+        let public_inputs = anonymous_claim_public_inputs(&env, &event_id, tier_id, &claim);
+        match verifier_client.try_verify(&claim.proof, &public_inputs) {
+            Ok(Ok(true)) => {}
+            _ => return Err(EventError::AnonymousProofInvalid),
         }
-        if tier.sold + tier.reserved >= tier.capacity {
-            return Err(EventError::TierSoldOut);
-        }
-        storage::save_anon_commitment(&env, &event_id, &claimant, &commitment);
+
+        storage::save_anonymous_ticket_commitment(
+            &env,
+            &event_id,
+            &claim.nullifier,
+            &claim.ticket_commitment,
+        );
 
         tier.sold += 1;
         event.sold_count += 1;
