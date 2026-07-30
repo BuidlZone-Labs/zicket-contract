@@ -80,7 +80,7 @@ All contracts use `contracttype` enums for storage keys, ensuring:
 - OwnerTickets(Address) - Tickets owned by address
 - EventTickets(Symbol) - Tickets for event
 - NextTicketId - Counter for ticket IDs
-- Admin - Admin address (set on first `set_payments_contract` call; required by `migrate()`)
+- Admin - Admin address (set during `initialize()`; required by `migrate()`)
 - PaymentsContract - Payments contract address
 - **ContractVersion** - Contract version (NEW)
 
