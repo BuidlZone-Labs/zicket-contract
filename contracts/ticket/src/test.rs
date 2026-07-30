@@ -528,3 +528,64 @@ fn test_recover_ticket_no_key_set() {
     let invalid_signature = soroban_sdk::BytesN::from_array(&env, &[2; 64]);
     client.recover_ticket(&1, &bob, &invalid_signature);
 }
+
+#[test]
+fn test_set_event_contract_and_authorized_mint() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let event_contract = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    client.set_event_contract(&admin, &event_contract);
+
+    // Verify stored event_contract matches configured address
+    let stored_event_contract = env
+        .as_contract(&contract_id, || storage::get_event_contract(&env))
+        .unwrap();
+    assert_eq!(stored_event_contract, event_contract);
+
+    let ticket_id = client.mint_ticket(&event_id, &organizer, &owner);
+    assert_eq!(ticket_id, 1);
+    assert_eq!(client.get_tickets_by_owner(&owner), vec![&env, 1]);
+}
+
+#[test]
+fn test_set_event_contract_unauthorized_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let event_contract = Address::generate(&env);
+
+    client.set_event_contract(&admin, &event_contract);
+    let res = client.try_set_event_contract(&attacker, &event_contract);
+    assert_eq!(res, Err(Ok(TicketError::Unauthorized)));
+}
+
+#[test]
+fn test_mint_ticket_unauthorized_fails() {
+    let env = Env::default();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    // Without auth mocked or provided, mint_ticket should fail authorization
+    env.set_auths(&[]);
+    let result = client.try_mint_ticket(&event_id, &organizer, &owner);
+    assert!(result.is_err());
+}
