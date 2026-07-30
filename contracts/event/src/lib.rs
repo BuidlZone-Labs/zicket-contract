@@ -938,6 +938,127 @@ impl EventContract {
         Ok(())
     }
 
+    pub fn batch_register_for_event(
+        env: Env,
+        nonce: u64,
+        attendee: Address,
+        event_id: Symbol,
+        tier_id: u32,
+        count: u32,
+        _is_verified: bool,
+        _email_hash: Option<BytesN<32>>,
+    ) -> Result<(), EventError> {
+        attendee.require_auth();
+
+        if count == 0 || count > 100 {
+            return Err(EventError::InvalidInput);
+        }
+
+        let mut event = storage::get_event(&env, &event_id)?;
+
+        if event.status != EventStatus::Active {
+            return Err(EventError::EventNotActive);
+        }
+
+        require_settleable_privacy(&env, &event_id)?;
+
+        let mut tier_index = None;
+        let mut req_price: Option<i128> = None;
+        for i in 0..event.tiers.len() {
+            let t = event.tiers.get(i).ok_or(EventError::TierNotFound)?;
+            if t.tier_id == tier_id {
+                tier_index = Some(i);
+                req_price = Some(t.price);
+                break;
+            }
+        }
+        let index = tier_index.ok_or(EventError::TierNotFound)?;
+        let tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
+
+        if event.max_tickets_per_user > 0 && count > event.max_tickets_per_user {
+            return Err(EventError::InvalidInput);
+        }
+
+        if event.sold_count + count > event.max_supply {
+            return Err(EventError::EventSoldOut);
+        }
+
+        if tier.sold + count > tier.capacity {
+            return Err(EventError::TierSoldOut);
+        }
+
+        if req_price == Some(0) {
+            let now = env.ledger().timestamp();
+            let settings = storage::get_claim_settings(&env, &event_id);
+            if settings.max_free_claims > 0 {
+                let existing = storage::get_free_claim_count(&env, &event_id, &attendee);
+                if existing + count > settings.max_free_claims {
+                    return Err(EventError::ClaimLimitExceeded);
+                }
+            }
+            if settings.cooldown_secs > 0 {
+                let last = storage::get_last_free_claim(&env, &event_id, &attendee);
+                if last > 0 && now < last + settings.cooldown_secs {
+                    return Err(EventError::ClaimCooldownActive);
+                }
+            }
+        }
+
+        let payments_contract = storage::get_payments_contract(&env)?;
+        let ticket_contract = storage::get_ticket_contract(&env)?;
+
+        if tier.price > 0 {
+            let payments_client = PaymentsContractClient::new(&env, &payments_contract);
+            let token = payments_client.get_accepted_token();
+
+            payments_client.pay_for_ticket(
+                &nonce,
+                &attendee,
+                &event_id,
+                &(tier.price * count as i128),
+                &_email_hash,
+                &token,
+                &PaymentPrivacy::Standard,
+                &None,
+                &None,
+            );
+        }
+
+        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+        let _ticket_ids = ticket_client.batch_mint_ticket(
+            &event.event_id,
+            &event.organizer,
+            &attendee,
+            &count,
+        );
+
+        storage::save_registration(&env, &event_id, &attendee);
+
+        if tier.price == 0 {
+            for _ in 0..count {
+                storage::increment_free_claim_count(&env, &event_id, &attendee);
+            }
+            storage::set_last_free_claim(&env, &event_id, &attendee, env.ledger().timestamp());
+        }
+
+        let mut updated_tier = tier.clone();
+        updated_tier.sold += count;
+        event.sold_count += count;
+        event.tiers.set(index, updated_tier.clone());
+        update_event(&env, &event_id, &event)?;
+        let privacy = storage::get_event_privacy(&env, &event_id);
+        emit_registration(
+            &env,
+            &event_id,
+            &attendee,
+            tier_id,
+            updated_tier.sold,
+            &privacy,
+        );
+
+        Ok(())
+    }
+
     pub fn is_registered(
         env: Env,
         event_id: Symbol,
