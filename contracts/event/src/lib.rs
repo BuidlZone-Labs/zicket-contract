@@ -46,6 +46,9 @@ impl EventContract {
         storage::set_ticket_contract(&env, &ticket_contract);
         storage::set_payments_contract(&env, &payments_contract);
 
+        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+        let _ = ticket_client.try_set_event_contract(&admin, &env.current_contract_address());
+
         Ok(())
     }
     pub fn create_event(env: Env, params: CreateEventParams) -> Result<Event, EventError> {
