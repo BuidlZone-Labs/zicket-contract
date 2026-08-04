@@ -1032,7 +1032,9 @@ impl EventContract {
         let _ticket_ids =
             ticket_client.batch_mint_ticket(&event.event_id, &event.organizer, &attendee, &count);
 
-        storage::save_registration(&env, &event_id, &attendee);
+        if !storage::is_registered(&env, &event_id, &attendee) {
+            storage::save_registration(&env, &event_id, &attendee);
+        }
 
         if tier.price == 0 {
             for _ in 0..count {
