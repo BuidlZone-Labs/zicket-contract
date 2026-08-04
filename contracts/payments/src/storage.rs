@@ -4,8 +4,11 @@ use crate::types::{
 };
 use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
-const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
-const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
+/// TTL refresh threshold in ledgers (~30 days at 5s/ledger).
+const TTL_THRESHOLD: u32 = 518_400;
+/// TTL extension target in ledgers (~60 days at 5s/ledger), well within the
+/// network maximum of 3,110,400 ledgers.
+const TTL_BUMP: u32 = 1_036_800;
 const CURRENT_VERSION: u32 = 1;
 
 #[contracttype]
@@ -124,9 +127,7 @@ pub fn set_event_status(env: &Env, event_id: &Symbol, status: &EventStatus) {
 
 pub fn get_event_status(env: &Env, event_id: &Symbol) -> Option<EventStatus> {
     let key = DataKey::EventStatus(event_id.clone());
-    let status = env.storage()
-        .persistent()
-        .get(&key);
+    let status = env.storage().persistent().get(&key);
     if status.is_some() {
         env.storage()
             .persistent()
@@ -156,7 +157,8 @@ pub fn remove_postpone_deadline(env: &Env, event_id: &Symbol) {
 }
 pub fn get_admin(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     let key = DataKey::Admin;
-    let admin = env.storage()
+    let admin = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::NotInitialized)?;
@@ -168,11 +170,9 @@ pub fn get_admin(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
 
 pub fn set_admin(env: &Env, admin: &soroban_sdk::Address) {
     env.storage().persistent().set(&DataKey::Admin, admin);
-    env.storage().persistent().extend_ttl(
-        &DataKey::Admin,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::Admin, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn is_paused(env: &Env) -> bool {
@@ -190,7 +190,8 @@ pub fn set_paused(env: &Env, paused: bool) {
 }
 pub fn get_accepted_token(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     let key = DataKey::AcceptedToken;
-    let token = env.storage()
+    let token = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::NotInitialized)?;
@@ -203,16 +204,15 @@ pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     env.storage()
         .persistent()
         .set(&DataKey::AcceptedToken, token);
-    env.storage().persistent().extend_ttl(
-        &DataKey::AcceptedToken,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::AcceptedToken, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_event_contract(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     let key = DataKey::EventContract;
-    let contract = env.storage()
+    let contract = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::NotInitialized)?;
@@ -226,16 +226,15 @@ pub fn set_event_contract(env: &Env, event_contract: &soroban_sdk::Address) {
     env.storage()
         .persistent()
         .set(&DataKey::EventContract, event_contract);
-    env.storage().persistent().extend_ttl(
-        &DataKey::EventContract,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::EventContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_ticket_contract(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
     let key = DataKey::TicketContract;
-    let contract = env.storage()
+    let contract = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::NotInitialized)?;
@@ -249,11 +248,9 @@ pub fn set_ticket_contract(env: &Env, ticket_contract: &soroban_sdk::Address) {
     env.storage()
         .persistent()
         .set(&DataKey::TicketContract, ticket_contract);
-    env.storage().persistent().extend_ttl(
-        &DataKey::TicketContract,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::TicketContract, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_event_privacy(env: &Env, event_id: &Symbol) -> EventPrivacyConfig {
@@ -276,9 +273,7 @@ pub fn set_event_privacy(env: &Env, event_id: &Symbol, privacy: &EventPrivacyCon
 
 pub fn get_event_config(env: &Env, event_id: &Symbol) -> Option<EventConfig> {
     let key = DataKey::EventConfig(event_id.clone());
-    let config = env.storage()
-        .persistent()
-        .get(&key);
+    let config = env.storage().persistent().get(&key);
     if config.is_some() {
         env.storage()
             .persistent()
@@ -321,11 +316,9 @@ pub fn get_next_payment_id(env: &Env) -> u64 {
     env.storage()
         .persistent()
         .set(&DataKey::NextPaymentId, &next_id);
-    env.storage().persistent().extend_ttl(
-        &DataKey::NextPaymentId,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::NextPaymentId, TTL_THRESHOLD, TTL_BUMP);
     next_id
 }
 pub fn get_next_ticket_id(env: &Env) -> u64 {
@@ -338,11 +331,9 @@ pub fn get_next_ticket_id(env: &Env) -> u64 {
     env.storage()
         .persistent()
         .set(&DataKey::NextTicketId, &next_id);
-    env.storage().persistent().extend_ttl(
-        &DataKey::NextTicketId,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::NextTicketId, TTL_THRESHOLD, TTL_BUMP);
     next_id
 }
 pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentError> {
@@ -358,7 +349,8 @@ pub fn save_payment(env: &Env, payment: &PaymentRecord) -> Result<(), PaymentErr
 }
 pub fn get_payment(env: &Env, payment_id: u64) -> Result<PaymentRecord, PaymentError> {
     let key = DataKey::Payment(payment_id);
-    let payment = env.storage()
+    let payment = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::PaymentNotFound)?;
@@ -380,7 +372,8 @@ pub fn save_ticket(env: &Env, ticket: &Ticket) -> Result<(), PaymentError> {
 }
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, PaymentError> {
     let key = DataKey::Ticket(ticket_id);
-    let ticket = env.storage()
+    let ticket = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::TicketNotFound)?;
@@ -713,15 +706,14 @@ pub fn set_platform_fee_bps(env: &Env, bps: u32) {
     env.storage()
         .persistent()
         .set(&DataKey::PlatformFeeBps, &bps);
-    env.storage().persistent().extend_ttl(
-        &DataKey::PlatformFeeBps,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::PlatformFeeBps, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn get_platform_wallet(env: &Env) -> Result<Address, PaymentError> {
     let key = DataKey::PlatformWallet;
-    let wallet = env.storage()
+    let wallet = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(PaymentError::NotInitialized)?;
@@ -734,11 +726,9 @@ pub fn set_platform_wallet(env: &Env, wallet: &Address) {
     env.storage()
         .persistent()
         .set(&DataKey::PlatformWallet, wallet);
-    env.storage().persistent().extend_ttl(
-        &DataKey::PlatformWallet,
-        60 * 60 * 24 * 30,
-        60 * 60 * 24 * 30 * 2,
-    );
+    env.storage()
+        .persistent()
+        .extend_ttl(&DataKey::PlatformWallet, TTL_THRESHOLD, TTL_BUMP);
 }
 pub fn get_platform_revenue(env: &Env, event_id: &Symbol) -> i128 {
     env.storage()

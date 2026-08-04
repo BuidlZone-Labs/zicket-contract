@@ -375,21 +375,20 @@ impl TicketContract {
 
 fn read_next_ticket_id(env: &Env) -> u64 {
     let key = DataKey::NextTicketId;
-    let id: u64 = env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(1);
-    env.storage()
-        .persistent()
-        .extend_ttl(&key, storage::TTL_THRESHOLD, storage::TTL_BUMP);
-    id
+    let id: Option<u64> = env.storage().persistent().get(&key);
+    // Only extend the TTL when the key already exists: extend_ttl on a missing
+    // key panics with Error(Storage, MissingValue).
+    if id.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, storage::TTL_THRESHOLD, storage::TTL_BUMP);
+    }
+    id.unwrap_or(1)
 }
 
 fn write_next_ticket_id(env: &Env, next_id: u64) {
     let key = DataKey::NextTicketId;
-    env.storage()
-        .persistent()
-        .set(&key, &next_id);
+    env.storage().persistent().set(&key, &next_id);
     env.storage()
         .persistent()
         .extend_ttl(&key, storage::TTL_THRESHOLD, storage::TTL_BUMP);

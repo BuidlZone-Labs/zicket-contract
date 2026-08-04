@@ -2,8 +2,11 @@ use crate::errors::FactoryError;
 use crate::types::DeployedEvent;
 use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
-const TTL_THRESHOLD: u32 = 60 * 60 * 24 * 30;
-const TTL_BUMP: u32 = 60 * 60 * 24 * 30 * 2;
+/// TTL refresh threshold in ledgers (~30 days at 5s/ledger).
+const TTL_THRESHOLD: u32 = 518_400;
+/// TTL extension target in ledgers (~60 days at 5s/ledger), well within the
+/// network maximum of 3,110,400 ledgers.
+const TTL_BUMP: u32 = 1_036_800;
 const CURRENT_VERSION: u32 = 1;
 
 #[contracttype]
@@ -28,7 +31,8 @@ pub fn is_initialized(env: &Env) -> bool {
 
 pub fn get_admin(env: &Env) -> Result<Address, FactoryError> {
     let key = DataKey::Admin;
-    let admin = env.storage()
+    let admin = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(FactoryError::NotInitialized)?;
@@ -47,7 +51,8 @@ pub fn set_admin(env: &Env, admin: &Address) {
 
 pub fn get_event_wasm_hash(env: &Env) -> Result<BytesN<32>, FactoryError> {
     let key = DataKey::EventWasm;
-    let hash = env.storage()
+    let hash = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(FactoryError::NotInitialized)?;
@@ -66,7 +71,8 @@ pub fn set_event_wasm_hash(env: &Env, hash: &BytesN<32>) {
 
 pub fn get_ticket_contract(env: &Env) -> Result<Address, FactoryError> {
     let key = DataKey::TicketContract;
-    let address = env.storage()
+    let address = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(FactoryError::NotInitialized)?;
@@ -87,7 +93,8 @@ pub fn set_ticket_contract(env: &Env, address: &Address) {
 
 pub fn get_payments_contract(env: &Env) -> Result<Address, FactoryError> {
     let key = DataKey::PaymentsContract;
-    let address = env.storage()
+    let address = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(FactoryError::NotInitialized)?;
@@ -141,7 +148,8 @@ pub fn save_deployed_event(env: &Env, event: &DeployedEvent) -> Result<(), Facto
 
 pub fn get_deployed_event(env: &Env, event_id: &Symbol) -> Result<DeployedEvent, FactoryError> {
     let key = DataKey::DeployedEvent(event_id.clone());
-    let event = env.storage()
+    let event = env
+        .storage()
         .persistent()
         .get(&key)
         .ok_or(FactoryError::EventNotFoundInRegistry)?;
@@ -153,7 +161,8 @@ pub fn get_deployed_event(env: &Env, event_id: &Symbol) -> Result<DeployedEvent,
 
 pub fn get_all_event_ids(env: &Env) -> Vec<Symbol> {
     let key = DataKey::AllEvents;
-    let events = env.storage()
+    let events = env
+        .storage()
         .persistent()
         .get(&key)
         .unwrap_or_else(|| Vec::new(env));
@@ -167,7 +176,8 @@ pub fn get_all_event_ids(env: &Env) -> Vec<Symbol> {
 
 pub fn get_organizer_events(env: &Env, organizer: &Address) -> Vec<Symbol> {
     let key = DataKey::OrganizerEvents(organizer.clone());
-    let events = env.storage()
+    let events = env
+        .storage()
         .persistent()
         .get(&key)
         .unwrap_or_else(|| Vec::new(env));
