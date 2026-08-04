@@ -50,6 +50,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
 
         // Use map-based indexing instead of vector storage
         storage::add_owner_ticket(&env, &owner, ticket_id);
@@ -106,6 +111,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
 
         // Use map-based indexing: remove from old owner, add to new owner
         storage::remove_owner_ticket(&env, &from, ticket_id);
@@ -153,6 +163,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
         events::emit_ticket_used(
             &env,
             ticket_id,

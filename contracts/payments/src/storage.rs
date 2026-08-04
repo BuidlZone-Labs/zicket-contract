@@ -10,6 +10,13 @@ const TTL_THRESHOLD: u32 = 518_400;
 /// network maximum of 3,110,400 ledgers.
 const TTL_BUMP: u32 = 1_036_800;
 const CURRENT_VERSION: u32 = 1;
+/// Processed-nonce replay-protection entries: ~7-day/14-day ledger schedule.
+const NONCE_TTL_THRESHOLD: u32 = 120_960; // ~7 days at 5s/ledger
+const NONCE_TTL_BUMP: u32 = 241_920; // ~14 days at 5s/ledger
+/// Spent-nullifier replay-protection entries: extend to the protocol maximum
+/// (3,110,400 ledgers, ~180 days) since a replayed nullifier must never pass.
+const NULLIFIER_TTL_THRESHOLD: u32 = 1_036_800; // ~60 days
+const NULLIFIER_TTL_BUMP: u32 = 3_110_400; // protocol maximum TTL
 
 #[contracttype]
 #[derive(Clone)]
@@ -791,7 +798,7 @@ pub fn set_nonce(env: &Env, address: &Address, nonce: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
+        .extend_ttl(&key, NONCE_TTL_THRESHOLD, NONCE_TTL_BUMP);
 }
 
 pub fn has_nonce_hash(env: &Env, hash: &BytesN<32>, nonce: u64) -> bool {
@@ -806,7 +813,7 @@ pub fn set_nonce_hash(env: &Env, hash: &BytesN<32>, nonce: u64) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 7, 60 * 60 * 24 * 14);
+        .extend_ttl(&key, NONCE_TTL_THRESHOLD, NONCE_TTL_BUMP);
 }
 
 pub fn has_nullifier(env: &Env, commitment: &BytesN<32>) -> bool {
@@ -821,7 +828,7 @@ pub fn mark_nullifier_spent(env: &Env, commitment: &BytesN<32>) {
     env.storage().persistent().set(&key, &true);
     env.storage()
         .persistent()
-        .extend_ttl(&key, 60 * 60 * 24 * 365, 60 * 60 * 24 * 365 * 2);
+        .extend_ttl(&key, NULLIFIER_TTL_THRESHOLD, NULLIFIER_TTL_BUMP);
 }
 
 /// Get the current contract version from storage.
