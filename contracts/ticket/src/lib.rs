@@ -50,6 +50,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
 
         // Use map-based indexing instead of vector storage
         storage::add_owner_ticket(&env, &owner, ticket_id);
@@ -106,6 +111,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
 
         // Use map-based indexing: remove from old owner, add to new owner
         storage::remove_owner_ticket(&env, &from, ticket_id);
@@ -153,6 +163,11 @@ impl TicketContract {
         env.storage()
             .persistent()
             .set(&DataKey::Ticket(ticket_id), &ticket);
+        env.storage().persistent().extend_ttl(
+            &DataKey::Ticket(ticket_id),
+            storage::TTL_THRESHOLD,
+            storage::TTL_BUMP,
+        );
         events::emit_ticket_used(
             &env,
             ticket_id,
@@ -374,14 +389,22 @@ impl TicketContract {
 }
 
 fn read_next_ticket_id(env: &Env) -> u64 {
-    env.storage()
-        .persistent()
-        .get(&DataKey::NextTicketId)
-        .unwrap_or(1)
+    let key = DataKey::NextTicketId;
+    let id: Option<u64> = env.storage().persistent().get(&key);
+    // Only extend the TTL when the key already exists: extend_ttl on a missing
+    // key panics with Error(Storage, MissingValue).
+    if id.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, storage::TTL_THRESHOLD, storage::TTL_BUMP);
+    }
+    id.unwrap_or(1)
 }
 
 fn write_next_ticket_id(env: &Env, next_id: u64) {
+    let key = DataKey::NextTicketId;
+    env.storage().persistent().set(&key, &next_id);
     env.storage()
         .persistent()
-        .set(&DataKey::NextTicketId, &next_id);
+        .extend_ttl(&key, storage::TTL_THRESHOLD, storage::TTL_BUMP);
 }
