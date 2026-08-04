@@ -987,7 +987,7 @@ impl EventContract {
             return Err(EventError::EventSoldOut);
         }
 
-        if tier.sold + count > tier.capacity {
+        if tier.sold + tier.reserved + count > tier.capacity {
             return Err(EventError::TierSoldOut);
         }
 
