@@ -938,6 +938,10 @@ impl EventContract {
         Ok(())
     }
 
+    /// Purchase `count` tickets for the same tier in a single atomic call.
+    /// Mirrors `register_for_event` but mints multiple tickets and charges the
+    /// combined price once. Flat argument list matches `register_for_event`.
+    #[allow(clippy::too_many_arguments)]
     pub fn batch_register_for_event(
         env: Env,
         nonce: u64,
@@ -1025,12 +1029,8 @@ impl EventContract {
         }
 
         let ticket_client = TicketContractClient::new(&env, &ticket_contract);
-        let _ticket_ids = ticket_client.batch_mint_ticket(
-            &event.event_id,
-            &event.organizer,
-            &attendee,
-            &count,
-        );
+        let _ticket_ids =
+            ticket_client.batch_mint_ticket(&event.event_id, &event.organizer, &attendee, &count);
 
         storage::save_registration(&env, &event_id, &attendee);
 
