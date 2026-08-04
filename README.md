@@ -161,6 +161,11 @@ See the [`issues/`](./issues/) directory for detailed GitHub-ready issue descrip
 - before pushing changes, run `cargo build`, `cargo test`, `cargo fmt`, `cargo clippy`.
 - push your changes & create your PR, ensure to link your issue using the `github closing keyword`.
 
+## Documentation
+
+- **Architecture**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Sequence diagrams, trust boundaries, and storage architecture.
+- **Threat Model**: [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) — Trust assumptions, threat scenarios, and security controls.
+
 ## Community
 
 Join us here for discussions, suggestions & improvements: https://t.me/+nlYw80w3FF1jNGY0
