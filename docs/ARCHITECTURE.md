@@ -105,23 +105,34 @@ Attendee              EventContract          PaymentsContract       TicketContra
    │◄─────── success ──────│                       │                     │
 ```
 
-## Interaction Flow: Revenue Split Settlement
+## Interaction Flow: Revenue Withdrawal
+
+The event contract exposes one organizer-facing withdrawal entry point,
+`withdraw_revenue`. It requires the caller to be the event's stored organizer
+and the event to be `Completed`, then proxies to the payments contract's
+`withdraw_revenue`, which is the **admin-only** path (it bypasses the
+status/timing checks and settles to the recipient passed by the event
+contract). The payments-layer `withdraw` function — the organizer-gated path
+that honours status, withdrawal delay, and dispute rules — is callable directly
+on the payments contract. See the README's withdrawal-path table for the
+caller, fee, and latch semantics of every path.
 
 ```
 Organizer              EventContract          PaymentsContract
    │                       │                       │
    │  withdraw_revenue     │                       │
+   │  (organizer-gated)    │                       │
    │──────────────────────►│                       │
-   │                       │  withdraw              │
+   │                       │  withdraw_revenue     │
+   │                       │  (admin-only path)    │
    │                       │──────────────────────►│
    │                       │                       │
-   │                       │  Validate event status │
-   │                       │  Check withdrawal delay│
-   │                       │  Deduct platform fee   │
-   │                       │  Freeze settlement     │
-   │                       │                       │
-   │                       │  Transfer organizer    │
-   │                       │  share                 │
+   │                       │  Validate event       │
+   │                       │  not split/postponed  │
+   │                       │  Deduct platform fee  │
+   │                       │  Transfer to organizer│
+   │                       │  Latch event as       │
+   │                       │  withdrawn            │
    │                       │◄──────────────────────│
    │◄─────── success ──────│                       │
 ```
