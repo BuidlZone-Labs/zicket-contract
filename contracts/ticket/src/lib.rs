@@ -73,6 +73,65 @@ impl TicketContract {
         Ok(ticket_id)
     }
 
+    pub fn batch_mint_ticket(
+        env: Env,
+        event_id: Symbol,
+        organizer: Address,
+        owner: Address,
+        count: u32,
+    ) -> Result<soroban_sdk::Vec<u64>, TicketError> {
+        if count == 0 || count > 100 {
+            return Err(TicketError::InvalidInput);
+        }
+
+        if let Ok(event_contract) = storage::get_event_contract(&env) {
+            event_contract.require_auth();
+        } else if let Ok(payments_contract) = storage::get_payments_contract(&env) {
+            payments_contract.require_auth();
+        } else {
+            organizer.require_auth();
+        }
+
+        let mut ticket_ids = soroban_sdk::Vec::new(&env);
+        let mut next_id = read_next_ticket_id(&env);
+
+        for _ in 0..count {
+            let ticket = Ticket {
+                ticket_id: next_id,
+                event_id: event_id.clone(),
+                organizer: organizer.clone(),
+                owner: owner.clone(),
+                issued_at: env.ledger().timestamp(),
+                status: TicketStatus::Valid,
+                is_transferable: true,
+                is_used: false,
+            };
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Ticket(next_id), &ticket);
+
+            storage::add_owner_ticket(&env, &owner, next_id);
+            storage::add_event_ticket(&env, &event_id, next_id);
+
+            events::emit_ticket_minted(
+                &env,
+                next_id,
+                ticket.event_id.clone(),
+                ticket.owner.clone(),
+                ticket.organizer.clone(),
+                ticket.issued_at,
+            );
+
+            ticket_ids.push_back(next_id);
+            next_id += 1;
+        }
+
+        write_next_ticket_id(&env, next_id);
+
+        Ok(ticket_ids)
+    }
+
     pub fn transfer_ticket(
         env: Env,
         from: Address,
