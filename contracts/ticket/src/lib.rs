@@ -12,7 +12,7 @@ mod test;
 
 use crate::errors::TicketError;
 use crate::storage::DataKey;
-pub use crate::types::{Ticket, TicketStatus};
+pub use crate::types::{Ticket, TicketStatus, MAX_BATCH_TICKET_MINT};
 use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, BytesN, Env, Symbol, Vec};
 
 #[contract]
@@ -80,7 +80,7 @@ impl TicketContract {
         owner: Address,
         count: u32,
     ) -> Result<soroban_sdk::Vec<u64>, TicketError> {
-        if count == 0 || count > 100 {
+        if count == 0 || count > MAX_BATCH_TICKET_MINT {
             return Err(TicketError::InvalidInput);
         }
 
