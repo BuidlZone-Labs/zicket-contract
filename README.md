@@ -1,6 +1,6 @@
 # 🎫 Zicket — Smart Contract Platform
 
-A decentralized event ticketing platform built on [Stellar Soroban](https://soroban.stellar.org/). Zicket enables organizers to create events, sell tickets, and manage payments — all on-chain.
+A privacy-preserving ticketing and event infrastructure platform built on [Stellar Soroban](https://soroban.stellar.org/). Zicket is a Stellar-native ticketing and event infrastructure platform designed to make event payments, ticket ownership, refunds, settlement, check-in, and attendance verification programmable while minimizing unnecessary exposure of attendee identity.
 
 ## Architecture
 
